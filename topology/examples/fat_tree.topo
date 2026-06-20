@@ -1,0 +1,57 @@
+// k-ary fat tree: k pods, k/2 edge switches and k/2 aggregation switches per pod,
+// k/2 GPUs per edge switch, and (k/2)^2 core switches.
+// All links are 400 Gbps / 700 ns.
+
+// One edge switch with k/2 attached GPUs.
+module rack(k) {
+    node sw type=switch;
+    for h in (1, k / 2) {
+        node gpu{h} type=gpu;
+        link sw gpu{h} bandwidth=400[Gbps] latency=700[ns];
+    }
+}
+
+// One pod: k/2 edge racks and k/2 aggregation switches, fully connected.
+module pod(k) {
+    for j in (1, k / 2) {
+        use rack(k) as esw{j};
+    }
+    for i in (1, k / 2) {
+        node asw{i} type=switch;
+    }
+    for j in (1, k / 2) {
+        for i in (1, k / 2) {
+            link esw{j}.sw asw{i} bandwidth=400[Gbps] latency=700[ns];
+        }
+    }
+}
+
+// One group of k/2 core switches (there are k/2 groups, one per aggregation index).
+module core_group(k) {
+    for j in (1, k / 2) {
+        node csw{j} type=switch;
+    }
+}
+
+// Full k-ary fat tree.
+// Aggregation switch i in every pod connects to every switch in core group i,
+// giving each aggregation switch k/2 uplinks and each core switch k downlinks.
+module fat_tree(k) {
+    for p in (1, k) {
+        use pod(k) as pod{p};
+    }
+    for i in (1, k / 2) {
+        use core_group(k) as cg{i};
+    }
+    for p in (1, k) {
+        for i in (1, k / 2) {
+            for j in (1, k / 2) {
+                link pod{p}.asw{i} cg{i}.csw{j} bandwidth=400[Gbps] latency=700[ns];
+            }
+        }
+    }
+}
+
+module main() {
+    use fat_tree(4) as ft;
+}

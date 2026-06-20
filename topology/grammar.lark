@@ -1,0 +1,76 @@
+start: module+ //needs at least a module
+
+// module
+module: "module" NAME "(" [params] ")" "{" stmt* "}"
+params: NAME ("," NAME)*
+
+// stmt
+stmt:  node_stmt ";"
+    | link_stmt ";"
+    | use_stmt ";"
+    | for_stmt
+		| if_stmt
+
+// ----------------- NODE -----------------
+node_stmt: "node" name attr*
+
+// supports h{i}
+name: NAME template_suffix?
+template_suffix: var | "{" NUMBER "}"
+
+
+// ----------------- LINK -----------------
+link_stmt: "link" ref ref (attr)*
+
+// supports c1.sw or h{i}
+ref: name ("." name)*
+
+
+// ----------------- USE -----------------
+use_stmt: "use" name "(" [args] ")" "as" name
+
+args: value ("," value)*
+
+
+// ----------------- FOR LOOP -----------------
+for_stmt: "for" name "in" "(" value "," value ")" "{" stmt* "}"
+
+// ------------- If Statement -------------
+if_stmt: "if" "(" condition ")" "{" stmt* "}"
+
+// ------------- Conditions -------------
+condition: value COMP_OP value
+
+COMP_OP: "==" | "!=" | "<" | "<=" | ">" | ">="
+
+// ----------------- ATTRIBUTES -----------------
+attr: NAME "=" value
+
+
+// ----------------- VALUES -----------------
+value: NUMBER "[" UNIT "]"
+     | expr
+
+// ------------- Arithmetic -------------
+expr: term (ADD_OP term)*
+term: atom (MUL_OP atom)*
+atom: NUMBER
+    | NAME
+    | var
+    | "(" expr ")"
+
+ADD_OP: "+" | "-"
+MUL_OP: "*" | "/"
+
+var: "{" NAME "}"
+
+UNIT: "Gbps" | "Mbps" | "Kbps" | "GBps" | "MBps" | "KBps" | "ns" | "us" | "ms"
+
+// ----------------- TOKENS -----------------
+%import common.CNAME -> NAME
+%import common.NUMBER
+COMMENT: "//" /[^\n]*/
+
+%import common.WS
+%ignore WS
+%ignore COMMENT

@@ -1,0 +1,29 @@
+// One pod of a k-ary fat tree: k/2 edge switches, k/2 aggregation switches,
+// k/2 GPUs per edge switch. No core switches.
+// All links are 400 Gbps / 700 ns.
+
+module rack(k) {
+    node sw type=switch;
+    for h in (1, k / 2) {
+        node gpu{h} type=gpu;
+        link sw gpu{h} bandwidth=400[Gbps] latency=700[ns];
+    }
+}
+
+module pod(k) {
+    for j in (1, k / 2) {
+        use rack(k) as esw{j};
+    }
+    for i in (1, k / 2) {
+        node asw{i} type=switch;
+    }
+    for j in (1, k / 2) {
+        for i in (1, k / 2) {
+            link esw{j}.sw asw{i} bandwidth=400[Gbps] latency=700[ns];
+        }
+    }
+}
+
+module main() {
+    use pod(4) as p;
+}

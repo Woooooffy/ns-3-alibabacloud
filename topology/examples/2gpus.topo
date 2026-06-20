@@ -1,0 +1,5 @@
+module main(){
+    node n0 type=gpu;
+    node n1 type=gpu;
+    link n0 n1 bandwidth=25[GBps] latency=700[ns];
+}

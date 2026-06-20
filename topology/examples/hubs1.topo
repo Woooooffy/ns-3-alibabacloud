@@ -1,0 +1,13 @@
+module hub_spoke(N){
+	node sw type=switch;
+	for i in (1, N){
+		node n{i} type=gpu;
+		link n{i} sw bandwidth=125[Gbps] latency=300[ns];
+	}
+}
+
+module main(){
+	use hub_spoke(4) as c1;
+	use hub_spoke(4) as c2;
+	link c1.sw c2.sw bandwidth=9[Gbps] latency=1500[ns];
+}
