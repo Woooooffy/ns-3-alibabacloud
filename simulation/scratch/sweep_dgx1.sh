@@ -6,17 +6,17 @@ set -e
 
 cd "$(dirname "$0")/.."
 
-OUTPUT_FILE="scratch/3nodes_sweep_results.txt"
-START_BYTES=1024          # 1KB
-END_BYTES=$((1024 * 1024 * 1024))  # 1GB
+OUTPUT_FILE="scratch/dgx1_sweep_results.txt"
+START_BYTES=((0.75 * 1024))      # 0.75KB
+END_BYTES=$((1.5 * 1024 * 1024 * 1024))  # 1.5GB
 
 > "$OUTPUT_FILE"
 echo "input_bytes simulated_time_ns" >> "$OUTPUT_FILE"
 
 input_bytes=$START_BYTES
 while [ "$input_bytes" -le "$END_BYTES" ]; do
-    echo "Running 3nodes with inputBytes=$input_bytes"
-    output=$(./ns3 run "scratch/3nodes --inputBytes=$input_bytes" 2>&1)
+    echo "Running dgx1 with inputBytes=$input_bytes"
+    output=$(./ns3 run "scratch/dgx1_tmp --inputBytes=$input_bytes" 2>&1)
     sim_time=$(echo "$output" | grep "Total simulated time:" | grep -o '[0-9]\+' | head -1)
     echo "$input_bytes $sim_time" >> "$OUTPUT_FILE"
     input_bytes=$((input_bytes * 2))
