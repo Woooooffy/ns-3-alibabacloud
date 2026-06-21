@@ -1356,46 +1356,6 @@ function(set_runtime_outputdirectory target_name output_directory target_prefix)
   endif()
 endfunction(set_runtime_outputdirectory)
 
-# Newer ns-3 releases build scratch/example executables through a build_exec
-# helper. This codebase predates that helper, so we provide a compatible
-# wrapper around the add_executable/target_link_libraries/
-# set_runtime_outputdirectory primitives already defined above.
-function(build_exec)
-  set(options)
-  set(oneValueArgs EXECNAME EXECNAME_PREFIX EXECUTABLE_DIRECTORY_PATH)
-  set(multiValueArgs SOURCE_FILES LIBRARIES_TO_LINK)
-  cmake_parse_arguments(
-    BUILD_EXEC "${options}" "${oneValueArgs}" "${multiValueArgs}" ${ARGN}
-  )
-
-  if(NOT BUILD_EXEC_EXECNAME_PREFIX)
-    set(BUILD_EXEC_EXECNAME_PREFIX scratch_)
-  endif()
-
-  add_executable(
-    ${BUILD_EXEC_EXECNAME_PREFIX}${BUILD_EXEC_EXECNAME}
-    "${BUILD_EXEC_SOURCE_FILES}"
-  )
-
-  if(${NS3_STATIC})
-    target_link_libraries(
-      ${BUILD_EXEC_EXECNAME_PREFIX}${BUILD_EXEC_EXECNAME}
-      ${LIB_AS_NEEDED_PRE_STATIC} ${lib-ns3-static}
-      ${BUILD_EXEC_LIBRARIES_TO_LINK}
-    )
-  else()
-    target_link_libraries(
-      ${BUILD_EXEC_EXECNAME_PREFIX}${BUILD_EXEC_EXECNAME}
-      ${BUILD_EXEC_LIBRARIES_TO_LINK} "${ns3-external-libs}"
-    )
-  endif()
-
-  set_runtime_outputdirectory(
-    ${BUILD_EXEC_EXECNAME} ${BUILD_EXEC_EXECUTABLE_DIRECTORY_PATH}
-    ${BUILD_EXEC_EXECNAME_PREFIX}
-  )
-endfunction(build_exec)
-
 function(scan_python_examples path)
   # Skip python examples search in case the bindings are disabled
   if(NOT ${ENABLE_PYTHON_BINDINGS})
