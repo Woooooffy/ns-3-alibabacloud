@@ -21,6 +21,17 @@ else()
 endif()
 
 
+# NOTE: LIBNAME below ("distributed-training") differs from this module's
+# folder name ("distributed-ml"), so the global module-registration loop in
+# build-support/macros-and-definitions.cmake (which keys lib<name>/lib<name>-obj
+# CACHE vars off the folder name) never registers them for this LIBNAME. Without
+# this, build_lib() below expands to add_library() with an empty target name.
+# Pre-register them here rather than renaming LIBNAME, since the umbrella header
+# (ns3/distributed-training-module.h) is generated from LIBNAME and is already
+# referenced throughout topology/ns3writer.py and simulation/scratch/*.cc.
+set(libdistributed-training libdistributed-training CACHE INTERNAL "")
+set(libdistributed-training-obj libdistributed-training-obj CACHE INTERNAL "")
+
 build_lib(
     LIBNAME distributed-training
     SOURCE_FILES model/distributed-training.cc

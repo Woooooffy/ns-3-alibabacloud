@@ -11,18 +11,25 @@ int main(int argc, char *argv[]) {
     NodeContainer regswtches;
     NodeContainer nvswtches;
     
-    for (uint32_t i = 0; i < 3; ++i) { gpunodes.Add(CreateObject<GPU>()); }
-    for (uint32_t i = 0; i < 1; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
+    for (uint32_t i = 0; i < 2; ++i) { gpunodes.Add(CreateObject<GPU>()); }
+    for (uint32_t i = 0; i < 2; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
     QbbHelper link_helper0;
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(9000));
-    link_helper0.SetChannelAttribute("Delay", StringValue("1us"));
-    link_helper0.SetDeviceAttribute("DataRate", StringValue("200Gbps"));
+    link_helper0.SetChannelAttribute("Delay", StringValue("700ns"));
+    link_helper0.SetDeviceAttribute("DataRate", StringValue("25GBps"));
+    
+    QbbHelper link_helper1;
+    link_helper1.SetDeviceAttribute("Mtu", UintegerValue(9000));
+    link_helper1.SetChannelAttribute("Delay", StringValue("700ns"));
+    link_helper1.SetDeviceAttribute("DataRate", StringValue("100GBps"));
     
     NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), regswtches.Get(0));
     
-    NetDeviceContainer devs0_1 = link_helper0.Install(gpunodes.Get(1), regswtches.Get(0));
+    NetDeviceContainer devs1_1 = link_helper1.Install(regswtches.Get(0), regswtches.Get(1));
     
-    NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), regswtches.Get(0));
+    NetDeviceContainer devs1_2 = link_helper1.Install(regswtches.Get(0), regswtches.Get(1));
+    
+    NetDeviceContainer devs0_3 = link_helper0.Install(gpunodes.Get(1), regswtches.Get(1));
     
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     InternetStackHelper internetStack;
@@ -39,14 +46,7 @@ int main(int argc, char *argv[]) {
         Ipv4AddressHelper _ipv4;
         _ipv4.SetBase("10.0.0.0", "255.0.0.0", "0.0.0.2");
         NetDeviceContainer _tmp;
-        _tmp.Add(devs0_1.Get(0));
-        _ipv4.Assign(_tmp);
-    }
-    {
-        Ipv4AddressHelper _ipv4;
-        _ipv4.SetBase("10.0.0.0", "255.0.0.0", "0.0.0.3");
-        NetDeviceContainer _tmp;
-        _tmp.Add(devs0_2.Get(0));
+        _tmp.Add(devs0_3.Get(0));
         _ipv4.Assign(_tmp);
     }
     
@@ -57,11 +57,23 @@ int main(int argc, char *argv[]) {
     }
     {
         Ipv4Address _dst("10.0.0.2");
-        DynamicCast<SwitchNode>(regswtches.Get(0))->AddTableEntry(_dst, devs0_1.Get(1)->GetIfIndex());
+        DynamicCast<SwitchNode>(regswtches.Get(0))->AddTableEntry(_dst, devs1_1.Get(0)->GetIfIndex());
     }
     {
-        Ipv4Address _dst("10.0.0.3");
-        DynamicCast<SwitchNode>(regswtches.Get(0))->AddTableEntry(_dst, devs0_2.Get(1)->GetIfIndex());
+        Ipv4Address _dst("10.0.0.2");
+        DynamicCast<SwitchNode>(regswtches.Get(0))->AddTableEntry(_dst, devs1_2.Get(0)->GetIfIndex());
+    }
+    {
+        Ipv4Address _dst("10.0.0.1");
+        DynamicCast<SwitchNode>(regswtches.Get(1))->AddTableEntry(_dst, devs1_1.Get(1)->GetIfIndex());
+    }
+    {
+        Ipv4Address _dst("10.0.0.1");
+        DynamicCast<SwitchNode>(regswtches.Get(1))->AddTableEntry(_dst, devs1_2.Get(1)->GetIfIndex());
+    }
+    {
+        Ipv4Address _dst("10.0.0.2");
+        DynamicCast<SwitchNode>(regswtches.Get(1))->AddTableEntry(_dst, devs0_3.Get(1)->GetIfIndex());
     }
     
     // RdmaHw + RdmaDriver setup per GPU
@@ -75,10 +87,6 @@ int main(int argc, char *argv[]) {
         
         {
             Ipv4Address _peerIp("10.0.0.2");
-            rdmaHw_gpu0->AddTableEntry(_peerIp, devs0_0.Get(0)->GetIfIndex(), false);
-        }
-        {
-            Ipv4Address _peerIp("10.0.0.3");
             rdmaHw_gpu0->AddTableEntry(_peerIp, devs0_0.Get(0)->GetIfIndex(), false);
         }
         
@@ -95,50 +103,27 @@ int main(int argc, char *argv[]) {
         
         {
             Ipv4Address _peerIp("10.0.0.1");
-            rdmaHw_gpu1->AddTableEntry(_peerIp, devs0_1.Get(0)->GetIfIndex(), false);
-        }
-        {
-            Ipv4Address _peerIp("10.0.0.3");
-            rdmaHw_gpu1->AddTableEntry(_peerIp, devs0_1.Get(0)->GetIfIndex(), false);
+            rdmaHw_gpu1->AddTableEntry(_peerIp, devs0_3.Get(0)->GetIfIndex(), false);
         }
         
         DynamicCast<GPU>(gpunodes.Get(1))->SetMyIp(Ipv4Address("10.0.0.2"));
         gpunodes.Get(1)->AggregateObject(rdmaDriver_gpu1);
     }
-    {
-        Ptr<RdmaHw> rdmaHw_gpu2 = CreateObject<RdmaHw>();
-        rdmaHw_gpu2->SetAttribute("GPUsPerServer", UintegerValue(1));
-        Ptr<RdmaDriver> rdmaDriver_gpu2 = CreateObject<RdmaDriver>();
-        rdmaDriver_gpu2->SetNode(gpunodes.Get(2));
-        rdmaDriver_gpu2->SetRdmaHw(rdmaHw_gpu2);
-        rdmaDriver_gpu2->Init();
-        
-        {
-            Ipv4Address _peerIp("10.0.0.1");
-            rdmaHw_gpu2->AddTableEntry(_peerIp, devs0_2.Get(0)->GetIfIndex(), false);
-        }
-        {
-            Ipv4Address _peerIp("10.0.0.2");
-            rdmaHw_gpu2->AddTableEntry(_peerIp, devs0_2.Get(0)->GetIfIndex(), false);
-        }
-        
-        DynamicCast<GPU>(gpunodes.Get(2))->SetMyIp(Ipv4Address("10.0.0.3"));
-        gpunodes.Get(2)->AggregateObject(rdmaDriver_gpu2);
-    }
     
     // peer IP bookkeeping for the collectives app's RDMA-routed peers
     DynamicCast<GPU>(gpunodes.Get(1))->PushPeerIpAddr(0, Ipv4Address("10.0.0.1"));
-    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerIpAddr(2, Ipv4Address("10.0.0.3"));
-    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerIpAddr(0, Ipv4Address("10.0.0.1"));
-    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerIpAddr(1, Ipv4Address("10.0.0.2"));
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerIpAddr(1, Ipv4Address("10.0.0.2"));
-    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerIpAddr(2, Ipv4Address("10.0.0.3"));
+    
+    // custom flow-id forwarding rules (bypasses ECMP for matching flows)
+    DynamicCast<SwitchNode>(regswtches.Get(0))->SetAttribute("CustomFlowForwarding", BooleanValue(true));
+    DynamicCast<SwitchNode>(regswtches.Get(0))->AddFlowForwardingRule(65536, devs0_0.Get(1)->GetIfIndex());
+    DynamicCast<SwitchNode>(regswtches.Get(0))->AddFlowForwardingRule(1, devs1_1.Get(0)->GetIfIndex());
     
     
     /*
-        n0 -> sw: devs0_0
-        n1 -> sw: devs0_1
-        n2 -> sw: devs0_2
+        n0 -> sw0: devs0_0
+        sw0 -> sw1: devs1_2
+        n1 -> sw1: devs0_3
     */
     
     Simulator::Run();

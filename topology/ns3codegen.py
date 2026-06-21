@@ -1,5 +1,7 @@
 from typing import Optional, Any, Callable, TypedDict
 from transformer import *
+from collections import deque
+import ipaddress
 
 class NS3Insn():
 	pass
@@ -11,21 +13,19 @@ class NS3MakeGPUs(NS3Insn):
 	def __repr__(self) -> str:
 		return f"Create {self.n_gpus} NS3 GPUs"
 
-class NS3MakeSwitches(NS3Insn):
+class NS3MakeRegSwitches(NS3Insn):
 	def __init__(self, n: int):
 		self.n_switches: int = n
-	
-	def __repr__(self) -> str:
-		return f"Create {self.n_switches} NS3 switches"
 
-'''
-class NS3GetNode(NS3Insn):
-	def __init__self(self, name: str):
-		self.name = name
-	
 	def __repr__(self) -> str:
-		return f"Get NS3 node {name}"
-'''
+		return f"Create {self.n_switches} NS3 RDMA switches (SwitchNode)"
+
+class NS3MakeNVSwitches(NS3Insn):
+	def __init__(self, n: int):
+		self.n_nvswitches: int = n
+
+	def __repr__(self) -> str:
+		return f"Create {self.n_nvswitches} NS3 NVSwitches (NVSwitchNode)"
 
 class NS3MakeLinkHelper(NS3Insn):
 	def __init__(self, id: int, **attrs: Any):
@@ -36,58 +36,98 @@ class NS3MakeLinkHelper(NS3Insn):
 			self.mtu = attrs["mtu"]
 		else:
 			self.mtu = 9000
-		self.type = attrs["type"]
-	
-	def __repr__(self) -> str:
-		return f"Create NS3 link helper {self.id}: latency {self.delay} bandwidth {self.data_rate}"
+		self.type = attrs["type"] # "p2p" (gpu<->gpu) or "qbb" (anything touching a switch/nvswitch)
 
-class NS3MakeSwitchHelper(NS3Insn):
-	def __init__(self, switch_ids: list[int], **attrs: Any):
-		self.switch_ids = switch_ids
-		self.mtu = attrs["mtu"]
+	def __repr__(self) -> str:
+		return f"Create NS3 link helper {self.id}: latency {self.delay} bandwidth {self.data_rate} type {self.type}"
 
 class NS3InstallLink(NS3Insn):
-	def __init__(self, src: str, dst: str, helper_id: int):
+	def __init__(self, src: str, dst: str, helper_id: int, link_id: int):
 		self.src: str = src
 		self.dst: str = dst
 		self.link_helper: int = helper_id
-	
+		# stable id naming this link's NetDeviceContainer (devs{helper_id}_{link_id});
+		# assigned here (rather than by the writer) so the RDMA fabric routing pass
+		# below can reference a link's devices before the writer ever runs
+		self.link_id: int = link_id
+
 	def __repr__(self) -> str:
-		return f"Install NS3 link {self.src} -> {self.dst} with helper {self.link_helper}"
+		return f"Install NS3 link {self.src} -> {self.dst} with helper {self.link_helper} (link_id {self.link_id})"
+
+class NS3InstallRdmaFabric(NS3Insn):
+	'''
+	Aggregate instruction carrying everything needed to wire RdmaHw/RdmaDriver,
+	SwitchNode/NVSwitchNode routing tables, and per-GPU peer-IP bookkeeping for
+	every gpu<->switch / switch<->switch / gpu<->nvswitch ("qbb") link. Computed
+	once, after the structural link pass, via BFS-ECMP run from each destination
+	GPU over the qbb subgraph (see NS3CodeGenerator._build_rdma_fabric).
+	'''
+	def __init__(self):
+		self.gpu_ip: dict[str, str] = {}
+		self.gpus_per_server: int = 1
+		# gpu_name -> [(container_expr, my_endpoint_idx)] for every qbb NIC the gpu
+		# owns, regardless of whether it ends up on any shortest path (it still
+		# needs an Ipv4 address and an RdmaHw-managed QbbNetDevice either way)
+		self.gpu_links: dict[str, list[tuple[str, int]]] = {}
+		# node_name -> [(dst_gpu_ip, container_expr, my_endpoint_idx)]
+		self.switch_routes: dict[str, list[tuple[str, str, int]]] = {}
+		self.nvswitch_routes: dict[str, list[tuple[str, str, int]]] = {}
+		# gpu_name -> [(dst_gpu_ip, container_expr, my_endpoint_idx, is_nvswitch)]
+		self.gpu_rdma_routes: dict[str, list[tuple[str, str, int, bool]]] = {}
+		# gpu_name -> {peer_gpu_name: peer_ip}
+		self.gpu_peer_ip: dict[str, dict[str, str]] = {}
+		# switch_name -> [(flow_id, container_expr, my_endpoint_idx)], populated
+		# separately once a switch opts into custom flow forwarding (codegen step 8)
+		self.flow_rules: dict[str, list[tuple[int, str, int]]] = {}
+
+	def __repr__(self) -> str:
+		return f"Install RDMA fabric routing ({len(self.gpu_ip)} gpus)"
 
 class NS3CodeGenerator():
 	def __init__(self, modules: dict[str, Block]):
 		self.gpus: dict[str, int] = {}
-		self.switches: dict[str, int] = {}
+		self.switches: dict[str, int] = {}   # regular RDMA switches -> SwitchNode
+		self.nvswitches: dict[str, int] = {} # NVLink-style fabric -> NVSwitchNode
 		self.insns: list[NS3Insn] = []
 		self.modules: dict[str, Block] = modules
 		self.gpu_counter: int = 0
 		self.switch_counter: int = 0
+		self.nvswitch_counter: int = 0
 		self.link_helpers: dict[tuple[Any], int] = {}
 		self.link_helper_counter = 0
-		self.switch_helpers: dict[tuple[Any], list[int]] = {}
+		self.link_id_counter = 0
+		# adjacency over the qbb (RDMA-fabric) subgraph only -- gpu<->gpu p2p links
+		# are intentionally absent here, they need no routing table at all.
+		# node_name -> [(peer_name, container_expr, my_endpoint_idx)]
+		self.qbb_adj: dict[str, list[tuple[str, str, int]]] = {}
+		# regular switches with `flowid_forwarding=true` in the DSL: get an
+		# explicit AddFlowForwardingRule per (src gpu, dst gpu) pair that crosses
+		# them, instead of relying purely on ECMP
+		self.flow_forwarding_switches: set[str] = set()
 
 	def Generate(self) -> None:
 		self.GenerateModule(self.modules["main"])
-		insns = [NS3MakeGPUs(self.gpu_counter), NS3MakeSwitches(self.switch_counter)]
+		insns = [
+			NS3MakeGPUs(self.gpu_counter),
+			NS3MakeRegSwitches(self.switch_counter),
+			NS3MakeNVSwitches(self.nvswitch_counter),
+		]
 		for tup, id in self.link_helpers.items():
 			args = {"latency": tup[0], "bandwidth": tup[1], "mtu": tup[2], "type": tup[3]}
 			insns.append(NS3MakeLinkHelper(id, **args))
-		for tup, ids in self.switch_helpers.items():
-			args = {"mtu": tup[0]}
-			insns.append(NS3MakeSwitchHelper(ids, **args));
 		self.insns = insns + self.insns
+		self.insns.append(self._build_rdma_fabric())
 
-	def GenerateModule(self, module: Block, *args: Any) -> None:	
-		scope = module.get_scope()	
+	def GenerateModule(self, module: Block, *args: Any) -> None:
+		scope = module.get_scope()
 		if len(args) != len(module.params):
 			raise RuntimeError(f"Arguments and parameters length mismatch for module {module}.\n Expected: {len(module.params)}, passed: {len(args)}.")
 		for i in range(len(args)):
-			scope.set_name_to_val(module.params[i], args[i])	
+			scope.set_name_to_val(module.params[i], args[i])
 		for insn in module.insns:
-			self.GenerateInsn(scope, insn, *args)	
+			self.GenerateInsn(scope, insn, *args)
 
-	def GenerateInsn(self, this_scope: Scope, insn: Insn, *args: Any) -> None:	
+	def GenerateInsn(self, this_scope: Scope, insn: Insn, *args: Any) -> None:
 		match insn:
 			case NewNodeInsn():
 				return self.GenNewNode(this_scope, insn, *args)
@@ -105,7 +145,7 @@ class NS3CodeGenerator():
 	def GenNewNode(self, this_scope: Scope, insn: NewNodeInsn, *args: Any):
 		# add this to list of node to be built
 		# don't individually create nodes in NS3
-		prefix = this_scope.get_node_name_prefix()	
+		prefix = this_scope.get_node_name_prefix()
 		name = this_scope.resolve_name_with_var(insn.name)
 		type = insn.type
 		if prefix != "":
@@ -114,18 +154,17 @@ class NS3CodeGenerator():
 			case "gpu":
 				self.gpus[name] = self.gpu_counter
 				self.gpu_counter += 1
-			case "switch" | "nvswitch":
+			case "switch":
 				self.switches[name] = self.switch_counter
 				self.switch_counter += 1
-				#TODO proper modeling of switch attributes
-				mtu = 9000# fixed default for now
-				attr = (mtu,)
-				if self.switch_helpers.get(attr) is None:
-					self.switch_helpers[attr] = []
-				self.switch_helpers[attr].append(self.switches[name])
+				if str(insn.attrs.get("flowid_forwarding", "false")).lower() == "true":
+					self.flow_forwarding_switches.add(name)
+			case "nvswitch":
+				self.nvswitches[name] = self.nvswitch_counter
+				self.nvswitch_counter += 1
 			case _:
 				raise RuntimeError(f"Unrecognized node type {type}")
-	
+
 	def GenNewLink(self, this_scope: Scope, insn: NewLinkInsn, *args: Any):
 		src = this_scope.resolve_name_with_var(insn.src[0])
 		dst = this_scope.resolve_name_with_var(insn.dst[0])
@@ -138,21 +177,31 @@ class NS3CodeGenerator():
 			src = pre + "_" + src
 			dst = pre + "_" + dst
 		# assumes nodes declared before building link
-		# TODO better type modeling
-		if src in self.switches or dst in self.switches:
-			type = "eth"
-		else:
+		# gpu<->gpu is a direct point-to-point link; anything touching a switch or
+		# nvswitch goes over the RDMA/QBB fabric instead
+		if src in self.gpus and dst in self.gpus:
 			type = "p2p"
+		else:
+			type = "qbb"
 		mtu = insn.attrs["mtu"] if "mtu" in insn.attrs else 9000
-		attr = (insn.attrs["latency"], insn.attrs["bandwidth"], mtu, type) 
+		attr = (insn.attrs["latency"], insn.attrs["bandwidth"], mtu, type)
 		helper = self.link_helpers.get(attr)
 		if helper is None:
 			# add this to list of helpers to be built
 			# build all at once for readability
 			self.link_helpers[attr] = self.link_helper_counter
 			self.link_helper_counter += 1
-		self.insns.append(NS3InstallLink(src, dst, self.link_helpers[attr]))
-	
+		link_id = self.link_id_counter
+		self.link_id_counter += 1
+		helper_id = self.link_helpers[attr]
+		self.insns.append(NS3InstallLink(src, dst, helper_id, link_id))
+		if type == "qbb":
+			# must match the container variable name the writer emits in
+			# _emit_link_install (devs{helper_id}_{link_id})
+			container_expr = f"devs{helper_id}_{link_id}"
+			self.qbb_adj.setdefault(src, []).append((dst, container_expr, 0))
+			self.qbb_adj.setdefault(dst, []).append((src, container_expr, 1))
+
 	def GenSubmodule(self, parent_scope: Scope, insn: SubmoduleInsn, *args: Any):
 		module = self.modules.get(insn.module_name)
 		if not module:
@@ -187,11 +236,78 @@ class NS3CodeGenerator():
 		for i in range(start, end + 1):
 			self.GenerateModule(loop_block, i)
 
+	# --------------------------------------------------
+	# RDMA fabric routing (BFS-ECMP)
+	# --------------------------------------------------
 
+	def _bfs_dist(self, source: str) -> dict[str, int]:
+		'''Shortest-hop distance from source to every node reachable over the qbb subgraph.'''
+		dist = {source: 0}
+		q = deque([source])
+		while q:
+			cur = q.popleft()
+			for peer, _container_expr, _end in self.qbb_adj.get(cur, []):
+				if peer not in dist:
+					dist[peer] = dist[cur] + 1
+					q.append(peer)
+		return dist
 
+	def _build_rdma_fabric(self) -> NS3InstallRdmaFabric:
+		fabric = NS3InstallRdmaFabric()
+		base_ip = ipaddress.IPv4Address("10.0.0.1")
+		for name, idx in sorted(self.gpus.items(), key=lambda kv: kv[1]):
+			fabric.gpu_ip[name] = str(base_ip + idx)
+			fabric.gpu_links[name] = [(container_expr, end) for (_peer, container_expr, end) in self.qbb_adj.get(name, [])]
 
-		
-		
-		
+		if self.nvswitches:
+			# perf hint only: RdmaHw's actual routing is always governed by the
+			# explicit is_nvswitch table entries below, regardless of this value
+			first_nvsw = next(iter(self.nvswitches))
+			attached_gpus = sum(1 for peer, _, _ in self.qbb_adj.get(first_nvsw, []) if peer in self.gpus)
+			fabric.gpus_per_server = attached_gpus if attached_gpus > 0 else 1
 
+		name_to_type: dict[str, str] = {}
+		for n in self.gpus: name_to_type[n] = "gpu"
+		for n in self.switches: name_to_type[n] = "switch"
+		for n in self.nvswitches: name_to_type[n] = "nvswitch"
 
+		# GPUs are always leaves of the qbb subgraph (gpu<->gpu never goes over qbb),
+		# so BFS run from each destination GPU naturally never routes traffic through
+		# an unrelated GPU -- every node's neighbors-at-distance-1 are exactly its
+		# valid ECMP next hops toward that destination.
+		for dst_name in self.gpus:
+			dist = self._bfs_dist(dst_name)
+			dst_ip = fabric.gpu_ip[dst_name]
+			for node_name, node_links in self.qbb_adj.items():
+				if node_name == dst_name or node_name not in dist:
+					continue
+				my_dist = dist[node_name]
+				next_hops = [(peer, container_expr, end) for (peer, container_expr, end) in node_links
+				             if peer in dist and dist[peer] == my_dist - 1]
+				if not next_hops:
+					continue
+				ntype = name_to_type[node_name]
+				if ntype == "switch":
+					fabric.switch_routes.setdefault(node_name, []).extend(
+						(dst_ip, container_expr, end) for (_, container_expr, end) in next_hops)
+					if node_name in self.flow_forwarding_switches:
+						# routing here is purely destination-based (same next hop
+						# regardless of source), so any one of the ECMP next hops
+						# is a valid, deterministic per-flow assignment
+						_, fwd_container, fwd_end = next_hops[0]
+						for src_name in self.gpus:
+							if src_name == dst_name:
+								continue
+							flow_id = (self.gpus[src_name] << 16) | self.gpus[dst_name]
+							fabric.flow_rules.setdefault(node_name, []).append(
+								(flow_id, fwd_container, fwd_end))
+				elif ntype == "nvswitch":
+					fabric.nvswitch_routes.setdefault(node_name, []).extend(
+						(dst_ip, container_expr, end) for (_, container_expr, end) in next_hops)
+				else: # gpu
+					fabric.gpu_peer_ip.setdefault(node_name, {})[dst_name] = dst_ip
+					for (peer, container_expr, end) in next_hops:
+						is_nvswitch = name_to_type[peer] == "nvswitch"
+						fabric.gpu_rdma_routes.setdefault(node_name, []).append(
+							(dst_ip, container_expr, end, is_nvswitch))
+		return fabric

@@ -48,5 +48,21 @@ namespace ns3
 	void GPU::PushPeerAddr(int16_t peer, Address addr){
 		m_sendPeerAddr[peer].push_back(addr);
 	}
-	
+
+	void GPU::SetMyIp(Ipv4Address addr){
+		m_myIp = addr;
+	}
+	Ipv4Address GPU::GetMyIp() const{
+		return m_myIp;
+	}
+	void GPU::PushPeerIpAddr(int16_t peer, Ipv4Address addr){
+		m_peerIpAddr[peer] = addr;
+	}
+	Ipv4Address GPU::GetPeerIpAddr(int16_t peer) const{
+		return m_peerIpAddr.at(peer);
+	}
+	bool GPU::HasPeerIpAddr(int16_t peer) const{
+		return m_peerIpAddr.contains(peer);
+	}
+
 }

@@ -4,6 +4,7 @@
 #include "ns3/network-module.h"
 #include "ns3/core-module.h"
 #include "ns3/type-id.h"
+#include "ns3/ipv4-address.h"
 #include "msccl.h"
 #include <ostream>
 #include <map>
@@ -17,7 +18,7 @@ namespace ns3
 		static TypeId GetTypeId (void);
 		GPU();
 		GPU(int maxNChannels);
-		~GPU() override;		
+		~GPU() override;
 		struct mscclAlgorithm* GetAlgo();
 		void SetMaxNChannels(int maxNChannels);
 		int GetMaxNChannels();
@@ -29,12 +30,21 @@ namespace ns3
 		void PushPeerAddr(int16_t peer, Address addr);
 		std::ostream& DumpAlgo(std::ostream& oss);
 
+		// RDMA-fabric (switch/nvswitch) peers, as opposed to direct p2p peers above
+		void SetMyIp(Ipv4Address addr);
+		Ipv4Address GetMyIp() const;
+		void PushPeerIpAddr(int16_t peer, Ipv4Address addr);
+		Ipv4Address GetPeerIpAddr(int16_t peer) const;
+		bool HasPeerIpAddr(int16_t peer) const;
+
 		private:
 		int m_maxNChannels;
 		struct mscclAlgorithm m_algo;
 		std::map<int16_t, std::vector<Ptr<NetDevice>>> m_recvDevicePeer;
 		std::map<int16_t, std::vector<Ptr<NetDevice>>> m_sendDevicePeer;
 		std::map<int16_t, std::vector<Address>> m_sendPeerAddr;
+		Ipv4Address m_myIp;
+		std::map<int16_t, Ipv4Address> m_peerIpAddr;
 	};
 }
 #endif 

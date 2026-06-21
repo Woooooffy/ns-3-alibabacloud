@@ -5,10 +5,11 @@
 #include "ns3/applications-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
+#include "ns3/rdma-driver.h"
+#include "ns3/node-list.h"
 #include "gpu.h"
 #include "msccl.h"
 #include "utils.h"
-#include "msccl-channel.h"
 #include "msccl-header.h"
 
 #include <map>
@@ -106,6 +107,17 @@ namespace ns3 {
 			void SetFlowIdTable(std::map<std::pair<int, int>, uint32_t>* table);
 			#endif
 
+			// RDMA-fabric transport (gpu<->switch/nvswitch peers), as opposed to the
+			// p2p PacketSocket path above (gpu<->gpu direct peers)
+			void SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff);
+			// shared by RecvCallback (socket path) and OnRdmaSendComplete (RDMA path):
+			// either completes a matching pending recv, or marks the region ready
+			void NotifyTransferArrived(uint16_t dstbuf, uint16_t dstoff);
+			// peeked cross-node by the sender to decide memcpy vs reduce for correctness-check
+			bool IsPendingReduceCopy(uint16_t dstbuf, uint16_t dstoff);
+			// bound as the RdmaDriver::AddQueuePair completion callback
+			void OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems);
+
 			void Close();
 		private:
 			int8_t m_id;
@@ -120,6 +132,7 @@ namespace ns3 {
 			std::map<std::pair<uint16_t, uint16_t>, bool> m_recvReadyByBufferRegion;
 			std::map<std::pair<uint16_t, uint16_t>, uint32_t> m_recvBytesAccum;
 			std::map<Ptr<Socket>, std::queue<PendingTransfer>> m_pendingSends;
+			uint16_t m_rdmaSportCounter = 0; // deterministic per-channel sport allocator for concurrent RDMA flows
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			uint32_t m_flowId_counter = 0;
@@ -155,6 +168,13 @@ namespace ns3 {
 			// queue fragments for transmission on the given (possibly shared) device,
 			// pacing them onto the wire one at a time at the device's data rate
 			void QueueFragmentsForDevice(Ptr<NetDevice> dev, std::queue<PendingFragment> frags);
+			// RDMA-fabric helpers
+			bool IsRdmaPeer(int16_t peer);
+			Ptr<RdmaDriver> GetRdmaDriver();
+			Ipv4Address GetMyIp();
+			Ipv4Address GetPeerIp(int16_t peer);
+			uint32_t ComputeFlowId(int16_t peer); // (this gpu id << 16 | peer gpu id), shared formula with codegen's AddFlowForwardingRule
+			MscclChannel* GetChannel(int8_t chanId); // lets a sender reach into the peer's matching channel directly
 			#ifdef FLOW_ID_TEST
 			// void SetFlowIdTableForChannel(std::map<std::pair<int, int>, uint32_t>*, int channel);
 			// void SetFlowIdTableForAllChannels(std::map<std::pair<int, int>, uint32_t>* table);

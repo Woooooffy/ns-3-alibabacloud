@@ -12,6 +12,7 @@
 #include "ppp-header.h"
 #include "qbb-header.h"
 #include "cn-header.h"
+#include "ns3/msccl-flow-id-tag.h"
 #ifdef NS3_MTP
 #include "ns3/mtp-interface.h"
 #endif
@@ -686,6 +687,9 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
 	Ptr<Packet> p = Create<Packet> ((uint32_t)payload_size);
+	// carry the app-provided qp tag as a msccl flow id, so switches can do
+	// custom flow-based forwarding instead of plain ECMP when enabled
+	p->AddPacketTag(MscclFlowIdTag(static_cast<uint32_t>(qp->m_tag)));
 	// add SimpleSeqTsHeader
 	SimpleSeqTsHeader seqTs;
 	seqTs.SetSeq (qp->snd_nxt);

@@ -1,0 +1,18 @@
+module main(){
+    node n0 type=gpu;
+    node n1 type=gpu;
+    node n2 type=gpu;
+    node n3 type=gpu;
+    node nvsw type=nvswitch;
+    node sw0 type=switch;
+    node sw1 type=switch;
+    link n0 nvsw bandwidth=400[GBps] latency=100[ns];
+    link n1 nvsw bandwidth=400[GBps] latency=100[ns];
+    link n2 nvsw bandwidth=400[GBps] latency=100[ns];
+    link n3 nvsw bandwidth=400[GBps] latency=100[ns];
+    link n0 sw0 bandwidth=25[GBps] latency=700[ns];
+    link n1 sw0 bandwidth=25[GBps] latency=700[ns];
+    link n2 sw1 bandwidth=25[GBps] latency=700[ns];
+    link n3 sw1 bandwidth=25[GBps] latency=700[ns];
+    link sw0 sw1 bandwidth=100[GBps] latency=700[ns];
+}

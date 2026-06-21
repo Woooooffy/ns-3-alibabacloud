@@ -10,6 +10,13 @@ if(${ENABLE_EXAMPLES})
         )
 endif()
 
+# NOTE: see the matching comment in src/distributed-ml/CMakeLists.txt -- LIBNAME
+# here ("ethernet-switch") differs from this module's folder name ("p4"), so it
+# never gets registered by the folder-name-keyed loop in
+# build-support/macros-and-definitions.cmake. Pre-register it here.
+set(libethernet-switch libethernet-switch CACHE INTERNAL "")
+set(libethernet-switch-obj libethernet-switch-obj CACHE INTERNAL "")
+
 build_lib(
     LIBNAME ethernet-switch
     SOURCE_FILES model/switch-net-device.cc

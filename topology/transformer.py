@@ -110,12 +110,13 @@ class Insn():
 		pass
 
 class NewNodeInsn(Insn):
-	def __init__(self, name: str, node_type: str):
+	def __init__(self, name: str, node_type: str, attrs: Optional[dict[str, Any]] = None):
 		self.name: str = name
 		self.type: str = node_type
-	
+		self.attrs: dict[str, Any] = attrs or {}
+
 	def __repr__(self) -> str:
-		return f"NewNodeInsn{(self.name, self.type)}"
+		return f"NewNodeInsn{(self.name, self.type, self.attrs)}"
 	
 	def simple_print(self) -> str:
 		return __repr__(self) + " "
@@ -213,7 +214,7 @@ class TopoTransformer(Transformer):
 		name = str(items[0])
 		attrs = dict(items[1:])
 		node_type = attrs.get("type", "default")
-		return NewNodeInsn(name, node_type)
+		return NewNodeInsn(name, node_type, attrs)
 
 
 	def link_stmt(self, items) -> Insn:

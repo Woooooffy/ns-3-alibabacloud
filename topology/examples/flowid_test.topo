@@ -1,0 +1,11 @@
+module main(){
+    node n0 type=gpu;
+    node n1 type=gpu;
+    node sw0 type=switch flowid_forwarding=true;
+    node sw1 type=switch;
+    link n0 sw0 bandwidth=25[GBps] latency=700[ns];
+    for _ in (0, 1){
+        link sw0 sw1 bandwidth=100[GBps] latency=700[ns];
+    }
+    link n1 sw1 bandwidth=25[GBps] latency=700[ns];
+}

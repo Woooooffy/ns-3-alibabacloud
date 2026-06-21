@@ -6,6 +6,13 @@
 // outrunning the device's actual transmission time
 #define MSCCL_L2_OVERHEAD_BYTES 14
 
+// RDMA-fabric transport constants: sport is allocated per (channel, send call) to keep
+// RdmaHw's (dip,sport,pg) queue-pair key unique across concurrent in-flight transfers to
+// the same peer; dport/pg are fixed since uniqueness only needs to hold on sport.
+#define MSCCL_RDMA_SPORT_BASE 20000
+#define MSCCL_RDMA_DPORT 21000
+#define MSCCL_RDMA_PG 3
+
 // flags are a 3-tuple of (workindex, gridoffset_iter, step) and it follows a lexicographical order. a threadblock is ahead of another iff its flag is ahead
 #define COMPUTE_FLAG(__WORKINDEX__,__GRIDOFFSET_ITER__,__STEP__) \
  	 MSCCL_MAX_ITER*MSCCL_MAX_NUM_STEPS*(uint64_t)__WORKINDEX__ + ((uint64_t)__GRIDOFFSET_ITER__ * MSCCL_MAX_NUM_STEPS + (uint64_t)__STEP__)
@@ -195,26 +202,7 @@ namespace ns3 {
 			NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": transfer complete from " << hdr.GetSrcGpu() << " dstInfo=(" << dstInfo.first << "," << dstInfo.second << ") totalBytes=" << hdr.GetBytes());
 			m_recvBytesAccum.erase(dstInfo);
 
-			// if waiting on this recv
-			if (m_pendingRecvByBufferRegion.contains(dstInfo)){
-				auto& cur = m_pendingRecvByBufferRegion[dstInfo];
-				switch (cur.op){
-					case MSCCL_RECV:
-					case MSCCL_RECV_REDUCE_COPY:
-						Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, cur.bid, cur.sid);
-						break;
-					default:
-						NS_FATAL_ERROR("not implemented");
-				}
-				m_pendingRecvByBufferRegion.erase(dstInfo);
-				free(tmp);
-				continue;
-			}
-			// otherwise do not yet know what to do; post this ready recv
-			if (m_recvReadyByBufferRegion.contains(dstInfo) && m_recvReadyByBufferRegion[dstInfo] == true){
-				NS_FATAL_ERROR("Received multiple packets for same dst region. Check scheduling bugs or duplicate packet in network");
-			}
-			m_recvReadyByBufferRegion[dstInfo] = true;
+			NotifyTransferArrived(dstInfo.first, dstInfo.second);
 			/* std::queue<PendingTransfer>& recvQueue = m_pendingRecvs.at(peerId);
 			while (recvSize > 0 && !recvQueue.empty()){
 				auto& cur = recvQueue.front();
@@ -243,6 +231,36 @@ namespace ns3 {
 		}
 	}
 
+	bool MscclChannel::IsPendingReduceCopy(uint16_t dstbuf, uint16_t dstoff){
+		std::pair<uint16_t, uint16_t> dstInfo(dstbuf, dstoff);
+		return m_pendingRecvByBufferRegion.contains(dstInfo) &&
+		       m_pendingRecvByBufferRegion[dstInfo].op == MSCCL_RECV_REDUCE_COPY;
+	}
+
+	// shared completion-trigger logic for the socket RecvCallback and the cross-node
+	// RDMA OnRdmaSendComplete: either complete a matching pending recv, or mark the
+	// buffer region ready for when Recv()/RecvRedCp() is later called.
+	void MscclChannel::NotifyTransferArrived(uint16_t dstbuf, uint16_t dstoff){
+		std::pair<uint16_t, uint16_t> dstInfo(dstbuf, dstoff);
+		if (m_pendingRecvByBufferRegion.contains(dstInfo)){
+			auto& cur = m_pendingRecvByBufferRegion[dstInfo];
+			switch (cur.op){
+				case MSCCL_RECV:
+				case MSCCL_RECV_REDUCE_COPY:
+					Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, cur.bid, cur.sid);
+					break;
+				default:
+					NS_FATAL_ERROR("not implemented");
+			}
+			m_pendingRecvByBufferRegion.erase(dstInfo);
+			return;
+		}
+		if (m_recvReadyByBufferRegion.contains(dstInfo) && m_recvReadyByBufferRegion[dstInfo] == true){
+			NS_FATAL_ERROR("Received multiple packets for same dst region. Check scheduling bugs or duplicate packet in network");
+		}
+		m_recvReadyByBufferRegion[dstInfo] = true;
+	}
+
 	void MscclChannel::SetPendingRecv(uint16_t dstbuf, int16_t dstoff, PendingTransfer recv){
 		if (dstoff < 0) NS_FATAL_ERROR("Invalid dst offset");
 		m_pendingRecvByBufferRegion[std::make_pair(dstbuf, static_cast<uint16_t>(dstoff))] = recv;
@@ -258,6 +276,10 @@ namespace ns3 {
 		}
 		if (dstoff < 0){
 			NS_FATAL_ERROR("Invalid dst offset in Send");
+		}
+		if (m_app->IsRdmaPeer(sendpeer)){
+			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff);
+			return;
 		}
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 		Ptr<Socket> sock = m_sendPeerSockets.at(sendpeer);
@@ -300,6 +322,47 @@ namespace ns3 {
 
 		// pacing happens per physical device, since multiple channels may share one
 		m_app->QueueFragmentsForDevice(dev, std::move(frags));
+	}
+
+	void MscclChannel::SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff){
+		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
+		// distinct sport per send call to keep RdmaHw's (dip,sport,pg) qp key unique
+		// across concurrent in-flight transfers to the same peer on this channel
+		uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + (m_rdmaSportCounter++));
+		uint32_t flowId = m_app->ComputeFlowId(sendpeer);
+
+		// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
+		// requires operator!= on the functor, which closures don't have), so bind the
+		// context onto a member-function Callback one argument at a time instead.
+		Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
+			.Bind(bid).Bind(sid).Bind(sendpeer).Bind(srcbuf).Bind(srcoff).Bind(dstbuf).Bind(dstoff).Bind(nElems);
+
+		// RdmaHw owns pacing/congestion-control/PFC end-to-end; no manual fragmentation needed
+		m_app->GetRdmaDriver()->AddQueuePair(
+			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), flowId, totalBytes, MSCCL_RDMA_PG,
+			m_app->GetMyIp(), m_app->GetPeerIp(sendpeer), sport, MSCCL_RDMA_DPORT,
+			0, 0, finishCb, Callback<void>());
+	}
+
+	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
+		Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(sendpeer));
+		Ptr<CollectivesApplication> peerApp = DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
+		MscclChannel* peerChan = peerApp->GetChannel(m_id);
+		uint16_t dstoffU = static_cast<uint16_t>(dstoff);
+
+		if (m_app->GetCorrectnessCheck()){
+			uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
+			uint8_t* src = (uint8_t*) m_app->GetBufferPtr(srcbuf, srcoff);
+			uint8_t* dst = (uint8_t*) peerApp->GetBufferPtr(dstbuf, dstoff);
+			if (peerChan->IsPendingReduceCopy(dstbuf, dstoffU)){
+				ReduceAdd(dst, src, bytes, m_dataType);
+			} else {
+				memcpy(dst, src, bytes);
+			}
+		}
+		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to " << sendpeer << " complete, dstInfo=(" << dstbuf << "," << dstoffU << ")");
+		peerChan->NotifyTransferArrived(dstbuf, dstoffU);
+		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
 
 	void MscclChannel::Recv(int8_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
@@ -376,7 +439,7 @@ namespace ns3 {
 					"DataType",
 					"Element datatype used in the collective operation",
 					EnumValue(DataType::INT32),
-					MakeEnumAccessor<DataType::Type>(&CollectivesApplication::m_dataType),
+					MakeEnumAccessor(&CollectivesApplication::m_dataType),
 					MakeEnumChecker(
 						DataType::FLOAT32, "FLOAT32",
 						DataType::FLOAT64, "FLOAT64",
@@ -445,6 +508,30 @@ namespace ns3 {
 
 	int CollectivesApplication::GetPort(){
 		return m_port;
+	}
+
+	bool CollectivesApplication::IsRdmaPeer(int16_t peer){
+		return DynamicCast<GPU>(GetNode())->HasPeerIpAddr(peer);
+	}
+
+	Ptr<RdmaDriver> CollectivesApplication::GetRdmaDriver(){
+		return GetNode()->GetObject<RdmaDriver>();
+	}
+
+	Ipv4Address CollectivesApplication::GetMyIp(){
+		return DynamicCast<GPU>(GetNode())->GetMyIp();
+	}
+
+	Ipv4Address CollectivesApplication::GetPeerIp(int16_t peer){
+		return DynamicCast<GPU>(GetNode())->GetPeerIpAddr(peer);
+	}
+
+	uint32_t CollectivesApplication::ComputeFlowId(int16_t peer){
+		return (static_cast<uint32_t>(GetNode()->GetId()) << 16) | static_cast<uint32_t>(static_cast<uint16_t>(peer));
+	}
+
+	MscclChannel* CollectivesApplication::GetChannel(int8_t chanId){
+		return &m_channels.at(chanId);
 	}
 
 	DataType::Type CollectivesApplication::GetDataType(){
