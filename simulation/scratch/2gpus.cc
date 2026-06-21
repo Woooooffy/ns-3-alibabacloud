@@ -16,8 +16,6 @@ int main(int argc, char *argv[]) {
 		NS_LOG_COMPONENT_DEFINE("DGX1_TEST");
     NodeContainer gpunodes;
     NodeContainer swtches;
-    P4Helper sw_helper;
-    sw_helper.SetDeviceAttribute("EnableCustomImpl", BooleanValue(true));
 
     gpunodes.Create<GPU>(2);
     swtches.Create(0);

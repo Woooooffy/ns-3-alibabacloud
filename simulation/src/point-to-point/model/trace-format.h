@@ -9,7 +9,11 @@
 
 namespace ns3{
 
-enum Event{
+// named QbbTraceEvent (not Event) to avoid colliding with the unrelated
+// ns3::Event class in src/wifi/model/interference-helper.h -- any translation
+// unit that includes both wifi-module.h and point-to-point-module.h would
+// otherwise fail with "'ns3::Event' referred to as enum"
+enum QbbTraceEvent{
 	Recv = 0,
 	Enqu = 1,
 	Dequ = 2,
@@ -73,7 +77,7 @@ struct TraceFormat{
 	}
 };
 
-static inline const char* EventToStr(enum Event e){
+static inline const char* EventToStr(enum QbbTraceEvent e){
 	switch (e){
 		case Recv:
 			return "Recv";
