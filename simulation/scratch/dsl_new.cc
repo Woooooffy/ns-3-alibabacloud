@@ -2,7 +2,7 @@
 #include "ns3/network-module.h"
 #include "ns3/csma-module.h"
 #include "ns3/ethernet-switch-module.h"
-#include "ns3/distributed-training-module.h"
+#include "ns3/distributed-ml-module.h"
 
 #include <sys/stat.h>
 #include <fstream>

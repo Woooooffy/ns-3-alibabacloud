@@ -10,10 +10,10 @@ if(${ENABLE_EXAMPLES})
         )
 endif()
 
-# NOTE: see the matching comment in src/distributed-ml/CMakeLists.txt -- LIBNAME
-# here ("ethernet-switch") differs from this module's folder name ("p4"), so it
-# never gets registered by the folder-name-keyed loop in
-# build-support/macros-and-definitions.cmake. Pre-register it here.
+# NOTE: this module ("p4", LIBNAME "ethernet-switch") is currently excluded
+# from the build entirely -- see the `list(REMOVE_ITEM libs_to_build p4)` in
+# build-support/macros-and-definitions.cmake. This CMakeLists.txt is unreached
+# as long as that exclusion is in place.
 set(libethernet-switch libethernet-switch CACHE INTERNAL "")
 set(libethernet-switch-obj libethernet-switch-obj CACHE INTERNAL "")
 

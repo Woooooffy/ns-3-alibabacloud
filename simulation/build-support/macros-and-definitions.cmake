@@ -1207,6 +1207,10 @@ macro(process_options)
     list(REMOVE_ITEM libs_to_build tap-bridge)
   endif()
 
+  # p4 (ethernet-switch) is unfinished/not currently buildable; exclude it from
+  # module scanning entirely rather than letting its CMakeLists.txt run.
+  list(REMOVE_ITEM libs_to_build p4)
+
   # Create library names to solve dependency problems with macros that will be
   # called at each lib subdirectory
   set(ns3-libs)

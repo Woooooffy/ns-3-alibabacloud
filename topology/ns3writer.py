@@ -41,7 +41,7 @@ class NS3Writer:
 		self.emit('#include "ns3/network-module.h"')
 		self.emit('#include "ns3/internet-module.h"')
 		self.emit('#include "ns3/point-to-point-module.h"')
-		self.emit('#include "ns3/distributed-training-module.h"')
+		self.emit('#include "ns3/distributed-ml-module.h"')
 		self.emit("")
 		self.emit("using namespace ns3;")
 		self.emit("")
