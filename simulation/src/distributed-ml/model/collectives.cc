@@ -1,5 +1,7 @@
 #include "collectives.h"
 
+#include <iomanip>
+
 #define MSCCL_MAX_ITER 65536
 // L2 overhead (e.g. PPP/eth header) added by the NetDevice on top of our packet,
 // reserved when sizing fragments and used to keep fragment pacing from
@@ -180,7 +182,7 @@ namespace ns3 {
 			std::pair<uint16_t, uint16_t> dstInfo(hdr.GetDstBuf(), hdr.GetDstOff());
 			if (m_app->GetCorrectnessCheck()){
 				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstInfo.first, dstInfo.second);
-				bool isRrc = m_pendingRecvByBufferRegion.contains(dstInfo) &&
+				bool isRrc = m_pendingRecvByBufferRegion.count(dstInfo) > 0 &&
 				             m_pendingRecvByBufferRegion[dstInfo].op == MSCCL_RECV_REDUCE_COPY;
 				if (isRrc){
 					ReduceAdd(dst + hdr.GetFragByteOffset(), tmp + tmp_offset, recvSize, m_dataType);
@@ -233,7 +235,7 @@ namespace ns3 {
 
 	bool MscclChannel::IsPendingReduceCopy(uint16_t dstbuf, uint16_t dstoff){
 		std::pair<uint16_t, uint16_t> dstInfo(dstbuf, dstoff);
-		return m_pendingRecvByBufferRegion.contains(dstInfo) &&
+		return m_pendingRecvByBufferRegion.count(dstInfo) > 0 &&
 		       m_pendingRecvByBufferRegion[dstInfo].op == MSCCL_RECV_REDUCE_COPY;
 	}
 
@@ -242,7 +244,7 @@ namespace ns3 {
 	// buffer region ready for when Recv()/RecvRedCp() is later called.
 	void MscclChannel::NotifyTransferArrived(uint16_t dstbuf, uint16_t dstoff){
 		std::pair<uint16_t, uint16_t> dstInfo(dstbuf, dstoff);
-		if (m_pendingRecvByBufferRegion.contains(dstInfo)){
+		if (m_pendingRecvByBufferRegion.count(dstInfo) > 0){
 			auto& cur = m_pendingRecvByBufferRegion[dstInfo];
 			switch (cur.op){
 				case MSCCL_RECV:
@@ -255,7 +257,7 @@ namespace ns3 {
 			m_pendingRecvByBufferRegion.erase(dstInfo);
 			return;
 		}
-		if (m_recvReadyByBufferRegion.contains(dstInfo) && m_recvReadyByBufferRegion[dstInfo] == true){
+		if (m_recvReadyByBufferRegion.count(dstInfo) > 0 && m_recvReadyByBufferRegion[dstInfo] == true){
 			NS_FATAL_ERROR("Received multiple packets for same dst region. Check scheduling bugs or duplicate packet in network");
 		}
 		m_recvReadyByBufferRegion[dstInfo] = true;
@@ -370,7 +372,7 @@ namespace ns3 {
 		PendingTransfer recv(bid, sid, nElems * DataType::GetSizeBytes(m_dataType), MSCCL_RECV, 0, -1, dstbuf, dstoff);
 		std::pair<uint16_t, uint16_t> dstinfo(dstbuf, static_cast<uint16_t> (dstoff));
 		// if we have already received
-		if (m_recvReadyByBufferRegion.contains(dstinfo) && m_recvReadyByBufferRegion[dstinfo] == true){
+		if (m_recvReadyByBufferRegion.count(dstinfo) > 0 && m_recvReadyByBufferRegion[dstinfo] == true){
 			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 			m_recvReadyByBufferRegion[dstinfo] = false;
 			return;
@@ -392,7 +394,7 @@ namespace ns3 {
 		if (dstoff < 0) NS_FATAL_ERROR("Invalid offset");
 		PendingTransfer recv(bid, sid, nElems * DataType::GetSizeBytes(m_dataType), MSCCL_RECV_REDUCE_COPY, 0, -1, dstbuf, dstoff);
 		std::pair<uint16_t, uint16_t> dstinfo(dstbuf, static_cast<uint16_t>(dstoff));
-		if (m_recvReadyByBufferRegion.contains(dstinfo) && m_recvReadyByBufferRegion[dstinfo] == true){
+		if (m_recvReadyByBufferRegion.count(dstinfo) > 0 && m_recvReadyByBufferRegion[dstinfo] == true){
 			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 			m_recvReadyByBufferRegion[dstinfo] = false;
 			return;

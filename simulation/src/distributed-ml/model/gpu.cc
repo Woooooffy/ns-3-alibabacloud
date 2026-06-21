@@ -62,7 +62,7 @@ namespace ns3
 		return m_peerIpAddr.at(peer);
 	}
 	bool GPU::HasPeerIpAddr(int16_t peer) const{
-		return m_peerIpAddr.contains(peer);
+		return m_peerIpAddr.count(peer) > 0;
 	}
 
 }
