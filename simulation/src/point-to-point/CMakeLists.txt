@@ -62,6 +62,8 @@ build_lib(
     model/nvswitch-node.h
     model/point-to-point-remote-channel.h
   LIBRARIES_TO_LINK ${libnetwork}
+                    ${libinternet}
+                    ${libapplications}
                     ${mpi_libraries}
   TEST_SOURCES test/point-to-point-test.cc
 )
