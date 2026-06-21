@@ -107,11 +107,18 @@ Ptr<Node> Application::GetNode () const
   return m_node;
 }
 
-void 
+void
 Application::SetNode (Ptr<Node> node)
 {
   NS_LOG_FUNCTION (this);
   m_node = node;
+}
+
+int64_t
+Application::AssignStreams (int64_t stream)
+{
+  NS_LOG_FUNCTION (this << stream);
+  return 0;
 }
 
 // Protected methods

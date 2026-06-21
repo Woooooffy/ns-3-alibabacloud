@@ -76,6 +76,7 @@ set(source_files
     utils/custom-header.cc
     utils/int-header.cc
     utils/red-queue.cc
+    utils/timestamp-tag.cc
 )
 
 set(header_files
@@ -160,6 +161,7 @@ set(header_files
     utils/custom-header.h
     utils/int-header.h
     utils/red-queue.h
+    utils/timestamp-tag.h
 )
 
 build_lib(
