@@ -721,11 +721,16 @@ namespace ns3 {
 			chan->SetFlowIdTable(m_flowIds);
 			#endif
 			//chan->SetupListener();
+			// RDMA peers are bootstrapped by RdmaHw/RdmaDriver and complete via
+			// OnRdmaSendComplete, so they have no PacketSocket device/address
+			// registered and must skip socket setup here.
 			for (int r = 0; r < chanInfo->nRecvPeers; ++r){
-				chan->SetupRecvPeer(chanInfo->recvPeerInfo[r].peer);
+				int16_t peer = chanInfo->recvPeerInfo[r].peer;
+				if (!IsRdmaPeer(peer)) chan->SetupRecvPeer(peer);
 			}
 			for (int s = 0; s < chanInfo->nSendPeers; ++s){
-				chan->ConnectSendPeer(chanInfo->sendPeerInfo[s].peer);
+				int16_t peer = chanInfo->sendPeerInfo[s].peer;
+				if (!IsRdmaPeer(peer)) chan->ConnectSendPeer(peer);
 			}
 		}
 	}
