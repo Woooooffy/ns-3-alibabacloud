@@ -343,6 +343,9 @@ namespace ns3 {
 		// win/baseRtt bound in-flight bytes to the path's bandwidth-delay product
 		// (mirrors astra-sim's pairBdp/pairRtt) -- without this RdmaQueuePair::IsWinBound()
 		// never trips and the flow streams unbounded at full line rate.
+		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
+			<< sendpeer << " totalBytes=" << totalBytes << " win=" << m_app->GetPeerWin(sendpeer)
+			<< " baseRtt=" << m_app->GetPeerBaseRtt(sendpeer) << " at t=" << Simulator::Now().GetNanoSeconds());
 		m_app->GetRdmaDriver()->AddQueuePair(
 			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), flowId, totalBytes, MSCCL_RDMA_PG,
 			m_app->GetMyIp(), m_app->GetPeerIp(sendpeer), sport, MSCCL_RDMA_DPORT,
@@ -365,7 +368,7 @@ namespace ns3 {
 				memcpy(dst, src, bytes);
 			}
 		}
-		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to " << sendpeer << " complete, dstInfo=(" << dstbuf << "," << dstoffU << ")");
+		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to " << sendpeer << " complete, dstInfo=(" << dstbuf << "," << dstoffU << ") at t=" << Simulator::Now().GetNanoSeconds());
 		peerChan->NotifyTransferArrived(dstbuf, dstoffU);
 		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
