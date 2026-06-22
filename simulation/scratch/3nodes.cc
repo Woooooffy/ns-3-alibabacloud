@@ -152,6 +152,22 @@ int main(int argc, char *argv[]) {
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerIpAddr(1, Ipv4Address("10.0.0.2"));
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerIpAddr(2, Ipv4Address("10.0.0.3"));
 
+    // peer RDMA pacing: bandwidth-delay-product window + base RTT per peer
+    // (2 hops @ 130Gbps/1us/1500B MTU each way: rtt = 2*(2*1us) + 2*tx_1500B@130Gbps = 4185ns,
+    // win = rtt * 130Gbps / 8 = 68000 bytes)
+    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerWin(0, 68000);
+    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerBaseRtt(0, 4185);
+    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerWin(2, 68000);
+    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerBaseRtt(2, 4185);
+    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerWin(0, 68000);
+    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerBaseRtt(0, 4185);
+    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerWin(1, 68000);
+    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerBaseRtt(1, 4185);
+    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerWin(1, 68000);
+    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerBaseRtt(1, 4185);
+    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerWin(2, 68000);
+    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerBaseRtt(2, 4185);
+
     NS_LOG_INFO("Finished DSL emitted setup.");
 
     /*

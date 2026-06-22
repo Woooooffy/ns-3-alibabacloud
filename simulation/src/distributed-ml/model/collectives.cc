@@ -339,11 +339,14 @@ namespace ns3 {
 		Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
 			.Bind(bid).Bind(sid).Bind(sendpeer).Bind(srcbuf).Bind(srcoff).Bind(dstbuf).Bind(dstoff).Bind(nElems);
 
-		// RdmaHw owns pacing/congestion-control/PFC end-to-end; no manual fragmentation needed
+		// RdmaHw owns pacing/congestion-control/PFC end-to-end; no manual fragmentation needed.
+		// win/baseRtt bound in-flight bytes to the path's bandwidth-delay product
+		// (mirrors astra-sim's pairBdp/pairRtt) -- without this RdmaQueuePair::IsWinBound()
+		// never trips and the flow streams unbounded at full line rate.
 		m_app->GetRdmaDriver()->AddQueuePair(
 			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), flowId, totalBytes, MSCCL_RDMA_PG,
 			m_app->GetMyIp(), m_app->GetPeerIp(sendpeer), sport, MSCCL_RDMA_DPORT,
-			0, 0, finishCb, Callback<void>());
+			m_app->GetPeerWin(sendpeer), m_app->GetPeerBaseRtt(sendpeer), finishCb, Callback<void>());
 	}
 
 	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
@@ -526,6 +529,12 @@ namespace ns3 {
 
 	Ipv4Address CollectivesApplication::GetPeerIp(int16_t peer){
 		return DynamicCast<GPU>(GetNode())->GetPeerIpAddr(peer);
+	}
+	uint32_t CollectivesApplication::GetPeerWin(int16_t peer){
+		return DynamicCast<GPU>(GetNode())->GetPeerWin(peer);
+	}
+	uint64_t CollectivesApplication::GetPeerBaseRtt(int16_t peer){
+		return DynamicCast<GPU>(GetNode())->GetPeerBaseRtt(peer);
 	}
 
 	uint32_t CollectivesApplication::ComputeFlowId(int16_t peer){

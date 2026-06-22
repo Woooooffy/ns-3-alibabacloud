@@ -65,4 +65,19 @@ namespace ns3
 		return m_peerIpAddr.count(peer) > 0;
 	}
 
+	void GPU::PushPeerWin(int16_t peer, uint32_t winBytes){
+		m_peerWin[peer] = winBytes;
+	}
+	uint32_t GPU::GetPeerWin(int16_t peer) const{
+		auto it = m_peerWin.find(peer);
+		return it != m_peerWin.end() ? it->second : 0;
+	}
+	void GPU::PushPeerBaseRtt(int16_t peer, uint64_t rttNs){
+		m_peerBaseRtt[peer] = rttNs;
+	}
+	uint64_t GPU::GetPeerBaseRtt(int16_t peer) const{
+		auto it = m_peerBaseRtt.find(peer);
+		return it != m_peerBaseRtt.end() ? it->second : 0;
+	}
+
 }

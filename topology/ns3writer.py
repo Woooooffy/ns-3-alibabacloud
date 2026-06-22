@@ -279,6 +279,21 @@ class NS3Writer:
 				)
 		self.emit("")
 
+		self.emit("// peer RDMA pacing: bandwidth-delay-product window + base RTT per peer")
+		for name, peer_wins in insn.gpu_peer_win.items():
+			gpu_expr = f"gpunodes.Get({self.gpus[name]})"
+			peer_rtts = insn.gpu_peer_rtt[name]
+			for peer_name, win_bytes in peer_wins.items():
+				self.emit(
+					f"DynamicCast<GPU>({gpu_expr})->PushPeerWin("
+					f"{self.gpus[peer_name]}, {win_bytes});"
+				)
+				self.emit(
+					f"DynamicCast<GPU>({gpu_expr})->PushPeerBaseRtt("
+					f"{self.gpus[peer_name]}, {peer_rtts[peer_name]});"
+				)
+		self.emit("")
+
 		if any(insn.flow_rules.values()):
 			self.emit("// custom flow-id forwarding rules (bypasses ECMP for matching flows)")
 			for sw_name, rules in insn.flow_rules.items():

@@ -37,6 +37,14 @@ namespace ns3
 		Ipv4Address GetPeerIpAddr(int16_t peer) const;
 		bool HasPeerIpAddr(int16_t peer) const;
 
+		// per-peer RDMA pacing: bandwidth-delay-product window (bytes) and base
+		// RTT (ns) over the path to that peer, used to bound in-flight bytes on
+		// RdmaQueuePairs (mirrors astra-sim's pairBdp/pairRtt)
+		void PushPeerWin(int16_t peer, uint32_t winBytes);
+		uint32_t GetPeerWin(int16_t peer) const;
+		void PushPeerBaseRtt(int16_t peer, uint64_t rttNs);
+		uint64_t GetPeerBaseRtt(int16_t peer) const;
+
 		private:
 		int m_maxNChannels;
 		struct mscclAlgorithm m_algo;
@@ -45,6 +53,8 @@ namespace ns3
 		std::map<int16_t, std::vector<Address>> m_sendPeerAddr;
 		Ipv4Address m_myIp;
 		std::map<int16_t, Ipv4Address> m_peerIpAddr;
+		std::map<int16_t, uint32_t> m_peerWin;
+		std::map<int16_t, uint64_t> m_peerBaseRtt;
 	};
 }
 #endif 

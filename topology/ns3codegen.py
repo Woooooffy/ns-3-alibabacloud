@@ -76,6 +76,10 @@ class NS3InstallRdmaFabric(NS3Insn):
 		self.gpu_rdma_routes: dict[str, list[tuple[str, str, int, bool]]] = {}
 		# gpu_name -> {peer_gpu_name: peer_ip}
 		self.gpu_peer_ip: dict[str, dict[str, str]] = {}
+		# gpu_name -> {peer_gpu_name: bandwidth-delay-product window in bytes}
+		self.gpu_peer_win: dict[str, dict[str, int]] = {}
+		# gpu_name -> {peer_gpu_name: base RTT in ns}
+		self.gpu_peer_rtt: dict[str, dict[str, int]] = {}
 		# switch_name -> [(flow_id, container_expr, my_endpoint_idx)], populated
 		# separately once a switch opts into custom flow forwarding (codegen step 8)
 		self.flow_rules: dict[str, list[tuple[int, str, int]]] = {}
@@ -100,6 +104,9 @@ class NS3CodeGenerator():
 		# are intentionally absent here, they need no routing table at all.
 		# node_name -> [(peer_name, container_expr, my_endpoint_idx)]
 		self.qbb_adj: dict[str, list[tuple[str, str, int]]] = {}
+		# container_expr -> (latency, bandwidth, mtu, type) attrs of that qbb link,
+		# so path RTT/bandwidth can be derived from the same adjacency used for routing
+		self.qbb_link_attrs: dict[str, tuple] = {}
 		# regular switches with `flowid_forwarding=true` in the DSL: get an
 		# explicit AddFlowForwardingRule per (src gpu, dst gpu) pair that crosses
 		# them, instead of relying purely on ECMP
@@ -201,6 +208,7 @@ class NS3CodeGenerator():
 			container_expr = f"devs{helper_id}_{link_id}"
 			self.qbb_adj.setdefault(src, []).append((dst, container_expr, 0))
 			self.qbb_adj.setdefault(dst, []).append((src, container_expr, 1))
+			self.qbb_link_attrs[container_expr] = attr
 
 	def GenSubmodule(self, parent_scope: Scope, insn: SubmoduleInsn, *args: Any):
 		module = self.modules.get(insn.module_name)
@@ -252,6 +260,46 @@ class NS3CodeGenerator():
 					q.append(peer)
 		return dist
 
+	@staticmethod
+	def _delay_to_ns(delay: tuple[float, str]) -> float:
+		value, unit = delay
+		factor = {"ns": 1.0, "us": 1e3, "ms": 1e6}[unit]
+		return float(value) * factor
+
+	@staticmethod
+	def _rate_to_bps(rate: tuple[float, str]) -> float:
+		value, unit = rate
+		factor = {
+			"Gbps": 1e9, "Mbps": 1e6, "Kbps": 1e3,
+			"GBps": 8e9, "MBps": 8e6, "KBps": 8e3,
+		}[unit]
+		return float(value) * factor
+
+	def _bfs_path_metrics(self, source: str) -> dict[str, tuple[int, float, float, float]]:
+		'''
+		Walk the same shortest-hop-count BFS tree as _bfs_dist (so this matches the
+		ECMP routing tables actually installed), but also accumulate, per reachable
+		node: (hop count, one-way propagation delay in ns, one-way transmission delay
+		for an MTU-size packet in ns, bottleneck/min-hop bandwidth in bps). Used to
+		derive a bandwidth-delay-product window and base RTT per GPU pair, mirroring
+		astra-sim's pairBdp/pairRtt (rtt = delay*2 + txDelay, bdp = rtt*bw/1e9/8).
+		'''
+		metrics: dict[str, tuple[int, float, float, float]] = {source: (0, 0.0, 0.0, float("inf"))}
+		q = deque([source])
+		while q:
+			cur = q.popleft()
+			cur_hops, cur_delay_ns, cur_tx_ns, cur_bw_bps = metrics[cur]
+			for peer, container_expr, _end in self.qbb_adj.get(cur, []):
+				if peer in metrics:
+					continue
+				latency, bandwidth, mtu, _type = self.qbb_link_attrs[container_expr]
+				delay_ns = self._delay_to_ns(latency)
+				bw_bps = self._rate_to_bps(bandwidth)
+				tx_ns = mtu * 8 / bw_bps * 1e9
+				metrics[peer] = (cur_hops + 1, cur_delay_ns + delay_ns, cur_tx_ns + tx_ns, min(cur_bw_bps, bw_bps))
+				q.append(peer)
+		return metrics
+
 	def _build_rdma_fabric(self) -> NS3InstallRdmaFabric:
 		fabric = NS3InstallRdmaFabric()
 		base_ip = ipaddress.IPv4Address("10.0.0.1")
@@ -276,7 +324,8 @@ class NS3CodeGenerator():
 		# an unrelated GPU -- every node's neighbors-at-distance-1 are exactly its
 		# valid ECMP next hops toward that destination.
 		for dst_name in self.gpus:
-			dist = self._bfs_dist(dst_name)
+			metrics = self._bfs_path_metrics(dst_name)
+			dist = {node: m[0] for node, m in metrics.items()}
 			dst_ip = fabric.gpu_ip[dst_name]
 			for node_name, node_links in self.qbb_adj.items():
 				if node_name == dst_name or node_name not in dist:
@@ -306,6 +355,11 @@ class NS3CodeGenerator():
 						(dst_ip, container_expr, end) for (_, container_expr, end) in next_hops)
 				else: # gpu
 					fabric.gpu_peer_ip.setdefault(node_name, {})[dst_name] = dst_ip
+					_, delay_ns, tx_ns, bw_bps = metrics[node_name]
+					rtt_ns = delay_ns * 2 + tx_ns
+					bdp_bytes = bw_bps * rtt_ns / 1e9 / 8
+					fabric.gpu_peer_rtt.setdefault(node_name, {})[dst_name] = round(rtt_ns)
+					fabric.gpu_peer_win.setdefault(node_name, {})[dst_name] = max(1, round(bdp_bytes))
 					for (peer, container_expr, end) in next_hops:
 						is_nvswitch = name_to_type[peer] == "nvswitch"
 						fabric.gpu_rdma_routes.setdefault(node_name, []).append(

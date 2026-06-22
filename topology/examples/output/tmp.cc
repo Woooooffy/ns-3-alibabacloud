@@ -134,6 +134,20 @@ int main(int argc, char *argv[]) {
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerIpAddr(1, Ipv4Address("10.0.0.2"));
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerIpAddr(2, Ipv4Address("10.0.0.3"));
     
+    // peer RDMA pacing: bandwidth-delay-product window + base RTT per peer
+    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerWin(0, 118000);
+    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerBaseRtt(0, 4720);
+    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerWin(2, 118000);
+    DynamicCast<GPU>(gpunodes.Get(1))->PushPeerBaseRtt(2, 4720);
+    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerWin(0, 118000);
+    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerBaseRtt(0, 4720);
+    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerWin(1, 118000);
+    DynamicCast<GPU>(gpunodes.Get(2))->PushPeerBaseRtt(1, 4720);
+    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerWin(1, 118000);
+    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerBaseRtt(1, 4720);
+    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerWin(2, 118000);
+    DynamicCast<GPU>(gpunodes.Get(0))->PushPeerBaseRtt(2, 4720);
+    
     
     /*
         n0 -> sw: devs0_0
