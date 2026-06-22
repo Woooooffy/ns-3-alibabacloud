@@ -16,6 +16,7 @@ using namespace ns3;
 int main(int argc, char *argv[]) {
 
     NS_LOG_COMPONENT_DEFINE("DGX1_TEST");
+    LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
     uint32_t inputBytes = (1 << 20);
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
@@ -148,6 +149,8 @@ int main(int argc, char *argv[]) {
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerIpAddr(1, Ipv4Address("10.0.0.2"));
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerIpAddr(2, Ipv4Address("10.0.0.3"));
 
+    NS_LOG_INFO("Finished DSL emitted setup.");
+
     /*
         n0 -> sw: devs0_0
         n1 -> sw: devs0_1
@@ -157,7 +160,7 @@ int main(int argc, char *argv[]) {
     const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
     std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
 
-    constexpr int N_NODES = 3;
+    // constexpr int N_NODES = 3;
     constexpr DataType::Type dtype = DataType::INT32;
     constexpr int N_CHUNKS = 1;
     const uint32_t INPUT_BYTES = inputBytes;
@@ -184,6 +187,8 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
     ApplicationContainer apps = app_helper.Install<GPU>(gpunodes);
+
+    NS_LOG_INFO("Finished installing collective apps.");
 
     CollectiveTester tester(apps, true, logtxt);
     if (CORRECTNESS_CHECK) {
