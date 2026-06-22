@@ -165,9 +165,6 @@ int main(int argc, char *argv[]) {
     // in elements, so total bytes is CHUNK_SIZE * N_CHUNKS * sizeof(datatype)
     bool CORRECTNESS_CHECK = true;
 
-    PacketSocketHelper packetSocket;
-    packetSocket.Install(gpunodes);
-
     TopoNodeSet topo(gpunodes);
     AlgoParseResult result = ParseAlgoFromXml(XML_ALGO.c_str(), topo);
     if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
