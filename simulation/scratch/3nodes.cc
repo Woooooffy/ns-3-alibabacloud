@@ -22,6 +22,11 @@ int main(int argc, char *argv[]) {
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
 	cmd.Parse(argc, argv);
 
+    // PFC backpressure (CheckAndSendPfc) runs unconditionally in SwitchNode, but only
+    // has an effect once QcnEnabled lets a stalled NIC's queue resume; ECN marking is
+    // separately gated per-switch by the EcnEnabled attribute set below.
+    Config::SetDefault("ns3::QbbNetDevice::QcnEnabled", BooleanValue(true));
+
     NodeContainer gpunodes;
     NodeContainer regswtches;
     NodeContainer nvswtches;
@@ -167,6 +172,31 @@ int main(int argc, char *argv[]) {
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerBaseRtt(1, 4185);
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerWin(2, 68000);
     DynamicCast<GPU>(gpunodes.Get(0))->PushPeerBaseRtt(2, 4185);
+
+    // switch MMU: PFC headroom + ECN thresholds per port (otherwise SwitchMmu's
+    // headroom[]/kmin[]/kmax[]/pmax[]/pfc_a_shift[] are uninitialized, which disables
+    // realistic PFC backpressure under the 2:1 incast each GPU sees during allgather)
+    DynamicCast<SwitchNode>(regswtches.Get(0))->SetAttribute("EcnEnabled", BooleanValue(true));
+    {
+        uint32_t _port = devs0_0.Get(1)->GetIfIndex();
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->ConfigEcn(_port, 65, 130, 0.2);
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->ConfigHdrm(_port, 48750);
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->pfc_a_shift[_port] = 3;
+    }
+    {
+        uint32_t _port = devs0_1.Get(1)->GetIfIndex();
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->ConfigEcn(_port, 65, 130, 0.2);
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->ConfigHdrm(_port, 48750);
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->pfc_a_shift[_port] = 3;
+    }
+    {
+        uint32_t _port = devs0_2.Get(1)->GetIfIndex();
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->ConfigEcn(_port, 65, 130, 0.2);
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->ConfigHdrm(_port, 48750);
+        DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->pfc_a_shift[_port] = 3;
+    }
+    DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->ConfigNPort(3);
+    DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu->node_id = DynamicCast<SwitchNode>(regswtches.Get(0))->GetId();
 
     NS_LOG_INFO("Finished DSL emitted setup.");
 

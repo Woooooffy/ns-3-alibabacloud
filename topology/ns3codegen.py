@@ -83,6 +83,9 @@ class NS3InstallRdmaFabric(NS3Insn):
 		# switch_name -> [(flow_id, container_expr, my_endpoint_idx)], populated
 		# separately once a switch opts into custom flow forwarding (codegen step 8)
 		self.flow_rules: dict[str, list[tuple[int, str, int]]] = {}
+		# switch_name/nvswitch_name -> [(container_expr, my_endpoint_idx, headroom_bytes,
+		# kmin_KB, kmax_KB, pmax, pfc_alpha_shift)], one entry per qbb port on that switch
+		self.mmu_config: dict[str, list[tuple[str, int, int, int, int, float, int]]] = {}
 
 	def __repr__(self) -> str:
 		return f"Install RDMA fabric routing ({len(self.gpu_ip)} gpus)"
@@ -300,6 +303,38 @@ class NS3CodeGenerator():
 				q.append(peer)
 		return metrics
 
+	def _build_switch_mmu_config(self) -> dict[str, list[tuple[str, int, int, int, int, float, int]]]:
+		'''
+		Per-switch/nvswitch PFC headroom + ECN threshold config, one entry per qbb
+		port, mirroring astra-sim's common.h switch-config loop (ConfigEcn/ConfigHdrm/
+		pfc_a_shift). SwitchMmu's headroom[]/kmin[]/kmax[]/pmax[]/pfc_a_shift[] arrays
+		are otherwise left completely uninitialized -- that silently disables realistic
+		PFC backpressure under incast, and pfc_a_shift[port] in particular is read by
+		GetPfcThreshold's bit-shift, so leaving it uninitialized is undefined behavior.
+		'''
+		if not self.qbb_link_attrs:
+			return {}
+		baseline_rate_bps = min(self._rate_to_bps(attrs[1]) for attrs in self.qbb_link_attrs.values())
+		config: dict[str, list[tuple[str, int, int, int, int, float, int]]] = {}
+		for name in list(self.switches) + list(self.nvswitches):
+			ports = []
+			for _peer, container_expr, end in self.qbb_adj.get(name, []):
+				latency, bandwidth, _mtu, _type = self.qbb_link_attrs[container_expr]
+				delay_s = self._delay_to_ns(latency) / 1e9
+				rate_bps = self._rate_to_bps(bandwidth)
+				headroom_bytes = round(rate_bps * delay_s * 3 / 8)  # 3 link-RTTs of headroom (astra-sim default)
+				kmin_bytes = rate_bps / 8 * 4e-6  # ~4us of queueing before ECN starts marking
+				kmax_bytes = kmin_bytes * 2
+				shift = 3  # 1/8 of remaining buffer, astra-sim default
+				rate = rate_bps
+				while rate > baseline_rate_bps and shift > 0:
+					shift -= 1
+					rate /= 2
+				ports.append((container_expr, end, headroom_bytes, round(kmin_bytes / 1000), round(kmax_bytes / 1000), 0.2, shift))
+			if ports:
+				config[name] = ports
+		return config
+
 	def _build_rdma_fabric(self) -> NS3InstallRdmaFabric:
 		fabric = NS3InstallRdmaFabric()
 		base_ip = ipaddress.IPv4Address("10.0.0.1")
@@ -364,4 +399,5 @@ class NS3CodeGenerator():
 						is_nvswitch = name_to_type[peer] == "nvswitch"
 						fabric.gpu_rdma_routes.setdefault(node_name, []).append(
 							(dst_ip, container_expr, end, is_nvswitch))
+		fabric.mmu_config = self._build_switch_mmu_config()
 		return fabric
