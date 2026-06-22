@@ -83,6 +83,7 @@ int main(int argc, char *argv[]) {
     {
         Ptr<RdmaHw> rdmaHw_gpu0 = CreateObject<RdmaHw>();
         rdmaHw_gpu0->SetAttribute("GPUsPerServer", UintegerValue(1));
+        rdmaHw_gpu0->SetAttribute("L2AckInterval", UintegerValue(1));
         Ptr<RdmaDriver> rdmaDriver_gpu0 = CreateObject<RdmaDriver>();
         rdmaDriver_gpu0->SetNode(gpunodes.Get(0));
         rdmaDriver_gpu0->SetRdmaHw(rdmaHw_gpu0);
@@ -103,6 +104,7 @@ int main(int argc, char *argv[]) {
     {
         Ptr<RdmaHw> rdmaHw_gpu1 = CreateObject<RdmaHw>();
         rdmaHw_gpu1->SetAttribute("GPUsPerServer", UintegerValue(1));
+        rdmaHw_gpu1->SetAttribute("L2AckInterval", UintegerValue(1));
         Ptr<RdmaDriver> rdmaDriver_gpu1 = CreateObject<RdmaDriver>();
         rdmaDriver_gpu1->SetNode(gpunodes.Get(1));
         rdmaDriver_gpu1->SetRdmaHw(rdmaHw_gpu1);
@@ -123,6 +125,7 @@ int main(int argc, char *argv[]) {
     {
         Ptr<RdmaHw> rdmaHw_gpu2 = CreateObject<RdmaHw>();
         rdmaHw_gpu2->SetAttribute("GPUsPerServer", UintegerValue(1));
+        rdmaHw_gpu2->SetAttribute("L2AckInterval", UintegerValue(1));
         Ptr<RdmaDriver> rdmaDriver_gpu2 = CreateObject<RdmaDriver>();
         rdmaDriver_gpu2->SetNode(gpunodes.Get(2));
         rdmaDriver_gpu2->SetRdmaHw(rdmaHw_gpu2);
