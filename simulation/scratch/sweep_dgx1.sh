@@ -7,8 +7,8 @@ set -e
 cd "$(dirname "$0")/.."
 
 OUTPUT_FILE="scratch/dgx1_sweep_results.txt"
-START_BYTES=((0.75 * 1024))      # 0.75KB
-END_BYTES=$((1.5 * 1024 * 1024 * 1024))  # 1.5GB
+START_BYTES=$((768))      # 0.75KB
+END_BYTES=$((3 * 512 * 1024 * 1024))  # 1.5GB
 
 > "$OUTPUT_FILE"
 echo "input_bytes simulated_time_ns" >> "$OUTPUT_FILE"

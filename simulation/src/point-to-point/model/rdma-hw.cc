@@ -404,6 +404,18 @@ int RdmaHw::SendPacketComplete(Ptr<Packet> p, CustomHeader &ch)
 	uint32_t nic_idx = GetNicIdxOfQp(qp);
 	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev;
 	SendComplete(qp);
+
+	if (m_ack_interval == 0){
+		// No-ack mode: the receiver never sends an Ack back (see
+		// ReceiverCheckSeq), so infer completion locally from this node's own
+		// send completion instead of waiting for one.
+		uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
+		qp->Acknowledge(seq + payload_size);
+		if (qp->IsFinished()){
+			QpComplete(qp);
+		}
+	}
+	return 0;
 }
 
 void RdmaHw::SendComplete(Ptr<RdmaQueuePair> qp)
@@ -586,6 +598,11 @@ int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size
 	uint64_t expected = q->ReceiverNextExpectedSeq;
 	if (seq == expected){
 		q->ReceiverNextExpectedSeq = expected + size;
+		if (m_ack_interval == 0){
+			// No-ack mode: never generate a periodic Ack; the sender infers
+			// completion locally from its own send completion instead.
+			return 5;
+		}
 		if (q->ReceiverNextExpectedSeq >= q->m_milestone_rx){
 			q->m_milestone_rx += m_ack_interval;
 			return 1; //Generate ACK

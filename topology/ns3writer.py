@@ -54,6 +54,11 @@ class NS3Writer:
 		self.emit("NodeContainer regswtches;")
 		self.emit("NodeContainer nvswtches;")
 		self.emit("")
+		self.emit("// PFC backpressure (CheckAndSendPfc) runs unconditionally in SwitchNode, but only")
+		self.emit("// has an effect once QcnEnabled lets a stalled NIC's queue resume; ECN marking is")
+		self.emit("// separately gated per-switch by the EcnEnabled attribute set below.")
+		self.emit('Config::SetDefault("ns3::QbbNetDevice::QcnEnabled", BooleanValue(true));')
+		self.emit("")
 
 	def _emit_main_end(self):
 		self.emit("")
@@ -278,6 +283,44 @@ class NS3Writer:
 					f"{self.gpus[peer_name]}, Ipv4Address(\"{peer_ip}\"));"
 				)
 		self.emit("")
+
+		self.emit("// peer RDMA pacing: bandwidth-delay-product window + base RTT per peer")
+		for name, peer_wins in insn.gpu_peer_win.items():
+			gpu_expr = f"gpunodes.Get({self.gpus[name]})"
+			peer_rtts = insn.gpu_peer_rtt[name]
+			for peer_name, win_bytes in peer_wins.items():
+				self.emit(
+					f"DynamicCast<GPU>({gpu_expr})->PushPeerWin("
+					f"{self.gpus[peer_name]}, {win_bytes});"
+				)
+				self.emit(
+					f"DynamicCast<GPU>({gpu_expr})->PushPeerBaseRtt("
+					f"{self.gpus[peer_name]}, {peer_rtts[peer_name]});"
+				)
+		self.emit("")
+
+		if insn.mmu_config:
+			self.emit("// switch/nvswitch MMU: PFC headroom + ECN thresholds per port (otherwise")
+			self.emit("// SwitchMmu's headroom[]/kmin[]/kmax[]/pmax[]/pfc_a_shift[] are uninitialized,")
+			self.emit("// which disables realistic PFC backpressure under incast)")
+			for name, ports in insn.mmu_config.items():
+				if name in self.switches:
+					node_expr = f"DynamicCast<SwitchNode>(regswtches.Get({self.switches[name]}))"
+					self.emit(f'{node_expr}->SetAttribute("EcnEnabled", BooleanValue(true));')
+				else:
+					node_expr = f"DynamicCast<NVSwitchNode>(nvswtches.Get({self.nvswitches[name]}))"
+				for container_expr, end, headroom_bytes, kmin_kb, kmax_kb, pmax, shift in ports:
+					self.emit(f"{{")
+					self.indent += 1
+					self.emit(f"uint32_t _port = {container_expr}.Get({end})->GetIfIndex();")
+					self.emit(f"{node_expr}->m_mmu->ConfigEcn(_port, {kmin_kb}, {kmax_kb}, {pmax});")
+					self.emit(f"{node_expr}->m_mmu->ConfigHdrm(_port, {headroom_bytes});")
+					self.emit(f"{node_expr}->m_mmu->pfc_a_shift[_port] = {shift};")
+					self.indent -= 1
+					self.emit(f"}}")
+				self.emit(f"{node_expr}->m_mmu->ConfigNPort({len(ports)});")
+				self.emit(f"{node_expr}->m_mmu->node_id = {node_expr}->GetId();")
+			self.emit("")
 
 		if any(insn.flow_rules.values()):
 			self.emit("// custom flow-id forwarding rules (bypasses ECMP for matching flows)")
