@@ -132,6 +132,16 @@ class NewLinkInsn(Insn):
 	def __repr__(self) -> str:
 		return f"NewLinkInsn(src {self.src}, dst {self.dst}, attrs {self.attrs})"
 
+class RdmaConfigInsn(Insn):
+	def __init__(self, attrs: dict[str, Any]):
+		self.attrs: dict[str, Any] = attrs
+
+	def __repr__(self) -> str:
+		return f"RdmaConfigInsn({self.attrs})"
+
+	def simple_print(self) -> str:
+		return __repr__(self) + " "
+
 class SubmoduleInsn(Insn):
 	def __init__(self, name: str, submodule_name: str, *args: Any):
 		self.name: str = name
@@ -222,6 +232,9 @@ class TopoTransformer(Transformer):
 		dst_name = items[1]	
 		attrs = dict(items[2:])
 		return NewLinkInsn(src_name, dst_name, **attrs)
+
+	def rdma_stmt(self, items) -> Insn:
+		return RdmaConfigInsn(dict(items))
 
 	def use_stmt(self, items) -> Insn:
 		submodule_name = items[0]

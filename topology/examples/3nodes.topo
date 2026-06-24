@@ -1,9 +1,10 @@
 module main(){
+    rdma L2AckInterval=1 L2ChunkSize=4000 Mtu=1500 CcMode=12;
     for i in (0, 2){
         node n{i} type=gpu;
     }
     node sw type=switch;
     for i in (0, 2){
-        link n{i} sw bandwidth=200[Gbps] latency=1[us];
+        link n{i} sw bandwidth=71[Gbps] latency=1[us];
     }
 }

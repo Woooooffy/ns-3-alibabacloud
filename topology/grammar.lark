@@ -8,6 +8,7 @@ params: NAME ("," NAME)*
 stmt:  node_stmt ";"
     | link_stmt ";"
     | use_stmt ";"
+    | rdma_stmt ";"
     | for_stmt
 		| if_stmt
 
@@ -28,6 +29,13 @@ ref: name ("." name)*
 
 // ----------------- USE -----------------
 use_stmt: "use" name "(" [args] ")" "as" name
+
+
+// ----------------- RDMA CONFIG -----------------
+// uniform RdmaHw attributes applied to every GPU's RdmaHw instance (e.g.
+// "rdma L2AckInterval=1 L2ChunkSize=4000 Mtu=1500 CcMode=12;"), as opposed
+// to per-link attrs which vary per device
+rdma_stmt: "rdma" attr*
 
 args: value ("," value)*
 
