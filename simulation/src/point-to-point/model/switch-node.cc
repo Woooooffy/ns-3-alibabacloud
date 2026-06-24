@@ -120,9 +120,10 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 			NS_LOG_INFO("Switch " << m_id << " msccl flow-forwarding rule matched for flow " << ch.udp.mscclFlowId << ", sending out port " << idx);
 		}
 	}
-	if (idx < 0)
+	if (idx < 0){
 		idx = GetOutDev(p, ch);
 		NS_LOG_INFO("Switch " << m_id << " default ECMP lookup: sending out port " << idx << " for destination IP " << Ipv4Address(ch.dip));
+	}
 	if (idx >= 0){
 		NS_ASSERT_MSG(m_devices[idx]->IsLinkUp(), "The routing table look up should return link that is up");
 
