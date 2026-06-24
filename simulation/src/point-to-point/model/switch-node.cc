@@ -16,10 +16,9 @@
 #include <cmath>
 
 namespace ns3 {
-
+NS_LOG_COMPONENT_DEFINE("SwitchNode");
 TypeId SwitchNode::GetTypeId (void)
 {
-	NS_LOG_COMPONENT_DEFINE("SwitchNode");
   static TypeId tid = TypeId ("ns3::SwitchNode")
     .SetParent<Node> ()
     .AddConstructor<SwitchNode> ()
