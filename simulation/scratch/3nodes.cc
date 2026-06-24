@@ -90,7 +90,7 @@ int main(int argc, char *argv[]) {
             Ptr<RdmaHw> rdmaHw = CreateObject<RdmaHw>();
             rdmaHw->SetAttribute("GPUsPerServer", UintegerValue(1));
             rdmaHw->SetAttribute("CcMode", UintegerValue(12));
-            rdmaHw->SetAttribute("L2AckInterval", UintegerValue(1));
+            rdmaHw->SetAttribute("L2AckInterval", UintegerValue(0));
             rdmaHw->SetAttribute("L2ChunkSize", UintegerValue(4000));
             rdmaHw->SetAttribute("Mtu", UintegerValue(1500));
             Ptr<RdmaDriver> rdmaDriver = CreateObject<RdmaDriver>();
