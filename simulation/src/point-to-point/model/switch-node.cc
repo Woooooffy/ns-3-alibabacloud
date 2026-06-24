@@ -3,7 +3,7 @@
 #include "ns3/ipv4-header.h"
 #include "ns3/pause-header.h"
 #include "ns3/flow-id-tag.h"
-#include "ns3/msccl-flow-id-tag.h"
+#include "ns3/msccl-flow-id-header.h"
 #include "ns3/boolean.h"
 #include "ns3/uinteger.h"
 #include "ns3/double.h"
@@ -112,13 +112,10 @@ void SwitchNode::CheckAndSendResume(uint32_t inDev, uint32_t qIndex){
 
 void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 	int idx = -1;
-	if (m_customFlowForwarding && ch.l3Prot == 0x11){ // UDP data packet: try custom flow match before falling back to ECMP
-		MscclFlowIdTag flowTag;
-		if (p->PeekPacketTag(flowTag)){
-			auto search = m_flowForwardingTable.find(flowTag.GetFlowId());
-			if (search != m_flowForwardingTable.end())
-				idx = static_cast<int>(search->second);
-		}
+	if (m_customFlowForwarding && ch.l3Prot == 0x11 && ch.udp.mscclFlowId != MscclFlowIdHeader::NO_FLOW_ID){ // UDP data packet: try custom flow match before falling back to ECMP
+		auto search = m_flowForwardingTable.find(ch.udp.mscclFlowId);
+		if (search != m_flowForwardingTable.end())
+			idx = static_cast<int>(search->second);
 	}
 	if (idx < 0)
 		idx = GetOutDev(p, ch);

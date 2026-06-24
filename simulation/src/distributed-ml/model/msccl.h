@@ -26,6 +26,9 @@ static_assert(MSCCL_MAX_NUM_STEPS <= 256, "MSCCL interpreter doesn't allow for m
 #define MSCCL_OUTPUT_BUFFER 1
 #define MSCCL_SCRATCH_BUFFER 2
 
+// sentinel for mscclTransfer::mscclFlowId meaning "no flow id assigned"
+#define MSCCL_FLOW_ID_NONE 0xFFFFFFFFu
+
 #define MSCCL_SEND 0
 #define MSCCL_RECV 1
 #define MSCCL_RECV_COPY_SEND 2
@@ -70,6 +73,10 @@ struct mscclTransfer {
   int16_t reductionPointer; // where the reduction starts
   uint8_t type;
   uint8_t count;
+  // app-level msccl flow id for this step's RDMA transfer, used by switches for
+  // custom flow-based forwarding instead of plain ECMP. MSCCL_FLOW_ID_NONE if
+  // the XML algorithm didn't assign one to this step.
+  uint32_t mscclFlowId;
 };
 
 // print method
@@ -97,8 +104,13 @@ inline std::ostream& operator<<(std::ostream& os, const mscclTransfer& t) {
   }
 
   os << ", type=" << static_cast<int>(t.type)
-     << ", count=" << static_cast<int>(t.count)
-     << " }";
+     << ", count=" << static_cast<int>(t.count);
+
+  if (t.mscclFlowId != MSCCL_FLOW_ID_NONE) {
+    os << ", mscclFlowId=" << t.mscclFlowId;
+  }
+
+  os << " }";
 
   return os;
 }

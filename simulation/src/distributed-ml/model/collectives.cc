@@ -272,7 +272,7 @@ namespace ns3 {
 		m_pendingSends[sock].push(send);
 	}
 
-	void MscclChannel::Send(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff){
+	void MscclChannel::Send(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId){
 		if (sendpeer < 0){
 			NS_FATAL_ERROR("Send peer is negative in Send");
 		}
@@ -280,7 +280,7 @@ namespace ns3 {
 			NS_FATAL_ERROR("Invalid dst offset in Send");
 		}
 		if (m_app->IsRdmaPeer(sendpeer)){
-			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff);
+			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId);
 			return;
 		}
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
@@ -326,7 +326,7 @@ namespace ns3 {
 		m_app->QueueFragmentsForDevice(dev, std::move(frags));
 	}
 
-	void MscclChannel::SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff){
+	void MscclChannel::SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId){
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 		// distinct sport per send call to keep RdmaHw's (dip,sport,pg) qp key unique
 		// across concurrent in-flight transfers to the same peer on this channel
@@ -346,10 +346,13 @@ namespace ns3 {
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
 			<< sendpeer << " totalBytes=" << totalBytes << " win=" << m_app->GetPeerWin(sendpeer)
 			<< " baseRtt=" << m_app->GetPeerBaseRtt(sendpeer) << " at t=" << Simulator::Now().GetNanoSeconds());
+		// mscclFlowId comes from the XML algorithm's per-step "mscclflowid"
+		// attribute (parsed in topo.cc); MSCCL_FLOW_ID_NONE if the step didn't
+		// assign one, in which case switches fall back to plain ECMP for this qp
 		m_app->GetRdmaDriver()->AddQueuePair(
 			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), flowId, totalBytes, MSCCL_RDMA_PG,
 			m_app->GetMyIp(), m_app->GetPeerIp(sendpeer), sport, MSCCL_RDMA_DPORT,
-			m_app->GetPeerWin(sendpeer), m_app->GetPeerBaseRtt(sendpeer), finishCb, Callback<void>());
+			m_app->GetPeerWin(sendpeer), m_app->GetPeerBaseRtt(sendpeer), mscclFlowId, finishCb, Callback<void>());
 	}
 
 	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
@@ -613,7 +616,7 @@ namespace ns3 {
 		int16_t dstoff = tran->dstoffset;
 		switch (tran->type){
 			case MSCCL_SEND:
-				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff);
+				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId);
 				break;
 			case MSCCL_RECV:
 				chan->Recv(bid, sid, recvPeer, nElems, dstbuf, dstoff);

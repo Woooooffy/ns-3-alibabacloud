@@ -251,6 +251,18 @@ namespace ns3
 					XML_GET_PROP_INT(stepNode, "deps", depend_step);
 					XML_GET_PROP_INT(stepNode, "hasdep", has_dependence);
 
+					// optional: not every step carries a flow id (e.g. recv steps in
+					// the example XML), so this attribute is read leniently instead
+					// of via XML_GET_PROP_INT, which fails the whole parse if missing
+					uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE;
+					{
+						xmlChar* flowIdProp = xmlGetProp(stepNode, BAD_CAST "mscclflowid");
+						if (flowIdProp) {
+							mscclFlowId = (uint32_t) atoi((const char*)flowIdProp);
+							xmlFree(flowIdProp);
+						}
+					}
+
 					if (s >= MSCCL_MAX_NUM_STEPS){
 						NS_LOG_WARN("MSCCL: too many steps are requested. Max number of steps: " << MSCCL_MAX_NUM_STEPS << ", requested: " << s+1  << ". ");
 						return AlgoParseResult::INVALID_USE_ERROR;
@@ -346,6 +358,7 @@ namespace ns3
 						msccltran->srcoffset = srcoffset;
 						msccltran->dstbuffer = dstbufferInt;
 						msccltran->dstoffset = dstoffset;
+						msccltran->mscclFlowId = mscclFlowId;
 
 						if (count < 0 || count >= MSCCL_MAX_COUNT){
 							NS_LOG_WARN("MSCCL: count (" << count << ") must be positive and less than " << MSCCL_MAX_COUNT);
