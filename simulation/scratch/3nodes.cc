@@ -16,6 +16,7 @@ using namespace ns3;
 int main(int argc, char *argv[]) {
 		NS_LOG_COMPONENT_DEFINE("DGX1_TEST");
     LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
+		LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
     uint32_t inputBytes = (1 << 20);
 		CommandLine cmd;
 		cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
@@ -198,9 +199,9 @@ int main(int argc, char *argv[]) {
 		const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
     // teccl_algo.xml has mscclflowid set on every send step, to test the custom
     // flow forwarding pipeline wired up above.
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/teccl_algo.xml");
+//    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/teccl_algo.xml");
 		// std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
-		// std::string XML_ALGO = "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/teccl.xml";
+		 std::string XML_ALGO = "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/teccl.xml";
 
 
     // constexpr int N_NODES = 3;
@@ -209,7 +210,7 @@ int main(int argc, char *argv[]) {
     const uint32_t INPUT_BYTES = inputBytes;
     int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
     // in elements, so total bytes is CHUNK_SIZE * N_CHUNKS * sizeof(datatype)
-    bool CORRECTNESS_CHECK = false;
+    bool CORRECTNESS_CHECK = true;
 
     TopoNodeSet topo(gpunodes);
     AlgoParseResult result = ParseAlgoFromXml(XML_ALGO.c_str(), topo);
