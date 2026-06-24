@@ -1,4 +1,5 @@
 module main(){
+    rdma L2AckInterval=1 L2ChunkSize=4000 Mtu=1500 CcMode=12;
     for i in (0, 2){
         node n{i} type=gpu;
     }

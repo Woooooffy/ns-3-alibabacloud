@@ -65,6 +65,9 @@ class NS3InstallRdmaFabric(NS3Insn):
 	def __init__(self):
 		self.gpu_ip: dict[str, str] = {}
 		self.gpus_per_server: int = 1
+		# uniform RdmaHw attributes (e.g. L2AckInterval, Mtu, CcMode), applied to
+		# every GPU's RdmaHw instance via SetAttribute
+		self.rdma_attrs: dict[str, int] = {}
 		# gpu_name -> [(container_expr, my_endpoint_idx)] for every qbb NIC the gpu
 		# owns, regardless of whether it ends up on any shortest path (it still
 		# needs an Ipv4 address and an RdmaHw-managed QbbNetDevice either way)
@@ -114,6 +117,10 @@ class NS3CodeGenerator():
 		# explicit AddFlowForwardingRule per (src gpu, dst gpu) pair that crosses
 		# them, instead of relying purely on ECMP
 		self.flow_forwarding_switches: set[str] = set()
+		# uniform RdmaHw attributes (e.g. L2AckInterval, Mtu, CcMode) from `rdma`
+		# DSL statements, applied to every GPU's RdmaHw instance; later
+		# occurrences override earlier ones
+		self.rdma_attrs: dict[str, int] = {}
 
 	def Generate(self) -> None:
 		self.GenerateModule(self.modules["main"])
@@ -149,6 +156,8 @@ class NS3CodeGenerator():
 				return self.GenIf(this_scope, insn, *args)
 			case LoopInsn():
 				return self.GenLoop(this_scope, insn, *args)
+			case RdmaConfigInsn():
+				return self.GenRdmaConfig(this_scope, insn, *args)
 			case _:
 				raise RuntimeError(f"Unrecognized instruction {insn}.")
 
@@ -247,6 +256,10 @@ class NS3CodeGenerator():
 		for i in range(start, end + 1):
 			self.GenerateModule(loop_block, i)
 
+	def GenRdmaConfig(self, this_scope: Scope, insn: RdmaConfigInsn, *args: Any):
+		for name, value in insn.attrs.items():
+			self.rdma_attrs[name] = Expr.resolve(value, this_scope)
+
 	# --------------------------------------------------
 	# RDMA fabric routing (BFS-ECMP)
 	# --------------------------------------------------
@@ -337,6 +350,7 @@ class NS3CodeGenerator():
 
 	def _build_rdma_fabric(self) -> NS3InstallRdmaFabric:
 		fabric = NS3InstallRdmaFabric()
+		fabric.rdma_attrs = self.rdma_attrs
 		base_ip = ipaddress.IPv4Address("10.0.0.1")
 		for name, idx in sorted(self.gpus.items(), key=lambda kv: kv[1]):
 			fabric.gpu_ip[name] = str(base_ip + idx)

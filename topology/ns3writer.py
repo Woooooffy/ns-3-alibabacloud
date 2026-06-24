@@ -312,6 +312,10 @@ class NS3Writer:
 			loop_body=[
 				"Ptr<RdmaHw> rdmaHw = CreateObject<RdmaHw>();",
 				f'rdmaHw->SetAttribute("GPUsPerServer", UintegerValue({insn.gpus_per_server}));',
+				*(
+					f'rdmaHw->SetAttribute("{name}", UintegerValue({value}));'
+					for name, value in sorted(insn.rdma_attrs.items())
+				),
 				"Ptr<RdmaDriver> rdmaDriver = CreateObject<RdmaDriver>();",
 				"rdmaDriver->SetNode(g.gpu);",
 				"rdmaDriver->SetRdmaHw(rdmaHw);",
