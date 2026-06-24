@@ -25,29 +25,29 @@ int main(int argc, char *argv[]) {
     NodeContainer gpunodes;
     NodeContainer regswtches;
     NodeContainer nvswtches;
-    
+
     // PFC backpressure (CheckAndSendPfc) runs unconditionally in SwitchNode, but only
     // has an effect once QcnEnabled lets a stalled NIC's queue resume; ECN marking is
     // separately gated per-switch by the EcnEnabled attribute set below.
     Config::SetDefault("ns3::QbbNetDevice::QcnEnabled", BooleanValue(true));
-    
+
     for (uint32_t i = 0; i < 3; ++i) { gpunodes.Add(CreateObject<GPU>()); }
     for (uint32_t i = 0; i < 1; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
     QbbHelper link_helper0;
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(9000));
     link_helper0.SetChannelAttribute("Delay", StringValue("1us"));
     link_helper0.SetDeviceAttribute("DataRate", StringValue("71Gbps"));
-    
+
     NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), regswtches.Get(0));
-    
+
     NetDeviceContainer devs0_1 = link_helper0.Install(gpunodes.Get(1), regswtches.Get(0));
-    
+
     NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), regswtches.Get(0));
-    
+
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     InternetStackHelper internetStack;
     internetStack.Install(gpunodes);
-    
+
     {
         struct _IpAssign { Ptr<NetDevice> dev; const char* hostMask; };
         std::vector<_IpAssign> _ipAssigns = {
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
             _ipv4.Assign(_tmp);
         }
     }
-    
+
     // SwitchNode routing tables (BFS ECMP)
     {
         struct _Route { Ptr<SwitchNode> node; Ipv4Address dst; Ptr<NetDevice> dev; };
@@ -76,7 +76,7 @@ int main(int argc, char *argv[]) {
             r.node->AddTableEntry(r.dst, r.dev->GetIfIndex());
         }
     }
-    
+
     // RdmaHw + RdmaDriver setup per GPU
     {
         struct _RdmaRoute { Ipv4Address dst; uint32_t ifIndex; bool isNvswitch; };
@@ -104,7 +104,7 @@ int main(int argc, char *argv[]) {
             g.gpu->AggregateObject(rdmaDriver);
         }
     }
-    
+
     // peer IP bookkeeping for the collectives app's RDMA-routed peers
     {
         struct _PeerIp { Ptr<Node> gpu; int16_t peerIdx; Ipv4Address peerIp; };
@@ -120,7 +120,7 @@ int main(int argc, char *argv[]) {
             DynamicCast<GPU>(p.gpu)->PushPeerIpAddr(p.peerIdx, p.peerIp);
         }
     }
-    
+
     // peer RDMA pacing: bandwidth-delay-product window + base RTT per peer
     {
         struct _PeerPacing { Ptr<Node> gpu; int16_t peerIdx; uint32_t winBytes; uint64_t baseRttNs; };
@@ -137,7 +137,7 @@ int main(int argc, char *argv[]) {
             DynamicCast<GPU>(p.gpu)->PushPeerBaseRtt(p.peerIdx, p.baseRttNs);
         }
     }
-    
+
     // switch/nvswitch MMU: PFC headroom + ECN thresholds per port (otherwise
     // SwitchMmu's headroom[]/kmin[]/kmax[]/pmax[]/pfc_a_shift[] are uninitialized,
     // which disables realistic PFC backpressure under incast)
@@ -152,7 +152,7 @@ int main(int argc, char *argv[]) {
             n.mmu->node_id = n.node->GetId();
         }
     }
-    
+
     {
         struct _MmuPort { Ptr<SwitchMmu> mmu; uint32_t port; uint32_t headroomBytes; uint32_t kminKB; uint32_t kmaxKB; double pmax; uint32_t shift; };
         std::vector<_MmuPort> _mmuPorts = {
@@ -199,9 +199,9 @@ int main(int argc, char *argv[]) {
 		const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
     // teccl_algo.xml has mscclflowid set on every send step, to test the custom
     // flow forwarding pipeline wired up above.
-//    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/teccl_algo.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/teccl_algo.xml");
 		// std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
-		 std::string XML_ALGO = "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/teccl.xml";
+	// std::string XML_ALGO = "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/teccl.xml";
 
 
     // constexpr int N_NODES = 3;
@@ -255,5 +255,5 @@ int main(int argc, char *argv[]) {
     Simulator::Destroy();
     NS_LOG_UNCOND("Done simulation");
     return 0;
-    
+
 }

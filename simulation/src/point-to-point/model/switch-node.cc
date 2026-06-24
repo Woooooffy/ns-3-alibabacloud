@@ -115,15 +115,16 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 	int idx = -1;
 	if (m_customFlowForwarding && ch.l3Prot == 0x11 && ch.udp.mscclFlowId != MscclFlowIdHeader::NO_FLOW_ID){ // UDP data packet: try custom flow match before falling back to ECMP
 		auto search = m_flowForwardingTable.find(ch.udp.mscclFlowId);
-		if (search != m_flowForwardingTable.end())
+		if (search != m_flowForwardingTable.end()){
 			idx = static_cast<int>(search->second);
 			NS_LOG_INFO("Switch " << m_id << " msccl flow-forwarding rule matched for flow " << ch.udp.mscclFlowId << ", sending out port " << idx);
+		}
 	}
 	if (idx < 0)
 		idx = GetOutDev(p, ch);
+		NS_LOG_INFO("Switch " << m_id << " default ECMP lookup: sending out port " << idx << " for destination IP " << Ipv4Address(ch.dip));
 	if (idx >= 0){
 		NS_ASSERT_MSG(m_devices[idx]->IsLinkUp(), "The routing table look up should return link that is up");
-		NS_LOG_INFO("Switch " << m_id << " default ECMP lookup: sending out port " << idx << " for destination IP " << Ipv4Address(ch.dip));
 
 		// determine the qIndex
 		uint32_t qIndex;
