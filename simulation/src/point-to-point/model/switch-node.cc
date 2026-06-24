@@ -12,12 +12,14 @@
 #include "ppp-header.h"
 #include "ns3/int-header.h"
 #include "ns3/simulator.h"
+#include "ns3/core-module.h"
 #include <cmath>
 
 namespace ns3 {
 
 TypeId SwitchNode::GetTypeId (void)
 {
+	NS_LOG_COMPONENT_DEFINE("SwitchNode");
   static TypeId tid = TypeId ("ns3::SwitchNode")
     .SetParent<Node> ()
     .AddConstructor<SwitchNode> ()
@@ -116,11 +118,13 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		auto search = m_flowForwardingTable.find(ch.udp.mscclFlowId);
 		if (search != m_flowForwardingTable.end())
 			idx = static_cast<int>(search->second);
+			NS_LOG_INFO("Switch " << m_id << " msccl flow-forwarding rule matched for flow " << ch.udp.mscclFlowId << ", sending out port " << idx);
 	}
 	if (idx < 0)
 		idx = GetOutDev(p, ch);
 	if (idx >= 0){
 		NS_ASSERT_MSG(m_devices[idx]->IsLinkUp(), "The routing table look up should return link that is up");
+		NS_LOG_INFO("Switch " << m_id << " default ECMP lookup: sending out port " << idx << " for destination IP " << Ipv4Address(ch.dip));
 
 		// determine the qIndex
 		uint32_t qIndex;
@@ -366,7 +370,7 @@ void SwitchNode::PrintSwitchQlen(FILE* qlen_output){
 			fflush(qlen_output);
 		}
 		last_port_qlen[i] = port_len;
-	}		
+	}
 }
 
 /**
@@ -384,7 +388,7 @@ void SwitchNode::PrintSwitchBw(FILE* bw_output, uint32_t bw_mon_interval){
 		fprintf(bw_output, "%lu, %u, %u, %f\n", Simulator::Now().GetTimeStep(), m_id, i, bw);
 		fflush(bw_output);
 		last_txBytes[i] = m_txBytes[i];
-	}	
+	}
 }
 
 } /* namespace ns3 */

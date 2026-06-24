@@ -165,8 +165,30 @@ int main(int argc, char *argv[]) {
             p.mmu->pfc_a_shift[p.port] = p.shift;
         }
     }
-    
-    
+
+    // Custom flow forwarding: exercise the mscclflowid pipeline (XML attribute ->
+    // mscclTransfer -> RdmaQueuePair -> MscclFlowIdHeader on the wire -> switch
+    // lookup). With only one switch and one link per GPU there's no actual ECMP
+    // fan-out to bypass, so each rule below just points at the same port plain
+    // ECMP would already pick -- this only verifies the rule lookup fires, not
+    // that it changes the path. Flow ids match teccl_algo.xml's send steps.
+    {
+        Ptr<SwitchNode> sw0 = DynamicCast<SwitchNode>(regswtches.Get(0));
+        sw0->SetAttribute("CustomFlowForwarding", BooleanValue(true));
+        struct _FlowRule { uint32_t flowId; Ptr<NetDevice> outDev; };
+        std::vector<_FlowRule> _flowRules = {
+            {0, devs0_1.Get(1)}, // gpu0 -> gpu1
+            {1, devs0_2.Get(1)}, // gpu0 -> gpu2
+            {2, devs0_0.Get(1)}, // gpu1 -> gpu0
+            {3, devs0_2.Get(1)}, // gpu1 -> gpu2
+            {4, devs0_0.Get(1)}, // gpu2 -> gpu0
+            {5, devs0_1.Get(1)}, // gpu2 -> gpu1
+        };
+        for (auto& r : _flowRules) {
+            sw0->AddFlowForwardingRule(r.flowId, r.outDev->GetIfIndex());
+        }
+    }
+
     /*
         n0 -> sw: devs0_0
         n1 -> sw: devs0_1
@@ -174,7 +196,10 @@ int main(int argc, char *argv[]) {
     */
 
 		const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
-    std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
+    // teccl_algo.xml has mscclflowid set on every send step, to test the custom
+    // flow forwarding pipeline wired up above.
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/teccl_algo.xml");
+		// std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
 		// std::string XML_ALGO = "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/teccl.xml";
 
 
