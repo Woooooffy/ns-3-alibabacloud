@@ -43,6 +43,8 @@ class NS3Writer:
 		self.emit('#include "ns3/point-to-point-module.h"')
 		self.emit('#include "ns3/distributed-ml-module.h"')
 		self.emit("")
+		self.emit("#include <vector>")
+		self.emit("")
 		self.emit("using namespace ns3;")
 		self.emit("")
 
@@ -197,139 +199,249 @@ class NS3Writer:
 		self.emit("internetStack.Install(gpunodes);")
 		self.emit("")
 
+		self._emit_ip_assignment(insn)
+		self._emit_routing_table(insn.switch_routes, self.switches, "regswtches", "SwitchNode",
+			"SwitchNode routing tables (BFS ECMP)")
+		self._emit_routing_table(insn.nvswitch_routes, self.nvswitches, "nvswtches", "NVSwitchNode",
+			"NVSwitchNode routing tables (BFS ECMP)")
+		self._emit_rdma_hw_setup(insn)
+		self._emit_peer_ip_bookkeeping(insn)
+		self._emit_peer_pacing(insn)
+		self._emit_mmu_config(insn)
+		self._emit_flow_rules(insn)
+
+	def _emit_data_loop(self, struct_decls, vector_decl, entries, loop_var, loop_body):
+		'''
+		Emit `{ <struct decls>; std::vector<...> <vector_decl> = { <entries> }; for (auto& <loop_var> : ...) { <loop_body> } }`.
+		The shared shape behind every block below: pack the per-port/per-gpu/per-switch
+		data that scales with topology size into a vector literal (one line each, no
+		repeated API calls), then run the actual setup logic once in a loop body whose
+		size no longer grows with the topology.
+		'''
+		self.emit("{")
+		self.indent += 1
+		for decl in struct_decls:
+			self.emit(decl)
+		self.emit(f"{vector_decl} = {{")
+		self.indent += 1
+		for entry in entries:
+			self.emit(f"{entry},")
+		self.indent -= 1
+		self.emit("};")
+		self.emit(f"for (auto& {loop_var} : {vector_decl.split()[-1]}) {{")
+		self.indent += 1
+		for line in loop_body:
+			self.emit(line)
+		self.indent -= 1
+		self.emit("}")
+		self.indent -= 1
+		self.emit("}")
+		self.emit("")
+
+	def _emit_ip_assignment(self, insn):
+		# every qbb NIC a gpu owns gets the SAME identity address (the RdmaHw
+		# fabric is multi-rail/ECMP capable)
+		entries = []
 		for name, links in insn.gpu_links.items():
 			if not links:
 				continue
 			idx = self.gpus[name]
-			# every qbb NIC this gpu owns gets the SAME identity address (the
-			# RdmaHw fabric is multi-rail/ECMP capable), one nested scope per
-			# device so repeated _ipv4/_tmp declarations don't collide
 			for container_expr, end in links:
-				self.emit("{")
-				self.indent += 1
-				self.emit("Ipv4AddressHelper _ipv4;")
-				self.emit(f'_ipv4.SetBase("10.0.0.0", "255.0.0.0", "0.0.0.{idx + 1}");')
-				self.emit("NetDeviceContainer _tmp;")
-				self.emit(f"_tmp.Add({container_expr}.Get({end}));")
-				self.emit("_ipv4.Assign(_tmp);")
-				self.indent -= 1
-				self.emit("}")
-		self.emit("")
+				entries.append(f'{{{container_expr}.Get({end}), "0.0.0.{idx + 1}"}}')
+		if not entries:
+			return
+		self._emit_data_loop(
+			struct_decls=["struct _IpAssign { Ptr<NetDevice> dev; const char* hostMask; };"],
+			vector_decl="std::vector<_IpAssign> _ipAssigns",
+			entries=entries,
+			loop_var="a",
+			loop_body=[
+				"Ipv4AddressHelper _ipv4;",
+				'_ipv4.SetBase("10.0.0.0", "255.0.0.0", a.hostMask);',
+				"NetDeviceContainer _tmp;",
+				"_tmp.Add(a.dev);",
+				"_ipv4.Assign(_tmp);",
+			],
+		)
 
-		if insn.switch_routes:
-			self.emit("// SwitchNode routing tables (BFS ECMP)")
-		for sw_name, routes in insn.switch_routes.items():
-			sw_idx = self.switches[sw_name]
+	def _emit_routing_table(self, routes_dict, idx_map, container_name, cpp_type, comment):
+		# flattens every switch/nvswitch's routes into one vector + loop, regardless
+		# of how many switches there are or how many routes each one owns
+		entries = []
+		for node_name, routes in routes_dict.items():
+			node_expr = f"DynamicCast<{cpp_type}>({container_name}.Get({idx_map[node_name]}))"
 			for dst_ip, container_expr, end in routes:
-				self.emit("{")
-				self.indent += 1
-				self.emit(f'Ipv4Address _dst("{dst_ip}");')
-				self.emit(f"DynamicCast<SwitchNode>(regswtches.Get({sw_idx}))->AddTableEntry(_dst, {container_expr}.Get({end})->GetIfIndex());")
-				self.indent -= 1
-				self.emit("}")
-		if insn.switch_routes:
-			self.emit("")
+				entries.append(f'{{{node_expr}, Ipv4Address("{dst_ip}"), {container_expr}.Get({end})}}')
+		if not entries:
+			return
+		self.emit(f"// {comment}")
+		self._emit_data_loop(
+			struct_decls=[f"struct _Route {{ Ptr<{cpp_type}> node; Ipv4Address dst; Ptr<NetDevice> dev; }};"],
+			vector_decl="std::vector<_Route> _routes",
+			entries=entries,
+			loop_var="r",
+			loop_body=["r.node->AddTableEntry(r.dst, r.dev->GetIfIndex());"],
+		)
 
-		if insn.nvswitch_routes:
-			self.emit("// NVSwitchNode routing tables (BFS ECMP)")
-		for nvsw_name, routes in insn.nvswitch_routes.items():
-			nvsw_idx = self.nvswitches[nvsw_name]
-			for dst_ip, container_expr, end in routes:
-				self.emit("{")
-				self.indent += 1
-				self.emit(f'Ipv4Address _dst("{dst_ip}");')
-				self.emit(f"DynamicCast<NVSwitchNode>(nvswtches.Get({nvsw_idx}))->AddTableEntry(_dst, {container_expr}.Get({end})->GetIfIndex());")
-				self.indent -= 1
-				self.emit("}")
-		if insn.nvswitch_routes:
-			self.emit("")
-
-		self.emit("// RdmaHw + RdmaDriver setup per GPU")
+	def _emit_rdma_hw_setup(self, insn):
+		# one entry per active GPU (its own RdmaHw/RdmaDriver, its routes, its IP);
+		# the loop body that builds/wires them stays fixed-size as GPU count grows
+		entries = []
 		for name, idx in sorted(self.gpus.items(), key=lambda kv: kv[1]):
 			routes = insn.gpu_rdma_routes.get(name, [])
 			if not routes:
 				continue
-			gpu_expr = f"gpunodes.Get({idx})"
-			self.emit("{")
-			self.indent += 1
-			self.emit(f"Ptr<RdmaHw> rdmaHw_gpu{idx} = CreateObject<RdmaHw>();")
-			self.emit(f'rdmaHw_gpu{idx}->SetAttribute("GPUsPerServer", UintegerValue({insn.gpus_per_server}));')
-			self.emit(f"Ptr<RdmaDriver> rdmaDriver_gpu{idx} = CreateObject<RdmaDriver>();")
-			self.emit(f"rdmaDriver_gpu{idx}->SetNode({gpu_expr});")
-			self.emit(f"rdmaDriver_gpu{idx}->SetRdmaHw(rdmaHw_gpu{idx});")
-			self.emit(f"rdmaDriver_gpu{idx}->Init();")
-			self.emit("")
-			for dst_ip, container_expr, end, is_nvswitch in routes:
-				self.emit("{")
-				self.indent += 1
-				self.emit(f'Ipv4Address _peerIp("{dst_ip}");')
-				is_nv = "true" if is_nvswitch else "false"
-				self.emit(f"rdmaHw_gpu{idx}->AddTableEntry(_peerIp, {container_expr}.Get({end})->GetIfIndex(), {is_nv});")
-				self.indent -= 1
-				self.emit("}")
-			self.emit("")
-			self.emit(f"DynamicCast<GPU>({gpu_expr})->SetMyIp(Ipv4Address(\"{insn.gpu_ip[name]}\"));")
-			self.emit(f"{gpu_expr}->AggregateObject(rdmaDriver_gpu{idx});")
-			self.indent -= 1
-			self.emit("}")
-		self.emit("")
+			route_strs = ", ".join(
+				f'{{Ipv4Address("{dst_ip}"), {container_expr}.Get({end})->GetIfIndex(), {"true" if is_nvswitch else "false"}}}'
+				for dst_ip, container_expr, end, is_nvswitch in routes
+			)
+			entries.append(
+				f'{{gpunodes.Get({idx}), Ipv4Address("{insn.gpu_ip[name]}"), {{{route_strs}}}}}'
+			)
+		if not entries:
+			return
+		self.emit("// RdmaHw + RdmaDriver setup per GPU")
+		self._emit_data_loop(
+			struct_decls=[
+				"struct _RdmaRoute { Ipv4Address dst; uint32_t ifIndex; bool isNvswitch; };",
+				"struct _GpuRdmaSetup { Ptr<Node> gpu; Ipv4Address myIp; std::vector<_RdmaRoute> routes; };",
+			],
+			vector_decl="std::vector<_GpuRdmaSetup> _gpuSetups",
+			entries=entries,
+			loop_var="g",
+			loop_body=[
+				"Ptr<RdmaHw> rdmaHw = CreateObject<RdmaHw>();",
+				f'rdmaHw->SetAttribute("GPUsPerServer", UintegerValue({insn.gpus_per_server}));',
+				"Ptr<RdmaDriver> rdmaDriver = CreateObject<RdmaDriver>();",
+				"rdmaDriver->SetNode(g.gpu);",
+				"rdmaDriver->SetRdmaHw(rdmaHw);",
+				"rdmaDriver->Init();",
+				"for (auto& r : g.routes) {",
+				"    rdmaHw->AddTableEntry(r.dst, r.ifIndex, r.isNvswitch);",
+				"}",
+				"DynamicCast<GPU>(g.gpu)->SetMyIp(g.myIp);",
+				"g.gpu->AggregateObject(rdmaDriver);",
+			],
+		)
 
-		self.emit("// peer IP bookkeeping for the collectives app's RDMA-routed peers")
+	def _emit_peer_ip_bookkeeping(self, insn):
+		entries = []
 		for name, peers in insn.gpu_peer_ip.items():
 			gpu_expr = f"gpunodes.Get({self.gpus[name]})"
 			for peer_name, peer_ip in peers.items():
-				self.emit(
-					f"DynamicCast<GPU>({gpu_expr})->PushPeerIpAddr("
-					f"{self.gpus[peer_name]}, Ipv4Address(\"{peer_ip}\"));"
-				)
-		self.emit("")
+				entries.append(f'{{{gpu_expr}, {self.gpus[peer_name]}, Ipv4Address("{peer_ip}")}}')
+		if not entries:
+			return
+		self.emit("// peer IP bookkeeping for the collectives app's RDMA-routed peers")
+		self._emit_data_loop(
+			struct_decls=["struct _PeerIp { Ptr<Node> gpu; int16_t peerIdx; Ipv4Address peerIp; };"],
+			vector_decl="std::vector<_PeerIp> _peerIps",
+			entries=entries,
+			loop_var="p",
+			loop_body=["DynamicCast<GPU>(p.gpu)->PushPeerIpAddr(p.peerIdx, p.peerIp);"],
+		)
 
-		self.emit("// peer RDMA pacing: bandwidth-delay-product window + base RTT per peer")
+	def _emit_peer_pacing(self, insn):
+		entries = []
 		for name, peer_wins in insn.gpu_peer_win.items():
 			gpu_expr = f"gpunodes.Get({self.gpus[name]})"
 			peer_rtts = insn.gpu_peer_rtt[name]
 			for peer_name, win_bytes in peer_wins.items():
-				self.emit(
-					f"DynamicCast<GPU>({gpu_expr})->PushPeerWin("
-					f"{self.gpus[peer_name]}, {win_bytes});"
+				entries.append(
+					f"{{{gpu_expr}, {self.gpus[peer_name]}, {win_bytes}, {peer_rtts[peer_name]}}}"
 				)
-				self.emit(
-					f"DynamicCast<GPU>({gpu_expr})->PushPeerBaseRtt("
-					f"{self.gpus[peer_name]}, {peer_rtts[peer_name]});"
+		if not entries:
+			return
+		self.emit("// peer RDMA pacing: bandwidth-delay-product window + base RTT per peer")
+		self._emit_data_loop(
+			struct_decls=["struct _PeerPacing { Ptr<Node> gpu; int16_t peerIdx; uint32_t winBytes; uint64_t baseRttNs; };"],
+			vector_decl="std::vector<_PeerPacing> _peerPacing",
+			entries=entries,
+			loop_var="p",
+			loop_body=[
+				"DynamicCast<GPU>(p.gpu)->PushPeerWin(p.peerIdx, p.winBytes);",
+				"DynamicCast<GPU>(p.gpu)->PushPeerBaseRtt(p.peerIdx, p.baseRttNs);",
+			],
+		)
+
+	def _emit_mmu_config(self, insn):
+		if not insn.mmu_config:
+			return
+
+		node_entries = []
+		port_entries = []
+		for name, ports in insn.mmu_config.items():
+			if name in self.switches:
+				node_expr = f"regswtches.Get({self.switches[name]})"
+				mmu_expr = f"DynamicCast<SwitchNode>({node_expr})->m_mmu"
+				is_switch = "true"
+			else:
+				node_expr = f"nvswtches.Get({self.nvswitches[name]})"
+				mmu_expr = f"DynamicCast<NVSwitchNode>({node_expr})->m_mmu"
+				is_switch = "false"
+			node_entries.append(f"{{{node_expr}, {mmu_expr}, {len(ports)}, {is_switch}}}")
+			for container_expr, end, headroom_bytes, kmin_kb, kmax_kb, pmax, shift in ports:
+				port_entries.append(
+					f"{{{mmu_expr}, {container_expr}.Get({end})->GetIfIndex(), "
+					f"{headroom_bytes}, {kmin_kb}, {kmax_kb}, {pmax}, {shift}}}"
 				)
-		self.emit("")
 
-		if insn.mmu_config:
-			self.emit("// switch/nvswitch MMU: PFC headroom + ECN thresholds per port (otherwise")
-			self.emit("// SwitchMmu's headroom[]/kmin[]/kmax[]/pmax[]/pfc_a_shift[] are uninitialized,")
-			self.emit("// which disables realistic PFC backpressure under incast)")
-			for name, ports in insn.mmu_config.items():
-				if name in self.switches:
-					node_expr = f"DynamicCast<SwitchNode>(regswtches.Get({self.switches[name]}))"
-					self.emit(f'{node_expr}->SetAttribute("EcnEnabled", BooleanValue(true));')
-				else:
-					node_expr = f"DynamicCast<NVSwitchNode>(nvswtches.Get({self.nvswitches[name]}))"
-				for container_expr, end, headroom_bytes, kmin_kb, kmax_kb, pmax, shift in ports:
-					self.emit(f"{{")
-					self.indent += 1
-					self.emit(f"uint32_t _port = {container_expr}.Get({end})->GetIfIndex();")
-					self.emit(f"{node_expr}->m_mmu->ConfigEcn(_port, {kmin_kb}, {kmax_kb}, {pmax});")
-					self.emit(f"{node_expr}->m_mmu->ConfigHdrm(_port, {headroom_bytes});")
-					self.emit(f"{node_expr}->m_mmu->pfc_a_shift[_port] = {shift};")
-					self.indent -= 1
-					self.emit(f"}}")
-				self.emit(f"{node_expr}->m_mmu->ConfigNPort({len(ports)});")
-				self.emit(f"{node_expr}->m_mmu->node_id = {node_expr}->GetId();")
-			self.emit("")
+		self.emit("// switch/nvswitch MMU: PFC headroom + ECN thresholds per port (otherwise")
+		self.emit("// SwitchMmu's headroom[]/kmin[]/kmax[]/pmax[]/pfc_a_shift[] are uninitialized,")
+		self.emit("// which disables realistic PFC backpressure under incast)")
+		self._emit_data_loop(
+			struct_decls=["struct _MmuNode { Ptr<Node> node; Ptr<SwitchMmu> mmu; uint32_t nPorts; bool isSwitch; };"],
+			vector_decl="std::vector<_MmuNode> _mmuNodes",
+			entries=node_entries,
+			loop_var="n",
+			loop_body=[
+				'if (n.isSwitch) n.node->SetAttribute("EcnEnabled", BooleanValue(true));',
+				"n.mmu->ConfigNPort(n.nPorts);",
+				"n.mmu->node_id = n.node->GetId();",
+			],
+		)
+		self._emit_data_loop(
+			struct_decls=["struct _MmuPort { Ptr<SwitchMmu> mmu; uint32_t port; uint32_t headroomBytes; "
+				"uint32_t kminKB; uint32_t kmaxKB; double pmax; uint32_t shift; };"],
+			vector_decl="std::vector<_MmuPort> _mmuPorts",
+			entries=port_entries,
+			loop_var="p",
+			loop_body=[
+				"p.mmu->ConfigEcn(p.port, p.kminKB, p.kmaxKB, p.pmax);",
+				"p.mmu->ConfigHdrm(p.port, p.headroomBytes);",
+				"p.mmu->pfc_a_shift[p.port] = p.shift;",
+			],
+		)
 
-		if any(insn.flow_rules.values()):
-			self.emit("// custom flow-id forwarding rules (bypasses ECMP for matching flows)")
-			for sw_name, rules in insn.flow_rules.items():
-				sw_idx = self.switches[sw_name]
-				self.emit(f"DynamicCast<SwitchNode>(regswtches.Get({sw_idx}))->SetAttribute(\"CustomFlowForwarding\", BooleanValue(true));")
-				for flow_id, container_expr, end in rules:
-					self.emit(f"DynamicCast<SwitchNode>(regswtches.Get({sw_idx}))->AddFlowForwardingRule({flow_id}, {container_expr}.Get({end})->GetIfIndex());")
-			self.emit("")
+	def _emit_flow_rules(self, insn):
+		if not any(insn.flow_rules.values()):
+			return
+
+		self.emit("// custom flow-id forwarding rules (bypasses ECMP for matching flows)")
+		switch_entries = [
+			f"DynamicCast<SwitchNode>(regswtches.Get({self.switches[sw_name]}))"
+			for sw_name in insn.flow_rules
+		]
+		self._emit_data_loop(
+			struct_decls=[],
+			vector_decl="std::vector<Ptr<SwitchNode>> _flowSwitches",
+			entries=switch_entries,
+			loop_var="sw",
+			loop_body=['sw->SetAttribute("CustomFlowForwarding", BooleanValue(true));'],
+		)
+
+		rule_entries = []
+		for sw_name, rules in insn.flow_rules.items():
+			sw_expr = f"DynamicCast<SwitchNode>(regswtches.Get({self.switches[sw_name]}))"
+			for flow_id, container_expr, end in rules:
+				rule_entries.append(f"{{{sw_expr}, {flow_id}, {container_expr}.Get({end})->GetIfIndex()}}")
+		self._emit_data_loop(
+			struct_decls=["struct _FlowRule { Ptr<SwitchNode> sw; uint32_t flowId; uint32_t port; };"],
+			vector_decl="std::vector<_FlowRule> _flowRules",
+			entries=rule_entries,
+			loop_var="r",
+			loop_body=["r.sw->AddFlowForwardingRule(r.flowId, r.port);"],
+		)
 
 	# --------------------------------------------------
 	# GPU handling
