@@ -610,22 +610,13 @@ namespace ns3 {
         //根据qpindex
         // 添加一个回调
 		if(m_rdmaEQ!=nullptr&&m_rdmaEQ->m_qpGrp!=nullptr && m_node->GetNodeType() == 0){
-			// int qIndex = m_rdmaEQ->GetNextQindex(m_paused);
-			// if(qIndex != -1024) {
-				// Ptr<RdmaQueuePair> lastQp = m_rdmaEQ->GetQp(qIndex);
-				// std::cout<<" net: "<<this<<" QPindex: "<<qIndex<<" GetBytesLeft "<<lastQp->GetBytesLeft()<<" p->GetSize() "<<p->GetSize()<<std::endl;
-				// std::cout<<" net: "<<this<<" p->GetSize() "<<p->GetSize()<<std::endl;
-				// if(9000>=lastQp->GetBytesLeft()){
-				if(p->GetSize()<9000&&p->GetSize()>60){	//增加判断当前packet是否是ack报文的逻辑。
-				// if(lastQp->IsFinished()){s
-					// Simulator::Schedule(txTime,&sendfinsh,this);
-					CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header | CustomHeader::L4_Header);
-					// ch.getInt = 1; // parse INT header
-					p->PeekHeader(ch);
-					// std::cout<<" p->GetSize()>=lastQp->GetBytesLeft() "<<std::endl;
-					Simulator::Schedule(txTime,&QbbNetDevice::SendCallback,this,p);
-				}
-			// }
+			// Only RDMA data packets (UDP, protocol 0x11) should drive RdmaHw::SendPacketComplete;
+			// ACK/NACK/PFC/CNP control packets must not, or no-ack-mode completion tracking breaks.
+			CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header | CustomHeader::L4_Header);
+			p->PeekHeader(ch);
+			if(ch.l3Prot == 0x11){
+				Simulator::Schedule(txTime,&QbbNetDevice::SendCallback,this,p);
+			}
         }
 		Time txCompleteTime = txTime + m_tInterframeGap;
 		NS_LOG_LOGIC("Schedule TransmitCompleteEvent in " << txCompleteTime.GetSeconds() << "sec");
@@ -657,22 +648,13 @@ namespace ns3 {
 		m_phyTxBeginTrace(m_currentPkt);
 		Time txTime = m_bps.CalculateBytesTxTime(p->GetSize());
 		if(m_rdmaEQ!=nullptr&&m_rdmaEQ->m_qpGrp!=nullptr && m_node->GetNodeType() == 2){
-			// int qIndex = m_rdmaEQ->GetNextQindex(m_paused);
-			// if(qIndex != -1024) {
-				// Ptr<RdmaQueuePair> lastQp = m_rdmaEQ->GetQp(qIndex);
-				// std::cout<<" net: "<<this<<" QPindex: "<<qIndex<<" GetBytesLeft "<<lastQp->GetBytesLeft()<<" p->GetSize() "<<p->GetSize()<<std::endl;
-				// std::cout<<" net: "<<this<<" p->GetSize() "<<p->GetSize()<<std::endl;
-				// if(9000>=lastQp->GetBytesLeft()){
-				if(p->GetSize()<9000&&p->GetSize()>60){	//增加判断当前packet是否是ack报文的逻辑。
-				// if(lastQp->IsFinished()){s
-					// Simulator::Schedule(txTime,&sendfinsh,this);
-					CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header | CustomHeader::L4_Header);
-					// ch.getInt = 1; // parse INT header
-					p->PeekHeader(ch);
-					// std::cout<<" p->GetSize()>=lastQp->GetBytesLeft() "<<std::endl;
-					Simulator::Schedule(txTime,&QbbNetDevice::SendCallback,this,p);
-				}
-			// }
+			// Only RDMA data packets (UDP, protocol 0x11) should drive RdmaHw::SendPacketComplete;
+			// ACK/NACK/PFC/CNP control packets must not, or no-ack-mode completion tracking breaks.
+			CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header | CustomHeader::L4_Header);
+			p->PeekHeader(ch);
+			if(ch.l3Prot == 0x11){
+				Simulator::Schedule(txTime,&QbbNetDevice::SendCallback,this,p);
+			}
         }
 		Time txCompleteTime = txTime + m_tInterframeGap;
 		// std::cout << "txCompleteTime: " << txCompleteTime << std::endl;
