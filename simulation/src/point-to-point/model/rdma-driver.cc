@@ -5,6 +5,8 @@ namespace ns3 {
 /***********************
  * RdmaDriver
  **********************/
+NS_OBJECT_ENSURE_REGISTERED(RdmaDriver);
+
 TypeId RdmaDriver::GetTypeId (void)
 {
 	static TypeId tid = TypeId ("ns3::RdmaDriver")

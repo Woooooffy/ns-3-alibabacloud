@@ -3,6 +3,7 @@
 namespace ns3
 {
 	NS_LOG_COMPONENT_DEFINE("GPU");
+	NS_OBJECT_ENSURE_REGISTERED(GPU);
 
 	TypeId GPU::GetTypeId (void){
 		static TypeId tid = TypeId ("ns3::GPU")

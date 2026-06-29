@@ -17,6 +17,8 @@
 
 namespace ns3 {
 NS_LOG_COMPONENT_DEFINE("SwitchNode");
+NS_OBJECT_ENSURE_REGISTERED(SwitchNode);
+
 TypeId SwitchNode::GetTypeId (void)
 {
   static TypeId tid = TypeId ("ns3::SwitchNode")
