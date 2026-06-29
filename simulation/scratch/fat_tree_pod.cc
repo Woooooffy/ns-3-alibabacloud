@@ -4,7 +4,12 @@
 #include "ns3/point-to-point-module.h"
 #include "ns3/distributed-ml-module.h"
 
+#include <sys/stat.h>
+#include <fstream>
+#include <iostream>
 #include <vector>
+#include <array>
+#include <map>
 
 using namespace ns3;
 
