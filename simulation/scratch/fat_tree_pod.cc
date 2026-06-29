@@ -4,17 +4,12 @@
 #include "ns3/point-to-point-module.h"
 #include "ns3/distributed-ml-module.h"
 
-#include <sys/stat.h>
-#include <fstream>
-#include <iostream>
 #include <vector>
-#include <array>
-#include <map>
 
 using namespace ns3;
 
 int main(int argc, char *argv[]) {
-	NS_LOG_COMPONENT_DEFINE("3NODES_TEST");
+    NS_LOG_COMPONENT_DEFINE("FAT_TREE_POD_TEST");
     LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
 	LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
     uint32_t inputBytes = (1 << 20);
@@ -31,22 +26,28 @@ int main(int argc, char *argv[]) {
     // separately gated per-switch by the EcnEnabled attribute set below.
     Config::SetDefault("ns3::QbbNetDevice::QcnEnabled", BooleanValue(true));
 
-    for (uint32_t i = 0; i < 3; ++i) { gpunodes.Add(CreateObject<GPU>()); }
-    for (uint32_t i = 0; i < 1; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
+    for (uint32_t i = 0; i < 4; ++i) { gpunodes.Add(CreateObject<GPU>()); }
+    for (uint32_t i = 0; i < 4; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
     QbbHelper link_helper0;
-    // matches RdmaHw::Mtu below -- RdmaHw::GetNxtPacket caps payload at its own
-    // Mtu regardless of the device's L2 Mtu, so a larger device Mtu here would
-    // just be unused headroom while silently overestimating per-hop
-    // transmission delay in RdmaFabricHelper's BDP/RTT calculation.
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(1500));
-    link_helper0.SetChannelAttribute("Delay", StringValue("1us"));
-    link_helper0.SetDeviceAttribute("DataRate", StringValue("71Gbps"));
+    link_helper0.SetChannelAttribute("Delay", StringValue("700ns"));
+    link_helper0.SetDeviceAttribute("DataRate", StringValue("400Gbps"));
 
-    NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), regswtches.Get(0));
+    NetDeviceContainer devs0_0 = link_helper0.Install(regswtches.Get(0), gpunodes.Get(0));
 
-    NetDeviceContainer devs0_1 = link_helper0.Install(gpunodes.Get(1), regswtches.Get(0));
+    NetDeviceContainer devs0_1 = link_helper0.Install(regswtches.Get(0), gpunodes.Get(1));
 
-    NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), regswtches.Get(0));
+    NetDeviceContainer devs0_2 = link_helper0.Install(regswtches.Get(1), gpunodes.Get(2));
+
+    NetDeviceContainer devs0_3 = link_helper0.Install(regswtches.Get(1), gpunodes.Get(3));
+
+    NetDeviceContainer devs0_4 = link_helper0.Install(regswtches.Get(0), regswtches.Get(2));
+
+    NetDeviceContainer devs0_5 = link_helper0.Install(regswtches.Get(0), regswtches.Get(3));
+
+    NetDeviceContainer devs0_6 = link_helper0.Install(regswtches.Get(1), regswtches.Get(2));
+
+    NetDeviceContainer devs0_7 = link_helper0.Install(regswtches.Get(1), regswtches.Get(3));
 
     Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
@@ -54,33 +55,34 @@ int main(int argc, char *argv[]) {
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
 
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
-    // (also installs the internet stack on gpunodes -- do not call
-    // InternetStackHelper::Install(gpunodes) separately, it will fatal-error
-    // on a node that already has an Ipv4 object)
     RdmaFabricHelper rdmaFabric;
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
 
+
     /*
-        n0 -> sw: devs0_0
-        n1 -> sw: devs0_1
-        n2 -> sw: devs0_2
+        p_esw1_sw -> p_esw1_gpu1: devs0_0
+        p_esw1_sw -> p_esw1_gpu2: devs0_1
+        p_esw2_sw -> p_esw2_gpu1: devs0_2
+        p_esw2_sw -> p_esw2_gpu2: devs0_3
+        p_esw1_sw -> p_asw1: devs0_4
+        p_esw1_sw -> p_asw2: devs0_5
+        p_esw2_sw -> p_asw1: devs0_6
+        p_esw2_sw -> p_asw2: devs0_7
     */
 
-	const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
+    const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
     // algo3nodes.xml has mscclflowid set on every step; star_switch_entry.json maps
     // those same flow ids to switch ports, exercising the pipeline end to end (XML
     // attribute -> mscclTransfer -> RdmaQueuePair -> MscclFlowIdHeader on the wire ->
     // switch lookup).
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/algo3nodes.xml");
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/star_switch_entry.json");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/fat_tree_pod_symmetric.xml");
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/fat_tree_pod_symmetric_switch.json");
 
 
-    // constexpr int N_NODES = 3;
     constexpr DataType::Type dtype = DataType::INT32;
     constexpr int N_CHUNKS = 1;
     const uint32_t INPUT_BYTES = inputBytes;
     int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
-    // in elements, so total bytes is CHUNK_SIZE * N_CHUNKS * sizeof(datatype)
     bool CORRECTNESS_CHECK = true;
 
     AlgoTopology topo(gpunodes, regswtches);
@@ -128,5 +130,4 @@ int main(int argc, char *argv[]) {
     Simulator::Destroy();
     NS_LOG_UNCOND("Done simulation");
     return 0;
-
 }
