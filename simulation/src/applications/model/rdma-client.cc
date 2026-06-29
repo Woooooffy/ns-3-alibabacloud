@@ -34,6 +34,7 @@
 #include "ns3/socket.h"
 #include "ns3/uinteger.h"
 #include <ns3/rdma-driver.h>
+#include <ns3/msccl-flow-id-header.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -132,7 +133,7 @@ void RdmaClient::StartApplication(void) {
   if(nvls_enable) rdma->EnbaleNVLS();
   else rdma->DisableNVLS();
   rdma->AddQueuePair(src, dest, tag, m_size, m_pg, m_sip, m_dip, m_sport,
-                     m_dport, m_win, m_baseRtt,
+                     m_dport, m_win, m_baseRtt, MscclFlowIdHeader::NO_FLOW_ID,
                      MakeCallback(&RdmaClient::Finish, this),
                      MakeCallback(&RdmaClient::Sent, this));
 }

@@ -25,5 +25,6 @@ module pod(k) {
 }
 
 module main() {
+	rdma L2AckInterval=0 L2ChunkSize=4000 Mtu=1500 CcMode=12;
     use pod(4) as p;
 }

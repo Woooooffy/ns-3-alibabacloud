@@ -108,6 +108,8 @@ public:
 		  uint16_t pg;
 		  uint64_t seq;
 		  IntHeader ih;
+		  // MscclFlowIdHeader, innermost (right after the INT header)
+		  uint32_t mscclFlowId;
 	  } udp;
 	  // CnHeader
 	  struct {

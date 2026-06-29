@@ -96,7 +96,7 @@ namespace ns3 {
 
 			inline void SetPendingRecv(uint16_t dstBuf, int16_t dstOff, PendingTransfer recv);
 			inline void PushPendingSend(Ptr<Socket> sendpeer, PendingTransfer send);
-			void Send(int8_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff);
+			void Send(int8_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE);
 			void Recv(int8_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
 			void RecvCpSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
 			void RecvRedSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
@@ -109,7 +109,7 @@ namespace ns3 {
 
 			// RDMA-fabric transport (gpu<->switch/nvswitch peers), as opposed to the
 			// p2p PacketSocket path above (gpu<->gpu direct peers)
-			void SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff);
+			void SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId);
 			// shared by RecvCallback (socket path) and OnRdmaSendComplete (RDMA path):
 			// either completes a matching pending recv, or marks the region ready
 			void NotifyTransferArrived(uint16_t dstbuf, uint16_t dstoff);
@@ -175,7 +175,10 @@ namespace ns3 {
 			Ipv4Address GetPeerIp(int16_t peer);
 			uint32_t GetPeerWin(int16_t peer);
 			uint64_t GetPeerBaseRtt(int16_t peer);
+<<<<<<< HEAD
 			uint32_t ComputeFlowId(int16_t peer); // (this gpu id << 16 | peer gpu id), shared formula with codegen's AddFlowForwardingRule
+=======
+>>>>>>> file_sync
 			MscclChannel* GetChannel(int8_t chanId); // lets a sender reach into the peer's matching channel directly
 			#ifdef FLOW_ID_TEST
 			// void SetFlowIdTableForChannel(std::map<std::pair<int, int>, uint32_t>*, int channel);

@@ -393,8 +393,8 @@ int main(int argc, char *argv[]) {
 		PacketSocketHelper packetSocket;
 		packetSocket.Install(gpunodes);
 
-		TopoNodeSet topo(gpunodes);
-		AlgoParseResult result = ParseAlgoFromXml(XML_ALGO.c_str(), topo);
+		AlgoTopology topo(gpunodes);
+		AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
 		if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
 
 		static std::ofstream logtxt;

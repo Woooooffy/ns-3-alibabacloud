@@ -65,5 +65,6 @@ build_lib(
                     ${libinternet}
                     ${libapplications}
                     ${mpi_libraries}
+                    ${libcore}
   TEST_SOURCES test/point-to-point-test.cc
 )

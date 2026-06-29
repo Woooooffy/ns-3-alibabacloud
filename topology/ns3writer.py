@@ -90,8 +90,8 @@ class NS3Writer:
 		elif insn.__class__.__name__ == "NS3InstallLink":
 			self._emit_link_install(insn)
 
-		elif insn.__class__.__name__ == "NS3InstallRdmaFabric":
-			self._emit_rdma_fabric(insn)
+		elif insn.__class__.__name__ == "NS3BuildRdmaFabric":
+			self._emit_build_rdma_fabric(insn)
 
 		else:
 			raise ValueError(f"Unknown instruction {insn}")
@@ -161,8 +161,8 @@ class NS3Writer:
 		if src_type == "gpu" and dst_type == "gpu":
 			# direct p2p link between two GPUs: wire the existing socket-based
 			# transport (PushSendPeerDevice/PushRecvPeerDevice/PushPeerAddr).
-			# Everything touching a switch or nvswitch instead gets wired up later,
-			# in _emit_rdma_fabric, once routing has been computed.
+			# Everything touching a switch or nvswitch instead gets wired up by
+			# RdmaFabricHelper::Build, once all links are installed.
 			self._emit_push_send_device(src_expr, insn.dst, f"{container_expr}.Get(0)")
 			self._emit_push_recv_device(dst_expr, insn.src, f"{container_expr}.Get(1)")
 			# p2p links are full-duplex, so the same pair of devices also
@@ -187,18 +187,25 @@ class NS3Writer:
 		self.emit(f"DynamicCast<GPU>({dst_expr})->PushRecvPeerDevice({self.gpus[src_name]}, {dev_expr});")
 
 	# --------------------------------------------------
-	# RDMA fabric: addressing, switch/nvswitch routing tables, RdmaHw/RdmaDriver
+	# RDMA fabric: handed off to RdmaFabricHelper, which discovers the qbb
+	# link graph from already-installed NetDevices/Channels and runs
+	# BFS-ECMP routing, IP assignment, and MMU/PFC config in C++ at ns-3
+	# runtime. Only DSL-level intent that the C++ can't infer from topology
+	# alone (rdma attrs, flow-forwarding switches) is emitted here.
 	# --------------------------------------------------
 
-	def _emit_rdma_fabric(self, insn):
-		if not any(insn.gpu_links.values()):
-			return # pure p2p topology, no RDMA fabric to wire up
+	def _emit_build_rdma_fabric(self, insn):
+		for name, value in sorted(insn.rdma_attrs.items()):
+			self.emit(f'Config::SetDefault("ns3::RdmaHw::{name}", UintegerValue({value}));')
+		if insn.rdma_attrs:
+			self.emit("")
 
 		self.emit("// ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----")
-		self.emit("InternetStackHelper internetStack;")
-		self.emit("internetStack.Install(gpunodes);")
+		self.emit("RdmaFabricHelper rdmaFabric;")
+		self.emit("rdmaFabric.Build(gpunodes, regswtches, nvswtches);")
 		self.emit("")
 
+<<<<<<< HEAD
 		self._emit_ip_assignment(insn)
 		self._emit_routing_table(insn.switch_routes, self.switches, "regswtches", "SwitchNode",
 			"SwitchNode routing tables (BFS ECMP)")
@@ -447,6 +454,8 @@ class NS3Writer:
 			loop_body=["r.sw->AddFlowForwardingRule(r.flowId, r.port);"],
 		)
 
+=======
+>>>>>>> file_sync
 	# --------------------------------------------------
 	# GPU handling
 	# --------------------------------------------------

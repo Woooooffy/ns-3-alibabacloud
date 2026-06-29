@@ -39,7 +39,7 @@ set(source_files
     utils/ethernet-header.cc
     utils/ethernet-trailer.cc
     utils/flow-id-tag.cc
-    utils/msccl-flow-id-tag.cc
+    utils/msccl-flow-id-header.cc
     utils/inet-socket-address.cc
     utils/inet6-socket-address.cc
     utils/ipv4-address.cc
@@ -120,7 +120,7 @@ set(header_files
     utils/ethernet-header.h
     utils/ethernet-trailer.h
     utils/flow-id-tag.h
-    utils/msccl-flow-id-tag.h
+    utils/msccl-flow-id-header.h
     utils/generic-phy.h
     utils/inet-socket-address.h
     utils/inet6-socket-address.h

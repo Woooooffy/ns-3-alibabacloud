@@ -281,8 +281,8 @@ int main(int argc, char *argv[]) {
 		PacketSocketHelper packetSocket;
 		packetSocket.Install(gpunodes);
 
-		TopoNodeSet topo(gpunodes);
-		AlgoParseResult result = ParseAlgoFromXml(XML_ALGO.c_str(), topo); 
+		AlgoTopology topo(gpunodes);
+		AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str()); 
 		if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
 
 		static std::ofstream logtxt;
@@ -295,8 +295,8 @@ int main(int argc, char *argv[]) {
 		chmod(LOG_FILE.c_str(), 0666);
 		
 		// debug dump
-		for (int i = 0; i < topo.GetNNodes(); ++i){
-			Ptr<GPU> gpu = DynamicCast<GPU, Node>(topo.GetNode(i));
+		for (int i = 0; i < topo.GetNGpuNodes(); ++i){
+			Ptr<GPU> gpu = DynamicCast<GPU, Node>(topo.GetGpuNode(i));
 			gpu->DumpAlgo(logtxt);
 			logtxt << std::endl;
 			logtxt.flush();

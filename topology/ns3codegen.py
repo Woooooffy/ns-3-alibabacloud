@@ -1,7 +1,5 @@
 from typing import Optional, Any, Callable, TypedDict
 from transformer import *
-from collections import deque
-import ipaddress
 
 class NS3Insn():
 	pass
@@ -54,14 +52,17 @@ class NS3InstallLink(NS3Insn):
 	def __repr__(self) -> str:
 		return f"Install NS3 link {self.src} -> {self.dst} with helper {self.link_helper} (link_id {self.link_id})"
 
-class NS3InstallRdmaFabric(NS3Insn):
+class NS3BuildRdmaFabric(NS3Insn):
 	'''
-	Aggregate instruction carrying everything needed to wire RdmaHw/RdmaDriver,
-	SwitchNode/NVSwitchNode routing tables, and per-GPU peer-IP bookkeeping for
-	every gpu<->switch / switch<->switch / gpu<->nvswitch ("qbb") link. Computed
-	once, after the structural link pass, via BFS-ECMP run from each destination
-	GPU over the qbb subgraph (see NS3CodeGenerator._build_rdma_fabric).
+	Triggers RdmaFabricHelper::Build at simulation setup time. Unlike the old
+	NS3InstallRdmaFabric, this carries no precomputed routing/IP/BDP data --
+	BFS-ECMP routing, IP assignment, and MMU/PFC config all run in C++ at
+	ns-3 runtime (RdmaFabricHelper discovers the qbb link graph from already
+	-installed NetDevices/Channels), so the generated code stays a handful of
+	lines regardless of topology size. Only DSL-level intent that the C++
+	can't infer from topology alone is carried here.
 	'''
+<<<<<<< HEAD
 	def __init__(self):
 		self.gpu_ip: dict[str, str] = {}
 		self.gpus_per_server: int = 1
@@ -89,9 +90,16 @@ class NS3InstallRdmaFabric(NS3Insn):
 		# switch_name/nvswitch_name -> [(container_expr, my_endpoint_idx, headroom_bytes,
 		# kmin_KB, kmax_KB, pmax, pfc_alpha_shift)], one entry per qbb port on that switch
 		self.mmu_config: dict[str, list[tuple[str, int, int, int, int, float, int]]] = {}
+=======
+	def __init__(self, rdma_attrs: dict[str, int]):
+		# uniform RdmaHw attributes (e.g. L2AckInterval, Mtu, CcMode) from `rdma`
+		# DSL statements, applied via Config::SetDefault before Build() creates
+		# any RdmaHw instances
+		self.rdma_attrs: dict[str, int] = rdma_attrs
+>>>>>>> file_sync
 
 	def __repr__(self) -> str:
-		return f"Install RDMA fabric routing ({len(self.gpu_ip)} gpus)"
+		return f"Build RDMA fabric"
 
 class NS3CodeGenerator():
 	def __init__(self, modules: dict[str, Block]):
@@ -106,6 +114,7 @@ class NS3CodeGenerator():
 		self.link_helpers: dict[tuple[Any], int] = {}
 		self.link_helper_counter = 0
 		self.link_id_counter = 0
+<<<<<<< HEAD
 		# adjacency over the qbb (RDMA-fabric) subgraph only -- gpu<->gpu p2p links
 		# are intentionally absent here, they need no routing table at all.
 		# node_name -> [(peer_name, container_expr, my_endpoint_idx)]
@@ -117,6 +126,12 @@ class NS3CodeGenerator():
 		# explicit AddFlowForwardingRule per (src gpu, dst gpu) pair that crosses
 		# them, instead of relying purely on ECMP
 		self.flow_forwarding_switches: set[str] = set()
+=======
+		# set once any qbb (gpu<->switch / switch<->switch / gpu<->nvswitch)
+		# link is created; gates whether an NS3BuildRdmaFabric insn is emitted
+		# at all (a pure-p2p topology has no RDMA fabric to wire up)
+		self.has_qbb_fabric: bool = False
+>>>>>>> file_sync
 		# uniform RdmaHw attributes (e.g. L2AckInterval, Mtu, CcMode) from `rdma`
 		# DSL statements, applied to every GPU's RdmaHw instance; later
 		# occurrences override earlier ones
@@ -133,7 +148,8 @@ class NS3CodeGenerator():
 			args = {"latency": tup[0], "bandwidth": tup[1], "mtu": tup[2], "type": tup[3]}
 			insns.append(NS3MakeLinkHelper(id, **args))
 		self.insns = insns + self.insns
-		self.insns.append(self._build_rdma_fabric())
+		if self.has_qbb_fabric:
+			self.insns.append(NS3BuildRdmaFabric(self.rdma_attrs))
 
 	def GenerateModule(self, module: Block, *args: Any) -> None:
 		scope = module.get_scope()
@@ -176,8 +192,6 @@ class NS3CodeGenerator():
 			case "switch":
 				self.switches[name] = self.switch_counter
 				self.switch_counter += 1
-				if str(insn.attrs.get("flowid_forwarding", "false")).lower() == "true":
-					self.flow_forwarding_switches.add(name)
 			case "nvswitch":
 				self.nvswitches[name] = self.nvswitch_counter
 				self.nvswitch_counter += 1
@@ -202,7 +216,19 @@ class NS3CodeGenerator():
 			type = "p2p"
 		else:
 			type = "qbb"
-		mtu = insn.attrs["mtu"] if "mtu" in insn.attrs else 9000
+		if "mtu" in insn.attrs:
+			mtu = insn.attrs["mtu"]
+		elif type == "qbb":
+			# qbb links carry RdmaHw-chunked packets (RdmaHw::GetNxtPacket caps
+			# payload at RdmaHw's own Mtu, independent of the device's L2 Mtu),
+			# so default this link's device Mtu to match -- avoids a device Mtu
+			# that silently disagrees with the chunk size RdmaHw actually sends.
+			# Order-dependent: only sees `rdma` statements textually before this
+			# link (module.insns are walked in source order); declare `rdma`
+			# before any qbb links if you rely on this default.
+			mtu = self.rdma_attrs.get("Mtu", 9000)
+		else:
+			mtu = 9000
 		attr = (insn.attrs["latency"], insn.attrs["bandwidth"], mtu, type)
 		helper = self.link_helpers.get(attr)
 		if helper is None:
@@ -215,12 +241,16 @@ class NS3CodeGenerator():
 		helper_id = self.link_helpers[attr]
 		self.insns.append(NS3InstallLink(src, dst, helper_id, link_id))
 		if type == "qbb":
+<<<<<<< HEAD
 			# must match the container variable name the writer emits in
 			# _emit_link_install (devs{helper_id}_{link_id})
 			container_expr = f"devs{helper_id}_{link_id}"
 			self.qbb_adj.setdefault(src, []).append((dst, container_expr, 0))
 			self.qbb_adj.setdefault(dst, []).append((src, container_expr, 1))
 			self.qbb_link_attrs[container_expr] = attr
+=======
+			self.has_qbb_fabric = True
+>>>>>>> file_sync
 
 	def GenSubmodule(self, parent_scope: Scope, insn: SubmoduleInsn, *args: Any):
 		module = self.modules.get(insn.module_name)
@@ -259,6 +289,7 @@ class NS3CodeGenerator():
 	def GenRdmaConfig(self, this_scope: Scope, insn: RdmaConfigInsn, *args: Any):
 		for name, value in insn.attrs.items():
 			self.rdma_attrs[name] = Expr.resolve(value, this_scope)
+<<<<<<< HEAD
 
 	# --------------------------------------------------
 	# RDMA fabric routing (BFS-ECMP)
@@ -415,3 +446,5 @@ class NS3CodeGenerator():
 							(dst_ip, container_expr, end, is_nvswitch))
 		fabric.mmu_config = self._build_switch_mmu_config()
 		return fabric
+=======
+>>>>>>> file_sync

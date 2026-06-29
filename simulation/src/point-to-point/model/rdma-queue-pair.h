@@ -8,6 +8,7 @@
 #include <ns3/event-id.h>
 #include <ns3/custom-header.h>
 #include <ns3/int-header.h>
+#include <ns3/msccl-flow-id-header.h>
 #include <vector>
 
 namespace ns3 {
@@ -18,6 +19,7 @@ public:
 	Ipv4Address sip, dip;
 	uint16_t sport, dport;
 	uint64_t m_size, m_init_size, m_tag;
+	uint32_t m_mscclFlowId; // app-level msccl flow id, carried on the wire via MscclFlowIdHeader; MscclFlowIdHeader::NO_FLOW_ID if unset
 	uint32_t m_src, m_dest;
 	uint64_t snd_nxt, snd_una; // next seq to send, the highest unacked seq
 	uint16_t m_pg;
@@ -100,6 +102,8 @@ public:
 	uint32_t GetDest();
 	uint64_t GetTag();
 	void SetTag(uint64_t tag);void SetSrc(uint32_t src);void SetDest(uint32_t dest);void SetInitialSize(uint64_t size);
+	uint32_t GetMscclFlowId();
+	void SetMscclFlowId(uint32_t mscclFlowId);
 	uint32_t GetHash(void);
 	void Acknowledge(uint64_t ack);
 	uint64_t GetOnTheFly();

@@ -25,26 +25,29 @@ build_lib(
     LIBNAME distributed-ml
     SOURCE_FILES model/distributed-training.cc
 								 model/gpu.cc
-                 model/topo.cc
+                 model/algo_topology.cc
 								 model/collectives.cc
 								 model/msccl-header.cc
 #								 model/msccl-channel.cc
 								 helper/collectives-helper.cc
 								 helper/distributed-training-helper.cc
+								 helper/rdma-fabric-helper.cc
 								 model/collective-tests.cc
     HEADER_FILES model/distributed-training.h
 								 model/msccl.h
 								 model/gpu.h
-                 model/topo.h
+                 model/algo_topology.h
 								 model/collectives.h
 								 model/utils.h
 								 model/msccl-header.h
 #								 model/msccl-channel.h
 								 helper/collectives-helper.h
 								 helper/distributed-training-helper.h
+								 helper/rdma-fabric-helper.h
 								 model/topo_examples.h
 								 model/collective-tests.h
     LIBRARIES_TO_LINK ${libcore} ${libnetwork} ${libinternet} ${libpoint-to-point} ${libbridge} ${EXTRA_LIBS}
     TEST_SOURCES test/distributed-training-test-suite.cc
+                 test/rdma-fabric-helper-test-suite.cc
                  ${examples_as_tests_sources}
 )

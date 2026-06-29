@@ -12,13 +12,15 @@
 #include "ppp-header.h"
 #include "qbb-header.h"
 #include "cn-header.h"
-#include "ns3/msccl-flow-id-tag.h"
+#include "ns3/msccl-flow-id-header.h"
 #ifdef NS3_MTP
 #include "ns3/mtp-interface.h"
 #endif
 #include <iostream>	// debug
 
 namespace ns3{
+
+NS_OBJECT_ENSURE_REGISTERED(RdmaHw);
 
 TypeId RdmaHw::GetTypeId (void)
 {
@@ -270,12 +272,13 @@ Ptr<RdmaQueuePair> RdmaHw::GetQp(uint32_t dip, uint16_t sport, uint16_t pg){
 		return it->second;
 	return NULL;
 }
-void RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, Callback<void> notifyAppFinish, Callback<void> notifyAppSent){
+void RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent){
 	// create qp
 	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
 	qp->SetSrc(src);
 	qp->SetDest(dest);
 	qp->SetTag(tag);
+	qp->SetMscclFlowId(mscclFlowId);
 	qp->SetSize(size);
 	qp->SetInitialSize(size);
 	qp->SetWin(win);
@@ -704,9 +707,13 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
 	Ptr<Packet> p = Create<Packet> ((uint32_t)payload_size);
-	// carry the app-provided qp tag as a msccl flow id, so switches can do
-	// custom flow-based forwarding instead of plain ECMP when enabled
-	p->AddPacketTag(MscclFlowIdTag(static_cast<uint32_t>(qp->m_tag)));
+	// carry the qp's msccl flow id as a real header (innermost, right next to the
+	// payload) so switches can do custom flow-based forwarding instead of plain
+	// ECMP when enabled. Added before SimpleSeqTsHeader so it doesn't shift the
+	// fixed byte offsets switches use to reach the INT header.
+	MscclFlowIdHeader mscclFlowIdHeader;
+	mscclFlowIdHeader.SetFlowId(qp->GetMscclFlowId());
+	p->AddHeader(mscclFlowIdHeader);
 	// add SimpleSeqTsHeader
 	SimpleSeqTsHeader seqTs;
 	seqTs.SetSeq (qp->snd_nxt);
