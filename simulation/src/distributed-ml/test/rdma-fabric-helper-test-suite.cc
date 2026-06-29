@@ -1,6 +1,7 @@
 // Include a header file from your module to test.
 #include "ns3/rdma-fabric-helper.h"
 
+#include "ns3/config.h"
 #include "ns3/gpu.h"
 #include "ns3/ipv4.h"
 #include "ns3/node-container.h"
@@ -35,9 +36,13 @@ QbbHelper MakeQbbHelper(uint32_t mtu, const char* delay, const char* dataRate) {
 /**
  * @ingroup rdma-fabric-helper-tests
  * Builds the exact 3-GPU/1-switch topology from topology/examples/3nodes.topo
- * and asserts RdmaFabricHelper::Build reproduces the literal golden values
- * already baked into simulation/scratch/3nodes.cc (peer win 53500 bytes,
- * base RTT 6028 ns, MMU headroom 26625 / kmin 36000 / kmax 71000 / shift 3).
+ * (qbb link Mtu=1500, matching `rdma Mtu=1500` -- ns3codegen.py defaults a
+ * qbb link's device Mtu to the `rdma` statement's Mtu when not explicitly
+ * overridden, since that's what RdmaHw::GetNxtPacket actually chunks
+ * payloads to) and asserts RdmaFabricHelper::Build reproduces the literal
+ * golden values baked into simulation/scratch/3nodes.cc (peer win 38500
+ * bytes, base RTT 4338 ns, MMU headroom 26625 / kmin 36000 / kmax 71000 /
+ * shift 3 -- the MMU values are mtu-independent, so unchanged from before).
  */
 class RdmaFabric3NodesTestCase : public TestCase {
   public:
@@ -59,19 +64,22 @@ void RdmaFabric3NodesTestCase::DoRun() {
     NodeContainer switches;
     switches.Add(CreateObject<SwitchNode>());
 
-    QbbHelper qbb = MakeQbbHelper(9000, "1us", "71Gbps");
+    QbbHelper qbb = MakeQbbHelper(1500, "1us", "71Gbps");
     NetDeviceContainer d0 = qbb.Install(gpus.Get(0), switches.Get(0));
     qbb.Install(gpus.Get(1), switches.Get(0));
     qbb.Install(gpus.Get(2), switches.Get(0));
 
+    // matches the qbb link's device Mtu above -- RdmaFabricHelper uses
+    // RdmaHw::Mtu (not device Mtu) for its BDP/RTT transmission-delay term.
+    Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
     RdmaFabricHelper().Build(gpus, switches, NodeContainer());
 
     Ptr<GPU> gpu0 = DynamicCast<GPU>(gpus.Get(0));
     NS_TEST_ASSERT_MSG_EQ(gpu0->GetMyIp(), Ipv4Address("10.0.0.1"), "gpu0 should get identity IP 10.0.0.1");
-    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(1), 53500u, "peer win (BDP) must match 3nodes.cc golden value");
-    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerBaseRtt(1), 6028u, "peer base RTT must match 3nodes.cc golden value");
-    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(2), 53500u, "peer win (BDP) must match 3nodes.cc golden value");
-    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerBaseRtt(2), 6028u, "peer base RTT must match 3nodes.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(1), 38500u, "peer win (BDP) must match 3nodes.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerBaseRtt(1), 4338u, "peer base RTT must match 3nodes.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(2), 38500u, "peer win (BDP) must match 3nodes.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerBaseRtt(2), 4338u, "peer base RTT must match 3nodes.cc golden value");
 
     Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(switches.Get(0));
     uint32_t ifIndex = d0.Get(1)->GetIfIndex();
@@ -84,9 +92,10 @@ void RdmaFabric3NodesTestCase::DoRun() {
 /**
  * @ingroup rdma-fabric-helper-tests
  * Builds the exact 4-GPU/4-switch topology from
- * topology/examples/fat_tree_pod.topo (k=4, no core switches) and asserts
- * the same-rack vs. cross-rack peer win/RTT values match
- * topology/examples/output/fat_tree_pod.cc's literals.
+ * topology/examples/fat_tree_pod.topo (k=4, no core switches, qbb link
+ * Mtu=1500 matching `rdma Mtu=1500`) and asserts the same-rack vs.
+ * cross-rack peer win/RTT values match topology/examples/output/
+ * fat_tree_pod.cc's literals.
  */
 class RdmaFabricFatTreePodTestCase : public TestCase {
   public:
@@ -110,7 +119,7 @@ void RdmaFabricFatTreePodTestCase::DoRun() {
         switches.Add(CreateObject<SwitchNode>());
     }
 
-    QbbHelper qbb = MakeQbbHelper(9000, "700ns", "400Gbps");
+    QbbHelper qbb = MakeQbbHelper(1500, "700ns", "400Gbps");
     // sw0 = esw1.sw, sw1 = esw2.sw, sw2 = asw1, sw3 = asw2
     // gpu0 = esw1.gpu1, gpu1 = esw1.gpu2, gpu2 = esw2.gpu1, gpu3 = esw2.gpu2
     qbb.Install(switches.Get(0), gpus.Get(0));
@@ -122,17 +131,20 @@ void RdmaFabricFatTreePodTestCase::DoRun() {
     qbb.Install(switches.Get(1), switches.Get(2));
     qbb.Install(switches.Get(1), switches.Get(3));
 
+    // matches the qbb link's device Mtu above -- RdmaFabricHelper uses
+    // RdmaHw::Mtu (not device Mtu) for its BDP/RTT transmission-delay term.
+    Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
     RdmaFabricHelper().Build(gpus, switches, NodeContainer());
 
     Ptr<GPU> gpu1 = DynamicCast<GPU>(gpus.Get(1)); // esw1.gpu2
     // same-rack peer (gpu0, 2 hops via esw1.sw)
-    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerWin(0), 158000u, "same-rack peer win must match fat_tree_pod.cc golden value");
-    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerBaseRtt(0), 3160u, "same-rack peer base RTT must match fat_tree_pod.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerWin(0), 143000u, "same-rack peer win must match fat_tree_pod.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerBaseRtt(0), 2860u, "same-rack peer base RTT must match fat_tree_pod.cc golden value");
     // cross-rack peers (gpu2/gpu3, 4 hops via an aggregation switch)
-    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerWin(2), 316000u, "cross-rack peer win must match fat_tree_pod.cc golden value");
-    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerBaseRtt(2), 6320u, "cross-rack peer base RTT must match fat_tree_pod.cc golden value");
-    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerWin(3), 316000u, "cross-rack peer win must match fat_tree_pod.cc golden value");
-    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerBaseRtt(3), 6320u, "cross-rack peer base RTT must match fat_tree_pod.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerWin(2), 286000u, "cross-rack peer win must match fat_tree_pod.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerBaseRtt(2), 5720u, "cross-rack peer base RTT must match fat_tree_pod.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerWin(3), 286000u, "cross-rack peer win must match fat_tree_pod.cc golden value");
+    NS_TEST_ASSERT_MSG_EQ(gpu1->GetPeerBaseRtt(3), 5720u, "cross-rack peer base RTT must match fat_tree_pod.cc golden value");
 }
 
 /**

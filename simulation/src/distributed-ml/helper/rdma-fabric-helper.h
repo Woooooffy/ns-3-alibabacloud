@@ -72,11 +72,20 @@ private:
 
     void DiscoverAdjacency(const NodeContainer& gpus, const NodeContainer& switches,
         const NodeContainer& nvswitches);
+    // Logs one warning if any qbb link's device Mtu disagrees with `rdmaMtu`
+    // -- RdmaHw::GetNxtPacket caps every packet at RdmaHw::Mtu regardless of
+    // device Mtu, so a mismatched device Mtu is silently-unused capacity
+    // (harmless, but usually a configuration oversight worth flagging).
+    void WarnOnMtuMismatch(uint32_t rdmaMtu) const;
     // BFS rooted at the destination: returns, for every reachable node,
     // (hop count, accumulated one-way propagation delay, accumulated
-    // one-way MTU transmission delay, bottleneck bandwidth) along the
-    // shortest-hop path -- mirrors astra-sim's pairBdp/pairRtt derivation.
-    std::unordered_map<uint32_t, PathMetrics> BfsFromDestination(uint32_t dstNodeId) const;
+    // one-way transmission delay for an RdmaHw-Mtu-sized packet, bottleneck
+    // bandwidth) along the shortest-hop path -- mirrors astra-sim's
+    // pairBdp/pairRtt derivation. `rdmaMtu` is RdmaHw::Mtu (uniform across
+    // the fabric via Config::SetDefault), NOT each link's own device Mtu --
+    // every packet's size is fixed once at the source GPU's RdmaHw and
+    // stays the same size at every hop it crosses.
+    std::unordered_map<uint32_t, PathMetrics> BfsFromDestination(uint32_t dstNodeId, uint32_t rdmaMtu) const;
     void ConfigureMmu(const NodeContainer& switches, const NodeContainer& nvswitches) const;
 };
 

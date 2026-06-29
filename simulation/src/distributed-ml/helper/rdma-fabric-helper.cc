@@ -20,6 +20,7 @@
 #include <cmath>
 #include <limits>
 #include <queue>
+#include <set>
 #include <sstream>
 
 namespace ns3 {
@@ -60,7 +61,7 @@ void RdmaFabricHelper::DiscoverAdjacency(const NodeContainer& gpus, const NodeCo
 }
 
 std::unordered_map<uint32_t, RdmaFabricHelper::PathMetrics> RdmaFabricHelper::BfsFromDestination(
-    uint32_t dstNodeId) const {
+    uint32_t dstNodeId, uint32_t rdmaMtu) const {
     std::unordered_map<uint32_t, PathMetrics> metrics;
     metrics[dstNodeId] = PathMetrics{0, Time(0), Time(0), std::numeric_limits<uint64_t>::max()};
 
@@ -79,7 +80,12 @@ std::unordered_map<uint32_t, RdmaFabricHelper::PathMetrics> RdmaFabricHelper::Bf
             if (metrics.count(peerId)) {
                 continue;
             }
-            Time txDelay = Seconds(edge.mtu * 8.0 / edge.rateBps);
+            // Every packet on this path was sized once at the source GPU's
+            // RdmaHw (RdmaHw::GetNxtPacket caps payload at RdmaHw::Mtu) and
+            // stays that size at every hop, so use rdmaMtu here -- NOT
+            // edge.mtu, which is just this link's device capacity and may
+            // not match what RdmaHw actually sends (see WarnOnMtuMismatch).
+            Time txDelay = Seconds(rdmaMtu * 8.0 / edge.rateBps);
             metrics[peerId] = PathMetrics{
                 curMetrics.hops + 1,
                 curMetrics.delay + edge.delay,
@@ -90,6 +96,36 @@ std::unordered_map<uint32_t, RdmaFabricHelper::PathMetrics> RdmaFabricHelper::Bf
         }
     }
     return metrics;
+}
+
+void RdmaFabricHelper::WarnOnMtuMismatch(uint32_t rdmaMtu) const {
+    std::set<uint32_t> mismatched;
+    for (const auto& kv : m_adj) {
+        for (const QbbEdge& edge : kv.second) {
+            if (edge.mtu != rdmaMtu) {
+                mismatched.insert(edge.mtu);
+            }
+        }
+    }
+    if (mismatched.empty()) {
+        return;
+    }
+    std::ostringstream oss;
+    for (auto it = mismatched.begin(); it != mismatched.end(); ++it) {
+        if (it != mismatched.begin()) {
+            oss << ", ";
+        }
+        oss << *it;
+    }
+    NS_LOG_UNCOND("RdmaFabricHelper: RdmaHw::Mtu is " << rdmaMtu << " bytes, but qbb link(s) advertise a "
+        << "different device Mtu (" << oss.str() << "). RdmaHw::GetNxtPacket caps every packet at "
+        << "RdmaHw::Mtu regardless of device Mtu, so BDP/RTT pacing estimates use RdmaHw::Mtu uniformly "
+        << "-- any larger device Mtu is silently-unused capacity. If this is unintentional, set the "
+        << "link's `mtu=` to match the `rdma` statement's `Mtu=`. If this topology was generated from "
+        << "the DSL, one likely cause: ns3codegen.py only defaults a qbb link's Mtu to the `rdma` "
+        << "statement's Mtu for links declared textually AFTER that `rdma` statement (module.insns are "
+        << "walked in source order) -- a qbb `link` declared before any `rdma` statement instead falls "
+        << "back to the hardcoded 1500 default.");
 }
 
 void RdmaFabricHelper::Build(NodeContainer gpus, NodeContainer switches, NodeContainer nvswitches) {
@@ -158,6 +194,13 @@ void RdmaFabricHelper::Build(NodeContainer gpus, NodeContainer switches, NodeCon
         rdmaHwOf[i] = rdmaHw;
     }
 
+    // RdmaHw::Mtu is uniform across the fabric (set via Config::SetDefault
+    // before Build() creates any RdmaHw instance), so any instance's value
+    // is representative -- use it for every hop's transmission-delay term
+    // below, instead of each link's own (possibly different) device Mtu.
+    uint32_t rdmaMtu = rdmaHwOf[0]->m_mtu;
+    WarnOnMtuMismatch(rdmaMtu);
+
     // BFS-ECMP rooted at each destination GPU. GPUs are always leaves of the
     // qbb subgraph (gpu<->gpu p2p links never appear in m_adj), so a node's
     // neighbors-at-distance-1-closer-to-dst are exactly its valid ECMP next
@@ -167,7 +210,7 @@ void RdmaFabricHelper::Build(NodeContainer gpus, NodeContainer switches, NodeCon
         uint32_t dstNodeId = dstGpu->GetId();
         Ipv4Address dstIp = gpuIp[dstIdx];
 
-        std::unordered_map<uint32_t, PathMetrics> metrics = BfsFromDestination(dstNodeId);
+        std::unordered_map<uint32_t, PathMetrics> metrics = BfsFromDestination(dstNodeId, rdmaMtu);
         for (const auto& kv : metrics) {
             uint32_t nodeId = kv.first;
             if (nodeId == dstNodeId) {

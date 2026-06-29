@@ -34,7 +34,11 @@ int main(int argc, char *argv[]) {
     for (uint32_t i = 0; i < 3; ++i) { gpunodes.Add(CreateObject<GPU>()); }
     for (uint32_t i = 0; i < 1; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
     QbbHelper link_helper0;
-    link_helper0.SetDeviceAttribute("Mtu", UintegerValue(9000));
+    // matches RdmaHw::Mtu below -- RdmaHw::GetNxtPacket caps payload at its own
+    // Mtu regardless of the device's L2 Mtu, so a larger device Mtu here would
+    // just be unused headroom while silently overestimating per-hop
+    // transmission delay in RdmaFabricHelper's BDP/RTT calculation.
+    link_helper0.SetDeviceAttribute("Mtu", UintegerValue(1500));
     link_helper0.SetChannelAttribute("Delay", StringValue("1us"));
     link_helper0.SetDeviceAttribute("DataRate", StringValue("71Gbps"));
 

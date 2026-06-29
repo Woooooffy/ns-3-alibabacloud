@@ -172,7 +172,19 @@ class NS3CodeGenerator():
 			type = "p2p"
 		else:
 			type = "qbb"
-		mtu = insn.attrs["mtu"] if "mtu" in insn.attrs else 9000
+		if "mtu" in insn.attrs:
+			mtu = insn.attrs["mtu"]
+		elif type == "qbb":
+			# qbb links carry RdmaHw-chunked packets (RdmaHw::GetNxtPacket caps
+			# payload at RdmaHw's own Mtu, independent of the device's L2 Mtu),
+			# so default this link's device Mtu to match -- avoids a device Mtu
+			# that silently disagrees with the chunk size RdmaHw actually sends.
+			# Order-dependent: only sees `rdma` statements textually before this
+			# link (module.insns are walked in source order); declare `rdma`
+			# before any qbb links if you rely on this default.
+			mtu = self.rdma_attrs.get("Mtu", 9000)
+		else:
+			mtu = 9000
 		attr = (insn.attrs["latency"], insn.attrs["bandwidth"], mtu, type)
 		helper = self.link_helpers.get(attr)
 		if helper is None:
