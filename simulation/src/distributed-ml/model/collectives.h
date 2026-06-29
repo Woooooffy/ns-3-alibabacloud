@@ -175,7 +175,6 @@ namespace ns3 {
 			Ipv4Address GetPeerIp(int16_t peer);
 			uint32_t GetPeerWin(int16_t peer);
 			uint64_t GetPeerBaseRtt(int16_t peer);
-			uint32_t ComputeFlowId(int16_t peer); // (this gpu id << 16 | peer gpu id), shared formula with codegen's AddFlowForwardingRule
 			MscclChannel* GetChannel(int8_t chanId); // lets a sender reach into the peer's matching channel directly
 			#ifdef FLOW_ID_TEST
 			// void SetFlowIdTableForChannel(std::map<std::pair<int, int>, uint32_t>*, int channel);

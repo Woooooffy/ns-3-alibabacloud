@@ -331,7 +331,6 @@ namespace ns3 {
 		// distinct sport per send call to keep RdmaHw's (dip,sport,pg) qp key unique
 		// across concurrent in-flight transfers to the same peer on this channel
 		uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + (m_rdmaSportCounter++));
-		uint32_t flowId = m_app->ComputeFlowId(sendpeer);
 
 		// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
 		// requires operator!= on the functor, which closures don't have), so bind the
@@ -350,7 +349,7 @@ namespace ns3 {
 		// attribute (parsed in algo_topology.cc); MSCCL_FLOW_ID_NONE if the step didn't
 		// assign one, in which case switches fall back to plain ECMP for this qp
 		m_app->GetRdmaDriver()->AddQueuePair(
-			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), flowId, totalBytes, MSCCL_RDMA_PG,
+			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), /* tag */ 0, totalBytes, MSCCL_RDMA_PG,
 			m_app->GetMyIp(), m_app->GetPeerIp(sendpeer), sport, MSCCL_RDMA_DPORT,
 			m_app->GetPeerWin(sendpeer), m_app->GetPeerBaseRtt(sendpeer), mscclFlowId, finishCb, Callback<void>());
 	}
@@ -541,10 +540,6 @@ namespace ns3 {
 	}
 	uint64_t CollectivesApplication::GetPeerBaseRtt(int16_t peer){
 		return DynamicCast<GPU>(GetNode())->GetPeerBaseRtt(peer);
-	}
-
-	uint32_t CollectivesApplication::ComputeFlowId(int16_t peer){
-		return (static_cast<uint32_t>(GetNode()->GetId()) << 16) | static_cast<uint32_t>(static_cast<uint16_t>(peer));
 	}
 
 	MscclChannel* CollectivesApplication::GetChannel(int8_t chanId){

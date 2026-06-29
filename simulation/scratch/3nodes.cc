@@ -44,128 +44,17 @@ int main(int argc, char *argv[]) {
 
     NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), regswtches.Get(0));
 
+    Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
+    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
+    Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
+    Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
+
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
-    InternetStackHelper internetStack;
-    internetStack.Install(gpunodes);
-
-    {
-        struct _IpAssign { Ptr<NetDevice> dev; const char* hostMask; };
-        std::vector<_IpAssign> _ipAssigns = {
-            {devs0_0.Get(0), "0.0.0.1"},
-            {devs0_1.Get(0), "0.0.0.2"},
-            {devs0_2.Get(0), "0.0.0.3"},
-        };
-        for (auto& a : _ipAssigns) {
-            Ipv4AddressHelper _ipv4;
-            _ipv4.SetBase("10.0.0.0", "255.0.0.0", a.hostMask);
-            NetDeviceContainer _tmp;
-            _tmp.Add(a.dev);
-            _ipv4.Assign(_tmp);
-        }
-    }
-
-    // SwitchNode routing tables (BFS ECMP)
-    {
-        struct _Route { Ptr<SwitchNode> node; Ipv4Address dst; Ptr<NetDevice> dev; };
-        std::vector<_Route> _routes = {
-            {DynamicCast<SwitchNode>(regswtches.Get(0)), Ipv4Address("10.0.0.1"), devs0_0.Get(1)},
-            {DynamicCast<SwitchNode>(regswtches.Get(0)), Ipv4Address("10.0.0.2"), devs0_1.Get(1)},
-            {DynamicCast<SwitchNode>(regswtches.Get(0)), Ipv4Address("10.0.0.3"), devs0_2.Get(1)},
-        };
-        for (auto& r : _routes) {
-            r.node->AddTableEntry(r.dst, r.dev->GetIfIndex());
-        }
-    }
-
-    // RdmaHw + RdmaDriver setup per GPU
-    {
-        struct _RdmaRoute { Ipv4Address dst; uint32_t ifIndex; bool isNvswitch; };
-        struct _GpuRdmaSetup { Ptr<Node> gpu; Ipv4Address myIp; std::vector<_RdmaRoute> routes; };
-        std::vector<_GpuRdmaSetup> _gpuSetups = {
-            {gpunodes.Get(0), Ipv4Address("10.0.0.1"), {{Ipv4Address("10.0.0.2"), devs0_0.Get(0)->GetIfIndex(), false}, {Ipv4Address("10.0.0.3"), devs0_0.Get(0)->GetIfIndex(), false}}},
-            {gpunodes.Get(1), Ipv4Address("10.0.0.2"), {{Ipv4Address("10.0.0.1"), devs0_1.Get(0)->GetIfIndex(), false}, {Ipv4Address("10.0.0.3"), devs0_1.Get(0)->GetIfIndex(), false}}},
-            {gpunodes.Get(2), Ipv4Address("10.0.0.3"), {{Ipv4Address("10.0.0.1"), devs0_2.Get(0)->GetIfIndex(), false}, {Ipv4Address("10.0.0.2"), devs0_2.Get(0)->GetIfIndex(), false}}},
-        };
-        for (auto& g : _gpuSetups) {
-            Ptr<RdmaHw> rdmaHw = CreateObject<RdmaHw>();
-            rdmaHw->SetAttribute("GPUsPerServer", UintegerValue(1));
-            rdmaHw->SetAttribute("CcMode", UintegerValue(12));
-            rdmaHw->SetAttribute("L2AckInterval", UintegerValue(0));
-            rdmaHw->SetAttribute("L2ChunkSize", UintegerValue(4000));
-            rdmaHw->SetAttribute("Mtu", UintegerValue(1500));
-            Ptr<RdmaDriver> rdmaDriver = CreateObject<RdmaDriver>();
-            rdmaDriver->SetNode(g.gpu);
-            rdmaDriver->SetRdmaHw(rdmaHw);
-            rdmaDriver->Init();
-            for (auto& r : g.routes) {
-                rdmaHw->AddTableEntry(r.dst, r.ifIndex, r.isNvswitch);
-            }
-            DynamicCast<GPU>(g.gpu)->SetMyIp(g.myIp);
-            g.gpu->AggregateObject(rdmaDriver);
-        }
-    }
-
-    // peer IP bookkeeping for the collectives app's RDMA-routed peers
-    {
-        struct _PeerIp { Ptr<Node> gpu; int16_t peerIdx; Ipv4Address peerIp; };
-        std::vector<_PeerIp> _peerIps = {
-            {gpunodes.Get(1), 0, Ipv4Address("10.0.0.1")},
-            {gpunodes.Get(1), 2, Ipv4Address("10.0.0.3")},
-            {gpunodes.Get(2), 0, Ipv4Address("10.0.0.1")},
-            {gpunodes.Get(2), 1, Ipv4Address("10.0.0.2")},
-            {gpunodes.Get(0), 1, Ipv4Address("10.0.0.2")},
-            {gpunodes.Get(0), 2, Ipv4Address("10.0.0.3")},
-        };
-        for (auto& p : _peerIps) {
-            DynamicCast<GPU>(p.gpu)->PushPeerIpAddr(p.peerIdx, p.peerIp);
-        }
-    }
-
-    // peer RDMA pacing: bandwidth-delay-product window + base RTT per peer
-    {
-        struct _PeerPacing { Ptr<Node> gpu; int16_t peerIdx; uint32_t winBytes; uint64_t baseRttNs; };
-        std::vector<_PeerPacing> _peerPacing = {
-            {gpunodes.Get(1), 0, 53500, 6028},
-            {gpunodes.Get(1), 2, 53500, 6028},
-            {gpunodes.Get(2), 0, 53500, 6028},
-            {gpunodes.Get(2), 1, 53500, 6028},
-            {gpunodes.Get(0), 1, 53500, 6028},
-            {gpunodes.Get(0), 2, 53500, 6028},
-        };
-        for (auto& p : _peerPacing) {
-            DynamicCast<GPU>(p.gpu)->PushPeerWin(p.peerIdx, p.winBytes);
-            DynamicCast<GPU>(p.gpu)->PushPeerBaseRtt(p.peerIdx, p.baseRttNs);
-        }
-    }
-
-    // switch/nvswitch MMU: PFC headroom + ECN thresholds per port (otherwise
-    // SwitchMmu's headroom[]/kmin[]/kmax[]/pmax[]/pfc_a_shift[] are uninitialized,
-    // which disables realistic PFC backpressure under incast)
-    {
-        struct _MmuNode { Ptr<Node> node; Ptr<SwitchMmu> mmu; uint32_t nPorts; bool isSwitch; };
-        std::vector<_MmuNode> _mmuNodes = {
-            {regswtches.Get(0), DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu, 3, true},
-        };
-        for (auto& n : _mmuNodes) {
-            if (n.isSwitch) n.node->SetAttribute("EcnEnabled", BooleanValue(true));
-            n.mmu->ConfigNPort(n.nPorts);
-            n.mmu->node_id = n.node->GetId();
-        }
-    }
-
-    {
-        struct _MmuPort { Ptr<SwitchMmu> mmu; uint32_t port; uint32_t headroomBytes; uint32_t kminKB; uint32_t kmaxKB; double pmax; uint32_t shift; };
-        std::vector<_MmuPort> _mmuPorts = {
-            {DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu, devs0_0.Get(1)->GetIfIndex(), 26625, 36, 71, 0.2, 3},
-            {DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu, devs0_1.Get(1)->GetIfIndex(), 26625, 36, 71, 0.2, 3},
-            {DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu, devs0_2.Get(1)->GetIfIndex(), 26625, 36, 71, 0.2, 3},
-        };
-        for (auto& p : _mmuPorts) {
-            p.mmu->ConfigEcn(p.port, p.kminKB, p.kmaxKB, p.pmax);
-            p.mmu->ConfigHdrm(p.port, p.headroomBytes);
-            p.mmu->pfc_a_shift[p.port] = p.shift;
-        }
-    }
+    // (also installs the internet stack on gpunodes -- do not call
+    // InternetStackHelper::Install(gpunodes) separately, it will fatal-error
+    // on a node that already has an Ipv4 object)
+    RdmaFabricHelper rdmaFabric;
+    rdmaFabric.Build(gpunodes, regswtches, nvswtches);
 
     /*
         n0 -> sw: devs0_0

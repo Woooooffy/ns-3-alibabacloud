@@ -10,7 +10,7 @@
 
 namespace ns3
 {
-	NS_LOG_COMPONENT_DEFINE("DistributedTopo");
+	NS_LOG_COMPONENT_DEFINE("AlgoTopo");
 	#ifdef HAVE_LIBXML2
 	#define XML_GET_PROP_STR(node, prop, out)                    \
   do {                                                       \
