@@ -1,8 +1,12 @@
-#include "topo.h"
+#include "algo_topology.h"
 #ifdef HAVE_LIBXML2
 #include <libxml/parser.h>
 #include <libxml/tree.h>
 #endif
+#include "json.hpp"
+#include "ns3/switch-node.h"
+#include "ns3/qbb-channel.h"
+#include <fstream>
 
 namespace ns3
 {
@@ -35,23 +39,37 @@ namespace ns3
 	} while (0)
 	#endif
 
-	TopoNodeSet::TopoNodeSet(){}
+	AlgoTopology::AlgoTopology(){}
 
-	TopoNodeSet::TopoNodeSet(NodeContainer& nodes): m_nNodes(nodes.GetN()), m_nodes(nodes){}
+	AlgoTopology::AlgoTopology(NodeContainer& gpuNodes): m_gpuNodes(gpuNodes){}
 
-	TopoNodeSet::~TopoNodeSet(){}
+	AlgoTopology::AlgoTopology(NodeContainer& gpuNodes, NodeContainer& switchNodes): m_gpuNodes(gpuNodes), m_switchNodes(switchNodes){}
 
-	int TopoNodeSet::GetNNodes(){
-		return m_nNodes;
+	AlgoTopology::~AlgoTopology(){}
+
+	int AlgoTopology::GetNGpuNodes(){
+		return m_gpuNodes.GetN();
 	}
 
-	Ptr<Node> TopoNodeSet::GetNode(int i){
+	Ptr<Node> AlgoTopology::GetGpuNode(int i){
 		// ns3 native .Geti() does not perform bound check
-		if (i < 0 || (uint32_t) i > m_nodes.GetN()){
-			NS_LOG_ERROR("Accessing out-of-range index " << i << " on TopoNodeSet with " << m_nodes.GetN() << "nodes.");
+		if (i < 0 || (uint32_t) i >= m_gpuNodes.GetN()){
+			NS_LOG_ERROR("Accessing out-of-range index " << i << " on AlgoTopology with " << m_gpuNodes.GetN() << " gpu nodes.");
 			return nullptr;
-		}	
-		return m_nodes.Get(i);
+		}
+		return m_gpuNodes.Get(i);
+	}
+
+	int AlgoTopology::GetNSwitchNodes(){
+		return m_switchNodes.GetN();
+	}
+
+	Ptr<Node> AlgoTopology::GetSwitchNode(int i){
+		if (i < 0 || (uint32_t) i >= m_switchNodes.GetN()){
+			NS_LOG_ERROR("Accessing out-of-range index " << i << " on AlgoTopology with " << m_switchNodes.GetN() << " switch nodes.");
+			return nullptr;
+		}
+		return m_switchNodes.Get(i);
 	}
 
 	AlgoParseResult mscclGetBufferType(const char* str, uint8_t* output){
@@ -88,10 +106,10 @@ namespace ns3
   	return AlgoParseResult::ALGO_PARSE_SUCCESS;
 	}
 
-	AlgoParseResult ParseAlgoFromXml(const char* file_path, TopoNodeSet nodes){
+	AlgoParseResult AlgoTopology::ParseAlgoXml(const char* file_path){
 		// NOTE: entire method makes use of libxml2-dev being installed
 		#ifdef HAVE_LIBXML2
-		int nRanks = nodes.GetNNodes();
+		int nRanks = GetNGpuNodes();
 		xmlDocPtr doc = xmlReadFile(file_path, NULL, 0);
 	  if (!doc) return AlgoParseResult::FILE_READ_ERROR;
 
@@ -122,13 +140,13 @@ namespace ns3
 			collType = CollectiveType::ALLGATHER;
 	 //   inputNChunksMultiplier = nRanks;
   	} else if (strcmp(collectiveType, "reduce") == 0){
-  		collType = CollectiveType::REDUCE;  
+  		collType = CollectiveType::REDUCE;
 	  } else if (strcmp(collectiveType, "broadcast") == 0){
 			collType = CollectiveType::BROADCAST;
 	  } else if (strcmp(collectiveType, "alltoall") == 0){
 			collType = CollectiveType::ALLTOALL;
 	  } else if (strcmp(collectiveType, "reduce_scatter") == 0){
- 			collType = CollectiveType::REDUCESCATTER; 
+ 			collType = CollectiveType::REDUCESCATTER;
 		//	outputNChunksMultiplier = nRanks;
 	  } else if (strcmp(collectiveType, "custom") == 0){
 			collType = CollectiveType::CUSTOM;
@@ -148,10 +166,10 @@ namespace ns3
     	XML_GET_PROP_INT(gpu, "o_chunks", oChunks);
     	XML_GET_PROP_INT(gpu, "s_chunks", sChunks);
 
-			Ptr<GPU> gpuNode = DynamicCast<GPU, Node>(nodes.GetNode(gpuId));
+			Ptr<GPU> gpuNode = DynamicCast<GPU, Node>(GetGpuNode(gpuId));
+			if (!gpuNode) return AlgoParseResult::INVALID_USE_ERROR;
 			if (gpuNode->GetId() != static_cast<uint32_t>(gpuId)) NS_FATAL_ERROR("Node Id mismatch; double check node initialization order.");
-			if (!gpuNode) return AlgoParseResult::INVALID_USE_ERROR;			
-	
+
 			struct mscclAlgorithm* mscclAlgo = gpuNode->GetAlgo();
 			memset(mscclAlgo, 0, sizeof(*mscclAlgo));
   		mscclAlgo->isValid = false;
@@ -160,7 +178,7 @@ namespace ns3
 			mscclAlgo->nChannels= nChannels;
 			mscclAlgo->nchunksPerLoop=nChunksPerLoop;
 	  	strncpy(mscclAlgo->name, name, MSCCL_MAX_ALGO_NAME);
-			mscclAlgo->collectiveType = collType;	
+			mscclAlgo->collectiveType = collType;
 
 			int blockExists[MSCCL_MAX_NUM_THREAD_BLOCKS];
       memset(blockExists, 0, sizeof(int[MSCCL_MAX_NUM_THREAD_BLOCKS]));
@@ -177,7 +195,7 @@ namespace ns3
         if (bid < 0){
           NS_LOG_WARN("MSCCL: bid must be not negative. bid " << bid);
           return AlgoParseResult::INVALID_USE_ERROR;
-        }              
+        }
 				if (bid >= MSCCL_MAX_NUM_THREAD_BLOCKS){
 					NS_LOG_WARN("MSCCL: too many thread blocks are requested. Max thread blocks: " << MSCCL_MAX_NUM_THREAD_BLOCKS);
 					return AlgoParseResult::INVALID_USE_ERROR;
@@ -225,11 +243,11 @@ namespace ns3
 
 				int oldReductionDstBuffer = -1; // Indicator of last reduction buffer name; -1 means that last one wasn't a compatible reduction
 				int oldReductionDstOffset = -1; // Indicator of last reduction buffer index
-				int oldReductionSrcBuffer = -1; // 
+				int oldReductionSrcBuffer = -1; //
 				int numReductions = 0;
 
 				int numTransfers = 0;
-      
+
       		/* ---- Iterate over <step> ---- */
 				for (xmlNodePtr stepNode = tb->children; stepNode; stepNode = stepNode->next) {
 					if (stepNode->type != XML_ELEMENT_NODE) continue;
@@ -485,14 +503,95 @@ namespace ns3
 				}
 			}
 
-			mscclAlgo->isValid = true;	
+			mscclAlgo->isValid = true;
     } // gpu
 		xmlFreeDoc(doc);
-		return ALGO_PARSE_SUCCESS;	
+		return ALGO_PARSE_SUCCESS;
 	#else
 	NS_FATAL_ERROR("libxml2 support not enabled");
 	#endif
- 	} // ParsAlgoFromXML
+ 	} // ParseAlgoXml
+
+	bool AlgoTopology::ResolveOutPort(Ptr<SwitchNode> sw, Ptr<Node> target, uint32_t& outIfIndex){
+		uint32_t swId = sw->GetId();
+
+		if (m_switchPortCache.find(swId) == m_switchPortCache.end()){
+			std::map<uint32_t, uint32_t>& neighbors = m_switchPortCache[swId];
+			for (uint32_t i = 0; i < sw->GetNDevices(); ++i){
+				Ptr<NetDevice> dev = sw->GetDevice(i);
+				Ptr<QbbChannel> channel = DynamicCast<QbbChannel>(dev->GetChannel());
+				if (!channel) continue;
+				Ptr<NetDevice> other = (channel->GetDevice(0) == dev) ? channel->GetDevice(1) : channel->GetDevice(0);
+				neighbors[other->GetNode()->GetId()] = dev->GetIfIndex();
+			}
+		}
+
+		std::map<uint32_t, uint32_t>& neighbors = m_switchPortCache[swId];
+		auto portIt = neighbors.find(target->GetId());
+		if (portIt == neighbors.end()) return false;
+		outIfIndex = portIt->second;
+		return true;
+	}
+
+	AlgoParseResult AlgoTopology::ParseSwitchJson(const char* file_path){
+		std::ifstream in(file_path);
+		if (!in.is_open()) return AlgoParseResult::FILE_READ_ERROR;
+
+		nlohmann::json root;
+		try {
+			in >> root;
+
+			if (!root.contains("switches") || !root["switches"].is_object()){
+				NS_LOG_WARN("Switch JSON: missing top-level \"switches\" object in " << file_path);
+				return AlgoParseResult::JSON_PARSE_ERROR;
+			}
+
+			for (auto& [switchIdStr, flows] : root["switches"].items()){
+				int switchId = std::stoi(switchIdStr);
+				Ptr<Node> swNodeBase = GetSwitchNode(switchId);
+				if (!swNodeBase) return AlgoParseResult::INVALID_USE_ERROR;
+				Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(swNodeBase);
+				if (!sw){
+					NS_LOG_WARN("Switch JSON: node " << switchId << " is not a SwitchNode");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				sw->SetAttribute("CustomFlowForwarding", BooleanValue(true));
+
+				for (auto& [flowIdStr, entry] : flows.items()){
+					uint32_t flowId = static_cast<uint32_t>(std::stoul(flowIdStr));
+					std::string nextHopType = entry.at("next_hop_type").get<std::string>();
+					int nextHop = entry.at("next_hop").get<int>();
+					int srcGpu = entry.value("src_gpu", -1);
+					int dstGpu = entry.value("dst_gpu", -1);
+					int step = entry.value("step", -1);
+
+					Ptr<Node> target;
+					if (nextHopType == "gpu"){
+						target = GetGpuNode(nextHop);
+					} else if (nextHopType == "switch"){
+						target = GetSwitchNode(nextHop);
+					} else {
+						NS_LOG_WARN("Switch JSON: unknown next_hop_type \"" << nextHopType << "\" for switch " << switchId << ", flow " << flowId);
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+					if (!target) return AlgoParseResult::INVALID_USE_ERROR;
+
+					uint32_t outIfIndex;
+					if (!ResolveOutPort(sw, target, outIfIndex)){
+						NS_LOG_WARN("Switch JSON: switch " << switchId << " has no link toward next_hop " << nextHop << " (" << nextHopType << ") for flow " << flowId);
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+
+					sw->AddFlowForwardingRule(flowId, outIfIndex);
+					NS_LOG_INFO("Switch " << switchId << ": flow " << flowId << " (gpu " << srcGpu << " -> gpu " << dstGpu << ", step " << step << ") -> port " << outIfIndex);
+				}
+			}
+		} catch (const std::exception& e) {
+			NS_LOG_WARN("Switch JSON: error parsing " << file_path << ": " << e.what());
+			return AlgoParseResult::JSON_PARSE_ERROR;
+		}
+
+		return AlgoParseResult::ALGO_PARSE_SUCCESS;
+	}
 
 } // namespace ns3
-

@@ -347,7 +347,7 @@ namespace ns3 {
 			<< sendpeer << " totalBytes=" << totalBytes << " win=" << m_app->GetPeerWin(sendpeer)
 			<< " baseRtt=" << m_app->GetPeerBaseRtt(sendpeer) << " at t=" << Simulator::Now().GetNanoSeconds());
 		// mscclFlowId comes from the XML algorithm's per-step "mscclflowid"
-		// attribute (parsed in topo.cc); MSCCL_FLOW_ID_NONE if the step didn't
+		// attribute (parsed in algo_topology.cc); MSCCL_FLOW_ID_NONE if the step didn't
 		// assign one, in which case switches fall back to plain ECMP for this qp
 		m_app->GetRdmaDriver()->AddQueuePair(
 			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), flowId, totalBytes, MSCCL_RDMA_PG,

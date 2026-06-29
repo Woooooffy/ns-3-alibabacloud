@@ -25,7 +25,7 @@ build_lib(
     LIBNAME distributed-ml
     SOURCE_FILES model/distributed-training.cc
 								 model/gpu.cc
-                 model/topo.cc
+                 model/algo_topology.cc
 								 model/collectives.cc
 								 model/msccl-header.cc
 #								 model/msccl-channel.cc
@@ -35,7 +35,7 @@ build_lib(
     HEADER_FILES model/distributed-training.h
 								 model/msccl.h
 								 model/gpu.h
-                 model/topo.h
+                 model/algo_topology.h
 								 model/collectives.h
 								 model/utils.h
 								 model/msccl-header.h

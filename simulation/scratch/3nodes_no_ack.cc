@@ -168,8 +168,8 @@ int main(int argc, char *argv[]) {
     // in elements, so total bytes is CHUNK_SIZE * N_CHUNKS * sizeof(datatype)
     bool CORRECTNESS_CHECK = true;
 
-    TopoNodeSet topo(gpunodes);
-    AlgoParseResult result = ParseAlgoFromXml(XML_ALGO.c_str(), topo);
+    AlgoTopology topo(gpunodes);
+    AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
     if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
 
     static std::ofstream logtxt;
