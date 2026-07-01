@@ -16,7 +16,7 @@ using namespace ns3;
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("FAT_TREE_POD_TEST");
     LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
-	LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
+	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     uint32_t inputBytes = (1 << 20);
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
@@ -76,12 +76,9 @@ int main(int argc, char *argv[]) {
     */
 
     const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
-    // algo3nodes.xml has mscclflowid set on every step; star_switch_entry.json maps
-    // those same flow ids to switch ports, exercising the pipeline end to end (XML
-    // attribute -> mscclTransfer -> RdmaQueuePair -> MscclFlowIdHeader on the wire ->
-    // switch lookup).
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/fat_tree_pod_symmetric.xml");
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/fat_tree_pod_symmetric_switch.json");
+
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_2.xml");
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_switch_2.json");
 
 
     constexpr DataType::Type dtype = DataType::INT32;
@@ -89,12 +86,15 @@ int main(int argc, char *argv[]) {
     const uint32_t INPUT_BYTES = inputBytes;
     int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
     bool CORRECTNESS_CHECK = true;
+		bool FLOW_ID = true;
 
     AlgoTopology topo(gpunodes, regswtches);
     AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
     if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
-    AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str());
-    if (switchResult != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing switch JSON, error code " << switchResult);
+		if (FLOW_ID){
+  	  AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str());
+	    if (switchResult != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing switch JSON, error code " << switchResult);
+		}
 
     static std::ofstream logtxt;
 
