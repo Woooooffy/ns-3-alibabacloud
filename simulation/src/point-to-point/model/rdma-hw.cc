@@ -1,4 +1,6 @@
 #include <ns3/simulator.h>
+#include <functional>
+#include <vector>
 #include <ns3/simple-seq-ts-header.h>
 #include <ns3/udp-header.h>
 #include <ns3/ipv4-header.h>
@@ -331,6 +333,13 @@ void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
 	last_qp_rate.erase(key);
 }
 
+void RdmaHw::RegisterRxFlow(uint64_t flowKey, uint64_t totalBytes,
+                             uint8_t* stagingBuf,
+                             std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn,
+                             std::function<void()> completionFn){
+	m_rxFlowCallbacks[flowKey] = {totalBytes, stagingBuf, std::move(perPktFn), std::move(completionFn)};
+}
+
 Ptr<RdmaRxQueuePair> RdmaHw::GetRxQp(uint32_t sip, uint32_t dip, uint16_t sport, uint16_t dport, uint16_t pg, bool create){
     uint64_t key = ((uint64_t)dip << 32) | ((uint64_t)pg << 16) | (uint64_t)dport;
     #ifdef NS3_MTP
@@ -442,6 +451,35 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 	rxQp->m_milestone_rx = m_ack_interval;
 
 	int x = ReceiverCheckSeq(ch.udp.seq, rxQp, payload_size);
+
+	// rx-flow completion: fire per-packet copy callback and count down bytes
+	if (x == 1 || x == 5) { // in-order delivery
+		uint64_t flowKey = ((uint64_t)ch.sip << 32)
+		                 | ((uint64_t)ch.udp.pg << 16)
+		                 | (uint64_t)ch.udp.sport;
+		auto it = m_rxFlowCallbacks.find(flowKey);
+		if (it != m_rxFlowCallbacks.end()) {
+			RxFlowEntry& entry = it->second;
+			if (entry.perPktFn) {
+				// extract payload from packet: CopyData writes all bytes (headers+payload)
+				// into tmp; payload starts at ch.GetSerializedSize()
+				uint32_t headerSize = ch.GetSerializedSize();
+				std::vector<uint8_t> tmp(p->GetSize());
+				p->CopyData(tmp.data(), p->GetSize());
+				entry.perPktFn(tmp.data() + headerSize, payload_size, ch.udp.seq);
+			}
+			entry.remainingBytes -= payload_size;
+			if (entry.remainingBytes == 0) {
+				NS_LOG_INFO("RdmaHw node " << m_node->GetId()
+					<< ": rx flow 0x" << std::hex << flowKey << std::dec
+					<< " complete at t=" << Simulator::Now().GetNanoSeconds());
+				std::function<void()> fn = std::move(entry.completionFn);
+				m_rxFlowCallbacks.erase(it);
+				fn();
+			}
+		}
+	}
+
 	if (x == 1 || x == 2){ //generate ACK or NACK
 		qbbHeader seqh;
 		seqh.SetSeq(rxQp->ReceiverNextExpectedSeq);
@@ -706,7 +744,9 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	uint64_t payload_size = qp->GetBytesLeft();
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
-	Ptr<Packet> p = Create<Packet> ((uint32_t)payload_size);
+	Ptr<Packet> p = (qp->m_srcDataPtr != nullptr)
+		? Create<Packet>(qp->m_srcDataPtr + qp->snd_nxt, (uint32_t)payload_size)
+		: Create<Packet>((uint32_t)payload_size);
 	// carry the qp's msccl flow id as a real header (innermost, right next to the
 	// payload) so switches can do custom flow-based forwarding instead of plain
 	// ECMP when enabled. Added before SimpleSeqTsHeader so it doesn't shift the

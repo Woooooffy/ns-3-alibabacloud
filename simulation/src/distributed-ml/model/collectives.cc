@@ -1,6 +1,7 @@
 #include "collectives.h"
 
 #include <iomanip>
+#include <functional>
 
 #define MSCCL_MAX_ITER 65536
 // L2 overhead (e.g. PPP/eth header) added by the NetDevice on top of our packet,
@@ -243,6 +244,9 @@ namespace ns3 {
 	// RDMA OnRdmaSendComplete: either complete a matching pending recv, or mark the
 	// buffer region ready for when Recv()/RecvRedCp() is later called.
 	void MscclChannel::NotifyTransferArrived(uint16_t dstbuf, uint16_t dstoff){
+		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+			<< ": NotifyTransferArrived dstbuf=" << dstbuf << " dstoff=" << dstoff
+			<< " at t=" << Simulator::Now().GetNanoSeconds());
 		std::pair<uint16_t, uint16_t> dstInfo(dstbuf, dstoff);
 		if (m_pendingRecvByBufferRegion.count(dstInfo) > 0){
 			auto& cur = m_pendingRecvByBufferRegion[dstInfo];
@@ -331,6 +335,62 @@ namespace ns3 {
 		// distinct sport per send call to keep RdmaHw's (dip,sport,pg) qp key unique
 		// across concurrent in-flight transfers to the same peer on this channel
 		uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + (m_rdmaSportCounter++));
+		uint16_t dstoffU = static_cast<uint16_t>(dstoff);
+
+		// -- register rx-flow completion on the receiver ----------------------------
+		// flowKey matches the key RdmaHw builds in ReceiveUdp from (ch.sip, ch.udp.pg, ch.udp.sport)
+		uint64_t flowKey = ((uint64_t)m_app->GetMyIp().Get() << 32)
+		                 | ((uint64_t)MSCCL_RDMA_PG << 16)
+		                 | (uint64_t)sport;
+
+		Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(sendpeer));
+		Ptr<CollectivesApplication> peerApp =
+			DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
+		MscclChannel* peerChan = peerApp->GetChannel(m_id);
+
+		// staging buffer: allocated here (if correctness check on), filled per-packet
+		// in ReceiveUdp, and freed inside the completion lambda
+		uint8_t* stagingBuf = m_app->GetCorrectnessCheck()
+			? new uint8_t[totalBytes] : nullptr;
+
+		// per-packet lambda: copies incoming payload bytes into the staging buffer
+		std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn = nullptr;
+		if (stagingBuf) {
+			uint8_t* sbuf = stagingBuf;
+			perPktFn = [sbuf](const uint8_t* payload, uint32_t sz, uint64_t seqOff){
+				memcpy(sbuf + seqOff, payload, sz);
+			};
+		}
+
+		// completion lambda: fires when last byte lands at receiver's RdmaHw
+		DataType::Type dtype = m_dataType;
+		std::function<void()> completionFn = [peerApp, peerChan, dstbuf, dstoffU,
+		                                       totalBytes, stagingBuf, dtype](){
+			if (stagingBuf) {
+				// determine reduce vs plain copy at receive time (more likely RecvRedCp
+				// has been registered by now since data took propagation delay to arrive)
+				uint8_t* dst = (uint8_t*)peerApp->GetBufferPtr(dstbuf, dstoffU);
+				if (peerChan->IsPendingReduceCopy(dstbuf, dstoffU)) {
+					ReduceAdd(dst, stagingBuf, totalBytes, dtype);
+				} else {
+					memcpy(dst, stagingBuf, totalBytes);
+				}
+				delete[] stagingBuf;
+			}
+			NS_LOG_INFO("rx flow complete: NotifyTransferArrived dstbuf=" << (int)dstbuf
+				<< " dstoff=" << dstoffU
+				<< " at t=" << Simulator::Now().GetNanoSeconds());
+			peerChan->NotifyTransferArrived(dstbuf, dstoffU);
+		};
+
+		peerApp->GetRdmaDriver()->m_rdma->RegisterRxFlow(
+			flowKey, totalBytes, stagingBuf, std::move(perPktFn), std::move(completionFn));
+
+		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+			<< ": registered rx flow key=0x" << std::hex << flowKey << std::dec
+			<< " totalBytes=" << totalBytes << " dstbuf=" << (int)dstbuf << " dstoff=" << dstoffU
+			<< " at t=" << Simulator::Now().GetNanoSeconds());
+		// ---------------------------------------------------------------------------
 
 		// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
 		// requires operator!= on the functor, which closures don't have), so bind the
@@ -352,26 +412,27 @@ namespace ns3 {
 			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), /* tag */ 0, totalBytes, MSCCL_RDMA_PG,
 			m_app->GetMyIp(), m_app->GetPeerIp(sendpeer), sport, MSCCL_RDMA_DPORT,
 			m_app->GetPeerWin(sendpeer), m_app->GetPeerBaseRtt(sendpeer), mscclFlowId, finishCb, Callback<void>());
+
+		// set real source-buffer pointer on the newly created QP so GetNxtPacket
+		// embeds actual data bytes in packet payloads (correctness check only)
+		if (m_app->GetCorrectnessCheck()) {
+			Ipv4Address peerIp = m_app->GetPeerIp(sendpeer);
+			Ptr<RdmaQueuePair> qp = m_app->GetRdmaDriver()->m_rdma->GetQp(
+				peerIp.Get(), sport, MSCCL_RDMA_PG);
+			if (qp) {
+				qp->SetSrcDataPtr((uint8_t*)m_app->GetBufferPtr(srcbuf, srcoff));
+			}
+		}
 	}
 
 	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
-		Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(sendpeer));
-		Ptr<CollectivesApplication> peerApp = DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
-		MscclChannel* peerChan = peerApp->GetChannel(m_id);
 		uint16_t dstoffU = static_cast<uint16_t>(dstoff);
-
-		if (m_app->GetCorrectnessCheck()){
-			uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
-			uint8_t* src = (uint8_t*) m_app->GetBufferPtr(srcbuf, srcoff);
-			uint8_t* dst = (uint8_t*) peerApp->GetBufferPtr(dstbuf, dstoff);
-			if (peerChan->IsPendingReduceCopy(dstbuf, dstoffU)){
-				ReduceAdd(dst, src, bytes, m_dataType);
-			} else {
-				memcpy(dst, src, bytes);
-			}
-		}
-		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to " << sendpeer << " complete, dstInfo=(" << dstbuf << "," << dstoffU << ") at t=" << Simulator::Now().GetNanoSeconds());
-		peerChan->NotifyTransferArrived(dstbuf, dstoffU);
+		// sender's own step is done; receiver unblocking happens via the rx-flow
+		// completion callback registered in SendRdma (fires when data physically arrives)
+		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+			<< ": RDMA send to " << sendpeer << " complete (sender side)"
+			<< " dstInfo=(" << dstbuf << "," << dstoffU << ")"
+			<< " at t=" << Simulator::Now().GetNanoSeconds());
 		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
 

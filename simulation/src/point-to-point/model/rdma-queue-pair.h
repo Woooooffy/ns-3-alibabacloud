@@ -33,6 +33,7 @@ public:
 	uint32_t lastPktSize;
 	Callback<void> m_notifyAppFinish;
 	Callback<void> m_notifyAppSent;
+	uint8_t* m_srcDataPtr; // source buffer for this QP's transfer; nullptr if correctness check disabled
 	/******************************
 	 * runtime states
 	 *****************************/
@@ -104,6 +105,7 @@ public:
 	void SetTag(uint64_t tag);void SetSrc(uint32_t src);void SetDest(uint32_t dest);void SetInitialSize(uint64_t size);
 	uint32_t GetMscclFlowId();
 	void SetMscclFlowId(uint32_t mscclFlowId);
+	void SetSrcDataPtr(uint8_t* ptr);
 	uint32_t GetHash(void);
 	void Acknowledge(uint64_t ack);
 	uint64_t GetOnTheFly();

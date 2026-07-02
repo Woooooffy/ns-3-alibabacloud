@@ -7,6 +7,7 @@
 #include <ns3/custom-header.h>
 #include "qbb-net-device.h"
 #include <unordered_map>
+#include <functional>
 #include <set>
 #include "pint.h"
 
@@ -55,6 +56,20 @@ public:
 	QpCompleteCallback m_qpCompleteCallback;
     typedef Callback<void, Ptr<RdmaQueuePair> > SendCompleteCallback;
     SendCompleteCallback m_sendCompleteCallback;
+
+	// per-flow rx-side completion tracking
+	struct RxFlowEntry {
+		uint64_t remainingBytes;
+		uint8_t* stagingBuf;  // nullptr if correctness check disabled; otherwise allocated buffer for incoming bytes
+		std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn; // called per in-order packet: (payload, payloadSize, seqOffset)
+		std::function<void()> completionFn; // called when last byte arrives
+	};
+	std::unordered_map<uint64_t, RxFlowEntry> m_rxFlowCallbacks; // flowKey → entry
+
+	void RegisterRxFlow(uint64_t flowKey, uint64_t totalBytes,
+	                    uint8_t* stagingBuf,
+	                    std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn,
+	                    std::function<void()> completionFn);
 
     // for monitor
 	std::vector<uint64_t> tx_bytes; // <port_id, tx_bytes>

@@ -32,6 +32,7 @@ RdmaQueuePair::RdmaQueuePair(uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, ui
 	m_dest = -1;
 	m_tag = -1;
 	m_mscclFlowId = MscclFlowIdHeader::NO_FLOW_ID;
+	m_srcDataPtr = nullptr;
 	snd_nxt = snd_una = 0;
 	m_pg = pg;
 	m_ipid = 0;
@@ -103,6 +104,10 @@ uint64_t RdmaQueuePair::GetTag(){
 
 void RdmaQueuePair::SetMscclFlowId(uint32_t mscclFlowId){
 	m_mscclFlowId = mscclFlowId;
+}
+
+void RdmaQueuePair::SetSrcDataPtr(uint8_t* ptr){
+	m_srcDataPtr = ptr;
 }
 
 uint32_t RdmaQueuePair::GetMscclFlowId(){
