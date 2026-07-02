@@ -408,21 +408,18 @@ namespace ns3 {
 		// mscclFlowId comes from the XML algorithm's per-step "mscclflowid"
 		// attribute (parsed in algo_topology.cc); MSCCL_FLOW_ID_NONE if the step didn't
 		// assign one, in which case switches fall back to plain ECMP for this qp
+		// srcDataPtr is passed into AddQueuePair so RdmaHw can set it on the QP
+		// BEFORE NewQp fires DequeueAndTransmit -- otherwise the first GetNxtPacket
+		// call (which happens synchronously inside NewQp) would see nullptr and embed
+		// zero bytes in the very first packet of the transfer.
+		uint8_t* srcDataPtr = m_app->GetCorrectnessCheck()
+			? (uint8_t*)m_app->GetBufferPtr(srcbuf, srcoff) : nullptr;
+
 		m_app->GetRdmaDriver()->AddQueuePair(
 			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), /* tag */ 0, totalBytes, MSCCL_RDMA_PG,
 			m_app->GetMyIp(), m_app->GetPeerIp(sendpeer), sport, MSCCL_RDMA_DPORT,
-			m_app->GetPeerWin(sendpeer), m_app->GetPeerBaseRtt(sendpeer), mscclFlowId, finishCb, Callback<void>());
-
-		// set real source-buffer pointer on the newly created QP so GetNxtPacket
-		// embeds actual data bytes in packet payloads (correctness check only)
-		if (m_app->GetCorrectnessCheck()) {
-			Ipv4Address peerIp = m_app->GetPeerIp(sendpeer);
-			Ptr<RdmaQueuePair> qp = m_app->GetRdmaDriver()->m_rdma->GetQp(
-				peerIp.Get(), sport, MSCCL_RDMA_PG);
-			if (qp) {
-				qp->SetSrcDataPtr((uint8_t*)m_app->GetBufferPtr(srcbuf, srcoff));
-			}
-		}
+			m_app->GetPeerWin(sendpeer), m_app->GetPeerBaseRtt(sendpeer), mscclFlowId, finishCb, Callback<void>(),
+			srcDataPtr);
 	}
 
 	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
