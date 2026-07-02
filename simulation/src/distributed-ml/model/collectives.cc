@@ -644,6 +644,13 @@ namespace ns3 {
 	void CollectivesApplication::TryScheduleNextStep(int8_t bid){
 		mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
 		TBState* tbState = &m_TBStates[bid];
+		uint32_t nodeId = GetNode()->GetId();
+		NS_LOG_DEBUG("GPU " << nodeId << " TryScheduleNextStep TB=" << (int)bid
+			<< " local_step=" << tbState->local_step
+			<< " global_step=" << tbState->global_step
+			<< " flag=" << tbState->flag
+			<< " busy=" << tbState->busy
+			<< " t=" << Simulator::Now().GetNanoSeconds());
 		if (tbState->busy) return; // already scheduled next step
 		int16_t sid = tbState->local_step; // sid is local step
 		if (sid == tb->nsteps) return; // no more steps
@@ -660,10 +667,22 @@ namespace ns3 {
 				int64_t depflag = COMPUTE_FLAG(m_currWorkId, m_currIter, depsid);
 				TBState* depTB = &m_TBStates[depbid];
 				if (depflag > depTB->flag) {
+					NS_LOG_DEBUG("GPU " << nodeId << " TB=" << (int)bid << " sid=" << sid
+						<< " BLOCKED on depTB=" << (int)depbid
+						<< " depsid=" << depsid
+						<< " depflag=" << depflag
+						<< " depTB->flag=" << depTB->flag
+						<< " t=" << Simulator::Now().GetNanoSeconds());
 					// tell depTB to try reschedule when its flag changes
 					depTB->tryReschedule.insert(bid);
 					return; // cannot schedule
 				}
+				NS_LOG_DEBUG("GPU " << nodeId << " TB=" << (int)bid << " sid=" << sid
+					<< " dep satisfied: depTB=" << (int)depbid
+					<< " depsid=" << depsid
+					<< " depflag=" << depflag
+					<< " depTB->flag=" << depTB->flag
+					<< " t=" << Simulator::Now().GetNanoSeconds());
 				// no need to re-check previous deps next time
 				// commented out for correct global_step update
 				// tState->firstPendingDep++;
@@ -672,6 +691,8 @@ namespace ns3 {
 			tbState->global_step += nDeps - 1; // tracks step, don't update flag until completion of step
 
 		}
+		NS_LOG_DEBUG("GPU " << nodeId << " TB=" << (int)bid << " sid=" << sid
+			<< " DISPATCHING RunStep t=" << Simulator::Now().GetNanoSeconds());
 		Simulator::ScheduleNow(&CollectivesApplication::RunStep, this, bid, sid);
 		m_TBStates[bid].busy = true; // set flag to prevent multiple schedulings
 	}

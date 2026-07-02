@@ -121,7 +121,7 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 			idx = static_cast<int>(search->second);
 			NS_LOG_INFO("Switch " << m_id << " msccl flow-forwarding rule matched for flow " << ch.udp.mscclFlowId << ", sending out port " << idx);
 			if (idx != GetOutDev(p, ch)){
-				NS_LOG_DEBUG("Switch " << m_id << " flow-forwarding rule for flow " << ch.udp.mscclFlowId << " sends out port " << idx << ", but ECMP lookup would have sent to port " << GetOutDev(p, ch));
+				NS_LOG_DEBUG("Switch " << m_id << " flow-forwarding rule for flow " << ch.udp.mscclFlowId << " sends out port " << idx << "; ECMP lookup would have sent to port " << GetOutDev(p, ch));
 			}
 		}
 	}
