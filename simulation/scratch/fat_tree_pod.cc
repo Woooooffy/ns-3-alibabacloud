@@ -16,7 +16,7 @@ using namespace ns3;
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("FAT_TREE_POD_TEST");
     LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
-	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
+//	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     uint32_t inputBytes = (1 << 20);
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
