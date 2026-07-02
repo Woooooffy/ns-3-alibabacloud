@@ -16,7 +16,8 @@ using namespace ns3;
 int main(int argc, char *argv[]) {
 	NS_LOG_COMPONENT_DEFINE("3NODES_TEST");
     LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
-	LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
+	// LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
+    LogComponentEnable("RdmaHw", LOG_LEVEL_ALL);
     uint32_t inputBytes = (1 << 20);
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);

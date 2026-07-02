@@ -23,6 +23,7 @@
 namespace ns3{
 
 NS_OBJECT_ENSURE_REGISTERED(RdmaHw);
+NS_LOG_COMPONENT_DEFINE("RdmaHw");
 
 TypeId RdmaHw::GetTypeId (void)
 {
@@ -187,7 +188,7 @@ TypeId RdmaHw::GetTypeId (void)
 				"the number of gpus in a server, used for routing",
 				UintegerValue(1),
 				MakeUintegerAccessor(&RdmaHw::m_gpus_per_server),
-				MakeUintegerChecker<uint32_t>())	
+				MakeUintegerChecker<uint32_t>())
 		.AddAttribute("TotalPauseTimes",
 				"The number of pause times to simulate PFC pause due to PCIe",
 				UintegerValue(0),
@@ -382,19 +383,19 @@ uint32_t RdmaHw::GetNicIdxOfRxQp(Ptr<RdmaRxQueuePair> q){
 		auto &v = m_rtTable[q->dip];
 		if(v.size() > 0)
 			return v[q->GetHash() % v.size()];
-		else 
+		else
 			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 	} else if(m_rtTable_nxthop_nvswitch.count(q->dip) != 0) {
 		auto &v = m_rtTable_nxthop_nvswitch[q->dip];
 		if(v.size() > 0)
 			return v[q->GetHash() % v.size()];
-		else 
+		else
 			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 	} else {
 		NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 	}
 	NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-	
+
 }
 void RdmaHw::DeleteRxQp(uint32_t dip, uint16_t pg, uint16_t dport){
 	uint64_t key = ((uint64_t)dip << 32) | ((uint64_t)pg << 16) | (uint64_t)dport;
@@ -439,7 +440,7 @@ void RdmaHw::SendComplete(Ptr<RdmaQueuePair> qp)
 
 int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 	uint8_t ecnbits = ch.GetIpv4EcnBits();
-	
+
 	uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 	// TODO find corresponding rx queue pair
 	Ptr<RdmaRxQueuePair> rxQp = GetRxQp(ch.dip, ch.sip, ch.udp.dport, ch.udp.sport, ch.udp.pg, true);
@@ -542,7 +543,7 @@ int RdmaHw::ReceiveCnp(Ptr<Packet> p, CustomHeader &ch){
 	uint32_t nic_idx = GetNicIdxOfQp(qp);
 	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev;
 
-	if (qp->m_rate == 0)			//lazy initialization	
+	if (qp->m_rate == 0)			//lazy initialization
 	{
 		qp->m_rate = dev->GetDataRate();
 		if (m_cc_mode == 1){
@@ -599,7 +600,7 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 		qp_cnp[key]++; // update for the number of cnp this qp has received
 		if (m_cc_mode == 1){ // mlx version
 			cnp_received_mlx(qp);
-		} 
+		}
 	}
 
 	if (m_cc_mode == 3){
@@ -664,7 +665,7 @@ int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size
 		}else
 			return 4;
 	}else {
-		// Duplicate. 
+		// Duplicate.
 		return 3;
 	}
 }
