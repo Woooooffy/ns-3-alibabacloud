@@ -275,20 +275,23 @@ Ptr<RdmaQueuePair> RdmaHw::GetQp(uint32_t dip, uint16_t sport, uint16_t pg){
 		return it->second;
 	return NULL;
 }
-void RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr){
+Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose){
 	// create qp
 	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
 	qp->SetSrc(src);
 	qp->SetDest(dest);
 	qp->SetTag(tag);
 	qp->SetMscclFlowId(mscclFlowId);
-	qp->SetSize(size);
-	qp->SetInitialSize(size);
 	qp->SetWin(win);
 	qp->SetBaseRtt(baseRtt);
 	qp->SetVarWin(m_var_win);
-	qp->SetAppNotifyCallback(notifyAppFinish);
-	qp->SetAppSentCallback(notifyAppSent);
+	qp->m_autoClose = autoClose;
+	// size == 0 is used to eagerly establish a persistent connection (see
+	// MscclChannel::SetupRdmaSendPeer) with no message queued yet; a non-persistent caller
+	// (e.g. RdmaClient) or the first message of a persistent connection instead pushes here.
+	if (size != 0){
+		qp->PushMessage(size, srcDataPtr, mscclFlowId, notifyAppFinish, notifyAppSent);
+	}
 	// add qp
 	uint32_t nic_idx = GetNicIdxOfQp(qp);
 
@@ -321,12 +324,9 @@ void RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t si
 	// NVLS settings
 	if(nvls_enable == 1) qp->nvls_enable = 1;
 	else qp->nvls_enable = 0;
-	// set source data pointer before NewQp so the very first GetNxtPacket call
-	// (which fires synchronously inside NewQp → DequeueAndTransmit) already sees
-	// the real source bytes rather than the nullptr default
-	qp->SetSrcDataPtr(srcDataPtr);
 	// Notify Nic
 	m_nic[nic_idx].dev->NewQp(qp);
+	return qp;
 }
 
 void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
@@ -338,11 +338,8 @@ void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
 	last_qp_rate.erase(key);
 }
 
-void RdmaHw::RegisterRxFlow(uint64_t flowKey, uint64_t totalBytes,
-                             uint8_t* stagingBuf,
-                             std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn,
-                             std::function<void()> completionFn){
-	m_rxFlowCallbacks[flowKey] = {totalBytes, stagingBuf, std::move(perPktFn), std::move(completionFn)};
+void RdmaHw::RegisterRxFlow(uint64_t flowKey, std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn){
+	m_rxFlowCallbacks[flowKey] = {std::move(perPktFn)};
 }
 
 Ptr<RdmaRxQueuePair> RdmaHw::GetRxQp(uint32_t sip, uint32_t dip, uint16_t sport, uint16_t dport, uint16_t pg, bool create){
@@ -428,7 +425,10 @@ int RdmaHw::SendPacketComplete(Ptr<Packet> p, CustomHeader &ch)
 		// send completion instead of waiting for one.
 		uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 		qp->Acknowledge(seq + payload_size);
-		if (qp->IsFinished()){
+		while (!qp->m_messages.empty() && qp->IsCurMessageFinished()){
+			QpCompleteMessage(qp);
+		}
+		if (qp->m_autoClose && qp->IsFinished()){
 			QpComplete(qp);
 		}
 	}
@@ -473,15 +473,9 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 				p->CopyData(tmp.data(), p->GetSize());
 				entry.perPktFn(tmp.data() + headerSize, payload_size, ch.udp.seq);
 			}
-			entry.remainingBytes -= payload_size;
-			if (entry.remainingBytes == 0) {
-				NS_LOG_INFO("RdmaHw node " << m_node->GetId()
-					<< ": rx flow 0x" << std::hex << flowKey << std::dec
-					<< " complete at t=" << Simulator::Now().GetNanoSeconds());
-				std::function<void()> fn = std::move(entry.completionFn);
-				m_rxFlowCallbacks.erase(it);
-				fn();
-			}
+			// registration lives for the connection's whole lifetime (see
+			// MscclChannel::SetupRdmaSendPeer) -- no byte-count/completion bookkeeping here;
+			// all of that lives in the application layer (MscclChannel::OnBytesArrivedFromPeer)
 		}
 	}
 
@@ -591,7 +585,10 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 			uint64_t goback_seq = seq / m_chunk * m_chunk;
 			qp->Acknowledge(goback_seq);
 		}
-		if (qp->IsFinished()){
+		while (!qp->m_messages.empty() && qp->IsCurMessageFinished()){
+			QpCompleteMessage(qp);
+		}
+		if (qp->m_autoClose && qp->IsFinished()){
 			QpComplete(qp);
 		}
 	}
@@ -691,6 +688,10 @@ void RdmaHw::RecoverQueue(Ptr<RdmaQueuePair> qp){
 	qp->snd_nxt = qp->snd_una;
 }
 
+void RdmaHw::QpCompleteMessage(Ptr<RdmaQueuePair> qp){
+	qp->FinishMessage();
+}
+
 void RdmaHw::QpComplete(Ptr<RdmaQueuePair> qp){
 	NS_ASSERT(!m_qpCompleteCallback.IsNull());
 	if (m_cc_mode == 1){
@@ -703,10 +704,22 @@ void RdmaHw::QpComplete(Ptr<RdmaQueuePair> qp){
 	// It may also delete the rxQp on the receiver
 	m_qpCompleteCallback(qp);
 
-	qp->m_notifyAppFinish();
+	// any messages still queued (shouldn't normally happen -- autoClose-triggered teardown
+	// only fires once the queue is empty, and an explicit CloseQueuePair call is the
+	// caller's responsibility to make only once its own bookkeeping is done) are drained
+	// here so their callbacks still fire rather than being silently dropped.
+	while (!qp->m_messages.empty()){
+		qp->FinishMessage();
+	}
+
+	qp->m_closed = true;
 
 	// delete the qp
 	DeleteQueuePair(qp);
+}
+
+void RdmaHw::CloseQueuePair(Ptr<RdmaQueuePair> qp){
+	QpComplete(qp);
 }
 
 void RdmaHw::SetLinkDown(Ptr<QbbNetDevice> dev){
@@ -749,15 +762,20 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	uint64_t payload_size = qp->GetBytesLeft();
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
-	Ptr<Packet> p = (qp->m_srcDataPtr != nullptr)
-		? Create<Packet>(qp->m_srcDataPtr + qp->snd_nxt, (uint32_t)payload_size)
+	// source pointer, if any, belongs to the current message and is indexed relative to
+	// that message's own start offset -- not the connection-wide snd_nxt -- since each
+	// message on a persistent qp can come from a different source buffer (different
+	// srcbuf/srcoff per MSCCL Send() call).
+	uint8_t* curSrcDataPtr = qp->GetCurSrcDataPtr();
+	Ptr<Packet> p = (curSrcDataPtr != nullptr)
+		? Create<Packet>(curSrcDataPtr + (qp->snd_nxt - qp->m_messages.front().m_startSeq), (uint32_t)payload_size)
 		: Create<Packet>((uint32_t)payload_size);
 	// carry the qp's msccl flow id as a real header (innermost, right next to the
 	// payload) so switches can do custom flow-based forwarding instead of plain
 	// ECMP when enabled. Added before SimpleSeqTsHeader so it doesn't shift the
 	// fixed byte offsets switches use to reach the INT header.
 	MscclFlowIdHeader mscclFlowIdHeader;
-	mscclFlowIdHeader.SetFlowId(qp->GetMscclFlowId());
+	mscclFlowIdHeader.SetFlowId(qp->GetCurMscclFlowId());
 	p->AddHeader(mscclFlowIdHeader);
 	// add SimpleSeqTsHeader
 	SimpleSeqTsHeader seqTs;

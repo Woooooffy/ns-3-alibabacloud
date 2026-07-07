@@ -66,9 +66,32 @@ namespace ns3 {
 		int16_t srcOffset;
 		uint16_t dstBuf;
 		int16_t dstOffset;
-		PendingTransfer(): bid(-1), sid(-1), receivedBytes(0), pendingBytes(0), op(-1), srcBuf(3), srcOffset(-1), dstBuf(3), dstOffset(-1){}
+		// lazily allocated when op==MSCCL_RECV_REDUCE_COPY and correctness check is enabled:
+		// holds raw incoming bytes until pendingBytes is reached, then a single ReduceAdd is
+		// applied and the buffer freed. Deferring the reduce to completion (rather than doing
+		// it per-fragment) avoids splitting a data element across two fragments, since RDMA
+		// packet boundaries aren't guaranteed aligned to the element size the way the socket
+		// path's Send() fragmentation is.
+		uint8_t* scratchBuf;
+		PendingTransfer(): bid(-1), sid(-1), receivedBytes(0), pendingBytes(0), op(-1), srcBuf(3), srcOffset(-1), dstBuf(3), dstOffset(-1), scratchBuf(nullptr){}
 		PendingTransfer(int8_t bId, int16_t sId, uint32_t bytes, int8_t Op, uint16_t srcbuf, uint16_t srcoff, uint16_t dstbuf, int16_t dstoff): bid(bId), sid(sId),
-										receivedBytes(0), pendingBytes(bytes), op(Op), srcBuf(srcbuf), srcOffset(srcoff), dstBuf(dstbuf), dstOffset(dstoff){}
+										receivedBytes(0), pendingBytes(bytes), op(Op), srcBuf(srcbuf), srcOffset(srcoff), dstBuf(dstbuf), dstOffset(dstoff), scratchBuf(nullptr){}
+	};
+
+	// bytes that arrived on a peer's connection before a matching Recv()/RecvRedCp() was
+	// posted by this node's own step interpreter -- the symmetric counterpart to
+	// PendingTransfer for the "data-first" ordering case. Modeled as one continuous,
+	// undifferentiated byte stream per peer (like a raw socket stream), not a queue of
+	// discretely-sized transfers: nothing about transfer boundaries crosses the wire, so
+	// the receiver has no way to know them in advance and doesn't need to -- a future
+	// Recv()/RecvRedCp() call simply claims exactly the byte count it locally expects off
+	// the front, in FIFO order. If a rank's algorithm XML miscounts elements relative to
+	// its peer, the stream desyncs from that point on (silently, exactly as it would on
+	// real hardware) rather than being caught by any cross-check here.
+	struct UnclaimedBytes{
+		uint32_t gotBytes; // bytes arrived from this peer but not yet claimed by a Recv()/RecvRedCp() call
+		uint8_t* stagingBuf; // nullptr if correctness check disabled; grows (realloc) as bytes arrive
+		UnclaimedBytes(): gotBytes(0), stagingBuf(nullptr){}
 	};
 
 	// a single on-wire fragment of a Send(), queued for pacing onto the NIC.
@@ -94,7 +117,6 @@ namespace ns3 {
 			void SendCallback(Ptr<Socket> sock, uint32_t bytes);
 			void RecvCallback(Ptr<Socket> sock);
 
-			inline void SetPendingRecv(uint16_t dstBuf, int16_t dstOff, PendingTransfer recv);
 			inline void PushPendingSend(Ptr<Socket> sendpeer, PendingTransfer send);
 			void Send(int8_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE);
 			void Recv(int8_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
@@ -110,16 +132,35 @@ namespace ns3 {
 			// RDMA-fabric transport (gpu<->switch/nvswitch peers), as opposed to the
 			// p2p PacketSocket path above (gpu<->gpu direct peers)
 			void SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId);
-			// shared by RecvCallback (socket path) and OnRdmaSendComplete (RDMA path):
-			// either completes a matching pending recv, or marks the region ready
-			void NotifyTransferArrived(uint16_t dstbuf, uint16_t dstoff);
-			// peeked cross-node by the sender to decide memcpy vs reduce for correctness-check
-			bool IsPendingReduceCopy(uint16_t dstbuf, uint16_t dstoff);
+			// eagerly establishes this channel's persistent RDMA connection to `peer` --
+			// called once per (channel,peer) from CollectivesApplication::SetupRdmaPeers,
+			// deferred one tick past Bootstrap() so every node's m_channels already exists
+			// (see CollectivesApplication::Bootstrap()). Creates the peer's persistent qp and
+			// registers this connection's rx-flow callback on the peer's RdmaHw -- that
+			// callback forwards straight into OnBytesArrivedFromPeer, ignoring RdmaHw's
+			// wire-level sequence number entirely (see OnBytesArrivedFromPeer's comment).
+			void SetupRdmaSendPeer(int16_t peer);
 			// bound as the RdmaDriver::AddQueuePair completion callback
 			void OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems);
 
 			void Close();
 		private:
+			// shared per-fragment matching logic for both transports (called directly from
+			// RecvCallback for sockets, and from the perPktFn lambda registered in
+			// SetupRdmaSendPeer for RDMA): matches incoming bytes against `peer`'s
+			// locally-posted Recv()/RecvRedCp() order (m_pendingRecvQueue) using a purely
+			// local write-offset accumulator (PendingTransfer::receivedBytes) -- no fragment
+			// offset or transfer-size info from the sender is used or needed. Stages bytes in
+			// m_unclaimedBytes if no matching Recv()/RecvRedCp() has been posted yet, and
+			// completes the step once a transfer's full locally-expected byte count has
+			// arrived.
+			void OnBytesArrivedFromPeer(int16_t peer, const uint8_t* payload, uint32_t fragSize);
+			// shared body of Recv()/RecvRedCp(): claims bytes already sitting in
+			// m_unclaimedBytes for `recvPeer` if any (a full or partial claim, in FIFO byte
+			// order), else registers a new pending recv (m_pendingRecvQueue) to be matched by
+			// a future arrival.
+			void ClaimOrRegisterPendingRecv(int8_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op);
+
 			int8_t m_id;
 			DataType::Type m_dataType;
 			TypeId m_socketType;
@@ -127,12 +168,18 @@ namespace ns3 {
 			Ptr<Socket> m_listenSocket;
 			std::map<int16_t, Ptr<Socket>> m_sendPeerSockets;
 			std::map<Ptr<Socket>, int16_t> m_recvSocketPeers;
-			// std::map<int16_t, std::queue<PendingTransfer>> m_pendingRecvs;
-			std::map<std::pair<uint16_t, uint16_t>, PendingTransfer> m_pendingRecvByBufferRegion;
-			std::map<std::pair<uint16_t, uint16_t>, bool> m_recvReadyByBufferRegion;
-			std::map<std::pair<uint16_t, uint16_t>, uint32_t> m_recvBytesAccum;
+			// posted via Recv()/RecvRedCp(), dst known, awaiting bytes; per peer, FIFO in the
+			// order this node's own step interpreter posted them -- matches real hardware's
+			// per-connection step ordering (destination is never derived from wire content)
+			std::map<int16_t, std::queue<PendingTransfer>> m_pendingRecvQueue;
+			// bytes that arrived before a matching Recv()/RecvRedCp() was posted; per peer, one
+			// continuous unclaimed byte stream (symmetric early-arrival counterpart to
+			// m_pendingRecvQueue) -- see UnclaimedBytes for why this isn't chunked by transfer.
+			std::map<int16_t, UnclaimedBytes> m_unclaimedBytes;
 			std::map<Ptr<Socket>, std::queue<PendingTransfer>> m_pendingSends;
-			uint16_t m_rdmaSportCounter = 0; // deterministic per-channel sport allocator for concurrent RDMA flows
+			// persistent per-peer RDMA connection, established once in SetupRdmaSendPeer
+			std::map<int16_t, Ptr<RdmaQueuePair>> m_rdmaQpByPeer;
+			uint16_t m_rdmaSportCounter = 0; // allocated once per peer in SetupRdmaSendPeer, not per Send() call
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			uint32_t m_flowId_counter = 0;
@@ -192,6 +239,12 @@ namespace ns3 {
 			void TryScheduleNextStep(int8_t bid);
 			void InterpretAlgo();
 			void Bootstrap();
+			// establishes every channel's persistent RDMA send-peer connections. Deferred one
+			// tick past Bootstrap() (via Simulator::ScheduleNow) so it only runs once every
+			// node's own Bootstrap() has already constructed its m_channels map -- reaching
+			// into a peer's channel here is otherwise a race across nodes. See
+			// MscclChannel::SetupRdmaSendPeer for the per-(channel,peer) setup itself.
+			void SetupRdmaPeers();
 			void SendNextFragment(Ptr<NetDevice> dev);
 			static Time GetTxTime(Ptr<NetDevice> dev, uint32_t bytes);
 		private:

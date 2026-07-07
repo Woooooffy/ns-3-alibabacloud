@@ -57,19 +57,18 @@ public:
     typedef Callback<void, Ptr<RdmaQueuePair> > SendCompleteCallback;
     SendCompleteCallback m_sendCompleteCallback;
 
-	// per-flow rx-side completion tracking
+	// per-flow rx-side byte-arrival notification. Purely a transport-level forwarding
+	// registration: RdmaHw owns no buffer and makes no completion/correctness decision here
+	// -- it just calls perPktFn for every in-order packet on this flow, for as long as the
+	// registration lives (a connection's lifetime; see MscclChannel::SetupRdmaSendPeer).
+	// All buffer ownership, the reduce-vs-copy decision, accumulation, and completion
+	// notification live in collectives.cc's MscclChannel::OnBytesArrivedFromPeer.
 	struct RxFlowEntry {
-		uint64_t remainingBytes;
-		uint8_t* stagingBuf;  // nullptr if correctness check disabled; otherwise allocated buffer for incoming bytes
 		std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn; // called per in-order packet: (payload, payloadSize, seqOffset)
-		std::function<void()> completionFn; // called when last byte arrives
 	};
 	std::unordered_map<uint64_t, RxFlowEntry> m_rxFlowCallbacks; // flowKey → entry
 
-	void RegisterRxFlow(uint64_t flowKey, uint64_t totalBytes,
-	                    uint8_t* stagingBuf,
-	                    std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn,
-	                    std::function<void()> completionFn);
+	void RegisterRxFlow(uint64_t flowKey, std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn);
 
     // for monitor
 	std::vector<uint64_t> tx_bytes; // <port_id, tx_bytes>
@@ -92,7 +91,16 @@ public:
 	static uint64_t GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg); // get the lookup key for m_qpMap
 	Ptr<RdmaQueuePair> GetQp(uint32_t dip, uint16_t sport, uint16_t pg); // get the qp
 	uint32_t GetNicIdxOfQp(Ptr<RdmaQueuePair> qp); // get the NIC index of the qp
-	void AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr); // add a new qp (new send)
+	// creates a new qp and, if size != 0, pushes it as the qp's first message (size == 0 is
+	// used to eagerly establish a persistent MSCCL connection at bootstrap with no data
+	// queued yet -- see MscclChannel::SetupRdmaSendPeer). Returns the qp so callers that
+	// intend to reuse it (push further messages directly via qp->PushMessage(...), bypassing
+	// this method) can hold onto it; one-shot callers (e.g. RdmaClient) can simply ignore it,
+	// since autoClose defaults to true and behaves exactly as before.
+	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true);
+	// explicit whole-qp teardown for reused/persistent qps (autoClose == false); thin
+	// wrapper over QpComplete that exists purely for call-site clarity.
+	void CloseQueuePair(Ptr<RdmaQueuePair> qp);
 	void DeleteQueuePair(Ptr<RdmaQueuePair> qp);
 
 	Ptr<RdmaRxQueuePair> GetRxQp(uint32_t sip, uint32_t dip, uint16_t sport, uint16_t dport, uint16_t pg, bool create); // get a rxQp
@@ -115,6 +123,15 @@ public:
 	static uint16_t EtherToPpp (uint16_t protocol);
 
 	void RecoverQueue(Ptr<RdmaQueuePair> qp);
+	// per-message completion: pops the qp's front message and fires its callback, without
+	// tearing down the qp itself. Called whenever IsCurMessageFinished() (queue non-empty
+	// and its front message's bytes are all acked), in place of the old
+	// "whole qp finished -> QpComplete" check.
+	void QpCompleteMessage(Ptr<RdmaQueuePair> qp);
+	// whole-qp teardown: only called explicitly now (e.g. RdmaClient once its single
+	// message finishes, or MscclChannel::Close() for a persistent MSCCL connection at
+	// simulation end) -- never automatically inferred from a temporarily-empty message
+	// queue, since that's the normal idle state for a persistent, reused qp.
 	void QpComplete(Ptr<RdmaQueuePair> qp);
 	void SetLinkDown(Ptr<QbbNetDevice> dev);
 

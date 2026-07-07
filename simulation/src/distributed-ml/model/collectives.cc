@@ -9,9 +9,13 @@
 // outrunning the device's actual transmission time
 #define MSCCL_L2_OVERHEAD_BYTES 14
 
-// RDMA-fabric transport constants: sport is allocated per (channel, send call) to keep
-// RdmaHw's (dip,sport,pg) queue-pair key unique across concurrent in-flight transfers to
-// the same peer; dport/pg are fixed since uniqueness only needs to hold on sport.
+// RDMA-fabric transport constants: sport is allocated once per (channel, peer) connection,
+// at bootstrap (see MscclChannel::SetupRdmaSendPeer), and reused for every subsequent
+// Send() to that peer -- a persistent qp/connection per (channel,peer), mirroring how real
+// NCCL keeps one long-lived connection per channel rather than opening a new one per
+// message. This also gives RdmaHw's per-connection byte sequencing (ReceiverCheckSeq) a
+// stable ordering guarantee to rely on. dport/pg are fixed since uniqueness only needs to
+// hold on sport.
 #define MSCCL_RDMA_SPORT_BASE 20000
 #define MSCCL_RDMA_DPORT 21000
 #define MSCCL_RDMA_PG 3
@@ -156,11 +160,8 @@ namespace ns3 {
 				recvSize = packet->GetSize();
 			}
 			else NS_FATAL_ERROR("Received packet with incomplete header");
-			// TODO: properly consider cross recv op boundary packets
-			// tmp buffer and offset for cross recv op boundary packets
 			uint8_t* tmp = (uint8_t*) malloc(recvSize);
 			packet->CopyData(tmp, recvSize);
-			size_t tmp_offset = 0;
 			// peer
 			uint16_t peerId = static_cast<uint16_t>(m_recvSocketPeers.at(sock));
 			if (peerId != hdr.GetSrcGpu() || m_app->GetNode()->GetId() != hdr.GetDstGpu()){
@@ -179,97 +180,131 @@ namespace ns3 {
 				free(tmp);
 				continue;
 			}
-			// copy/reduce fragment into destination at the byte offset encoded in the header
-			std::pair<uint16_t, uint16_t> dstInfo(hdr.GetDstBuf(), hdr.GetDstOff());
-			if (m_app->GetCorrectnessCheck()){
-				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstInfo.first, dstInfo.second);
-				bool isRrc = m_pendingRecvByBufferRegion.count(dstInfo) > 0 &&
-				             m_pendingRecvByBufferRegion[dstInfo].op == MSCCL_RECV_REDUCE_COPY;
-				if (isRrc){
-					ReduceAdd(dst + hdr.GetFragByteOffset(), tmp + tmp_offset, recvSize, m_dataType);
-				} else {
-					memcpy(dst + hdr.GetFragByteOffset(), tmp + tmp_offset, recvSize);
+			// optional debug cross-check only: the wire-carried dst buf/offset is never used
+			// to decide where bytes go (see OnBytesArrivedFromPeer) -- it's compared here only
+			// to surface a send/recv order or count mismatch between ranks' algorithm XML,
+			// exactly the class of bug real hardware would silently misdeliver on.
+			int16_t peerIdSigned = static_cast<int16_t>(peerId);
+			if (!m_pendingRecvQueue[peerIdSigned].empty()){
+				const PendingTransfer& front = m_pendingRecvQueue[peerIdSigned].front();
+				if (front.dstBuf != hdr.GetDstBuf() || front.dstOffset != (int16_t)hdr.GetDstOff()){
+					NS_LOG_WARN("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+						<< ": wire-carried dst=(" << hdr.GetDstBuf() << "," << hdr.GetDstOff()
+						<< ") disagrees with locally-posted recv dst=(" << front.dstBuf << "," << front.dstOffset
+						<< ") from peer " << peerId << " -- possible algorithm XML order/count mismatch.");
 				}
 			}
-
-			// accumulate received bytes; complete only when the full logical transfer is done
-			m_recvBytesAccum[dstInfo] += recvSize;
-			NS_LOG_DEBUG("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": recv frag from " << hdr.GetSrcGpu() << " dstInfo=(" << dstInfo.first << "," << dstInfo.second << ") fragOff=" << hdr.GetFragByteOffset() << " fragBytes=" << recvSize << " accum=" << m_recvBytesAccum[dstInfo] << "/" << hdr.GetBytes());
-			if (m_recvBytesAccum[dstInfo] < hdr.GetBytes()){
-				free(tmp);
-				continue;
-			}
-			if (m_recvBytesAccum[dstInfo] > hdr.GetBytes()){
-				NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << ": accumulator overshot for dstInfo=(" << dstInfo.first << "," << dstInfo.second << "): got " << m_recvBytesAccum[dstInfo] << " expected " << hdr.GetBytes() << ". Possible key collision between concurrent transfers.");
-			}
-			NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": transfer complete from " << hdr.GetSrcGpu() << " dstInfo=(" << dstInfo.first << "," << dstInfo.second << ") totalBytes=" << hdr.GetBytes());
-			m_recvBytesAccum.erase(dstInfo);
-
-			NotifyTransferArrived(dstInfo.first, dstInfo.second);
-			/* std::queue<PendingTransfer>& recvQueue = m_pendingRecvs.at(peerId);
-			while (recvSize > 0 && !recvQueue.empty()){
-				auto& cur = recvQueue.front();
-				uint32_t take = std::min(recvSize, cur.pendingBytes);
-				cur.pendingBytes -= take;
-				void* dst = ((uint8_t*) m_app->GetBufferPtr(cur.dstBuf, cur.dstOffset)) + cur.receivedBytes;
-				memcpy(dst, tmp + tmp_offset, take);
-				cur.receivedBytes += take;
-				tmp_offset += take;
-				recvSize -= take;
-				if (cur.pendingBytes == 0){
-					// logical packet fully received
-					recvQueue.pop();
-					switch (cur.op){
-						case MSCCL_RECV:
-							Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, cur.bid, cur.sid);
-							break;
-						// case MSCCL_RECV_COPY_SEND:
-						// case MSCCL_RECV_REDUCE_SEND:
-						default:
-							NS_FATAL_ERROR("not implemented");
-					}
-				}
-			} */
+			OnBytesArrivedFromPeer(static_cast<int16_t>(peerId), tmp, recvSize);
 			free(tmp);
 		}
 	}
 
-	bool MscclChannel::IsPendingReduceCopy(uint16_t dstbuf, uint16_t dstoff){
-		std::pair<uint16_t, uint16_t> dstInfo(dstbuf, dstoff);
-		return m_pendingRecvByBufferRegion.count(dstInfo) > 0 &&
-		       m_pendingRecvByBufferRegion[dstInfo].op == MSCCL_RECV_REDUCE_COPY;
-	}
-
-	// shared completion-trigger logic for the socket RecvCallback and the cross-node
-	// RDMA OnRdmaSendComplete: either complete a matching pending recv, or mark the
-	// buffer region ready for when Recv()/RecvRedCp() is later called.
-	void MscclChannel::NotifyTransferArrived(uint16_t dstbuf, uint16_t dstoff){
-		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
-			<< ": NotifyTransferArrived dstbuf=" << dstbuf << " dstoff=" << dstoff
-			<< " at t=" << Simulator::Now().GetNanoSeconds());
-		std::pair<uint16_t, uint16_t> dstInfo(dstbuf, dstoff);
-		if (m_pendingRecvByBufferRegion.count(dstInfo) > 0){
-			auto& cur = m_pendingRecvByBufferRegion[dstInfo];
-			switch (cur.op){
-				case MSCCL_RECV:
-				case MSCCL_RECV_REDUCE_COPY:
-					Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, cur.bid, cur.sid);
-					break;
-				default:
-					NS_FATAL_ERROR("not implemented");
+	// shared per-fragment matching logic for both transports (called directly from
+	// RecvCallback for sockets, and from the perPktFn lambda registered in
+	// SetupRdmaSendPeer for RDMA): matches incoming bytes against `peer`'s locally-posted
+	// Recv()/RecvRedCp() order using a purely local write-offset accumulator
+	// (PendingTransfer::receivedBytes) -- no fragment offset or transfer-size info from the
+	// sender is used or needed. Stages bytes in m_unclaimedBytes if no matching
+	// Recv()/RecvRedCp() has been posted yet.
+	void MscclChannel::OnBytesArrivedFromPeer(int16_t peer, const uint8_t* payload, uint32_t fragSize){
+		auto& pendingQ = m_pendingRecvQueue[peer];
+		if (!pendingQ.empty()){
+			PendingTransfer& cur = pendingQ.front();
+			if (m_app->GetCorrectnessCheck()){
+				if (cur.op == MSCCL_RECV_REDUCE_COPY){
+					if (cur.scratchBuf == nullptr) cur.scratchBuf = (uint8_t*) malloc(cur.pendingBytes);
+					memcpy(cur.scratchBuf + cur.receivedBytes, payload, fragSize);
+				} else {
+					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(cur.dstBuf, cur.dstOffset);
+					memcpy(dst + cur.receivedBytes, payload, fragSize);
+				}
 			}
-			m_pendingRecvByBufferRegion.erase(dstInfo);
+			cur.receivedBytes += fragSize;
+			NS_LOG_DEBUG("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": recv frag from peer "
+				<< peer << " dst=(" << cur.dstBuf << "," << cur.dstOffset << ") fragBytes=" << fragSize
+				<< " accum=" << cur.receivedBytes << "/" << cur.pendingBytes);
+			if (cur.receivedBytes < cur.pendingBytes) return;
+			if (cur.receivedBytes > cur.pendingBytes){
+				NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << ": accumulator overshot for peer " << peer
+					<< " dst=(" << cur.dstBuf << "," << cur.dstOffset << "): got " << cur.receivedBytes
+					<< " expected " << cur.pendingBytes << ". Possible scheduling bug or duplicate packet.");
+			}
+			PendingTransfer done = cur; // copy out before pop invalidates the reference
+			pendingQ.pop();
+			if (m_app->GetCorrectnessCheck() && done.op == MSCCL_RECV_REDUCE_COPY){
+				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(done.dstBuf, done.dstOffset);
+				ReduceAdd(dst, done.scratchBuf, done.pendingBytes, m_dataType);
+				free(done.scratchBuf);
+			}
+			NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+				<< ": transfer complete from peer " << peer << " dst=(" << done.dstBuf << "," << done.dstOffset
+				<< ") totalBytes=" << done.pendingBytes << " at t=" << Simulator::Now().GetNanoSeconds());
+			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, done.bid, done.sid);
 			return;
 		}
-		if (m_recvReadyByBufferRegion.count(dstInfo) > 0 && m_recvReadyByBufferRegion[dstInfo] == true){
-			NS_FATAL_ERROR("Received multiple packets for same dst region. Check scheduling bugs or duplicate packet in network");
+		// early arrival: no Recv()/RecvRedCp() posted for this peer yet -- accumulate into
+		// the unclaimed byte stream; a future Recv()/RecvRedCp() call will carve off exactly
+		// the bytes it locally expects from the front, in FIFO order. Nothing about transfer
+		// boundaries crosses the wire, so none is needed here.
+		UnclaimedBytes& unclaimed = m_unclaimedBytes[peer];
+		if (m_app->GetCorrectnessCheck()){
+			unclaimed.stagingBuf = (uint8_t*) realloc(unclaimed.stagingBuf, unclaimed.gotBytes + fragSize);
+			memcpy(unclaimed.stagingBuf + unclaimed.gotBytes, payload, fragSize);
 		}
-		m_recvReadyByBufferRegion[dstInfo] = true;
+		unclaimed.gotBytes += fragSize;
 	}
 
-	void MscclChannel::SetPendingRecv(uint16_t dstbuf, int16_t dstoff, PendingTransfer recv){
-		if (dstoff < 0) NS_FATAL_ERROR("Invalid dst offset");
-		m_pendingRecvByBufferRegion[std::make_pair(dstbuf, static_cast<uint16_t>(dstoff))] = recv;
+	// shared body of Recv()/RecvRedCp(): claims bytes already sitting in m_unclaimedBytes
+	// for `recvPeer` if any (a full or partial claim, in FIFO byte order), else registers a
+	// new pending recv to be matched by a future arrival.
+	void MscclChannel::ClaimOrRegisterPendingRecv(int8_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op){
+		if (dstoff < 0) NS_FATAL_ERROR("Invalid offset");
+		uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
+		UnclaimedBytes& unclaimed = m_unclaimedBytes[recvPeer];
+		if (unclaimed.gotBytes >= bytes){
+			// fully available: claim the front `bytes` worth, leave any remainder (e.g. the
+			// start of a later transfer that also arrived early) for the next claim
+			if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
+				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff);
+				if (op == MSCCL_RECV_REDUCE_COPY) ReduceAdd(dst, unclaimed.stagingBuf, bytes, m_dataType);
+				else memcpy(dst, unclaimed.stagingBuf, bytes);
+			}
+			uint32_t remaining = unclaimed.gotBytes - bytes;
+			if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
+				if (remaining > 0){
+					memmove(unclaimed.stagingBuf, unclaimed.stagingBuf + bytes, remaining);
+					unclaimed.stagingBuf = (uint8_t*) realloc(unclaimed.stagingBuf, remaining);
+				} else {
+					free(unclaimed.stagingBuf);
+					unclaimed.stagingBuf = nullptr;
+				}
+			}
+			unclaimed.gotBytes = remaining;
+			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
+			return;
+		}
+		if (unclaimed.gotBytes > 0){
+			// still streaming in: promote to a pending transfer, carrying over what already
+			// arrived, so future fragments from this peer (now matched via m_pendingRecvQueue)
+			// land at the now-known destination
+			PendingTransfer pt(bid, sid, bytes, op, 0, -1, dstbuf, dstoff);
+			pt.receivedBytes = unclaimed.gotBytes;
+			if (op == MSCCL_RECV_REDUCE_COPY){
+				pt.scratchBuf = (uint8_t*) malloc(bytes);
+				if (unclaimed.stagingBuf) memcpy(pt.scratchBuf, unclaimed.stagingBuf, unclaimed.gotBytes);
+			} else if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
+				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff);
+				memcpy(dst, unclaimed.stagingBuf, unclaimed.gotBytes);
+			}
+			free(unclaimed.stagingBuf);
+			unclaimed.stagingBuf = nullptr;
+			unclaimed.gotBytes = 0;
+			m_pendingRecvQueue[recvPeer].push(pt);
+			return;
+		}
+		// nothing arrived yet: register pending
+		PendingTransfer pt(bid, sid, bytes, op, 0, -1, dstbuf, dstoff);
+		m_pendingRecvQueue[recvPeer].push(pt);
 	}
 
 	void MscclChannel::PushPendingSend(Ptr<Socket> sock, PendingTransfer send){
@@ -330,67 +365,65 @@ namespace ns3 {
 		m_app->QueueFragmentsForDevice(dev, std::move(frags));
 	}
 
-	void MscclChannel::SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId){
-		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
-		// distinct sport per send call to keep RdmaHw's (dip,sport,pg) qp key unique
-		// across concurrent in-flight transfers to the same peer on this channel
+	// eagerly establishes this channel's persistent RDMA connection to `peer`: allocates
+	// this connection's sport once (for its whole lifetime, not per Send() call -- the
+	// receiver's ReceiverCheckSeq relies on all of this connection's bytes sharing one
+	// sequence space to guarantee in-order delivery), registers the rx-flow forwarding
+	// callback on the peer's RdmaHw once, and creates the persistent qp itself with no
+	// message queued yet (autoClose=false, so idling between Send() calls never tears it
+	// down -- see RdmaQueuePair::m_autoClose).
+	void MscclChannel::SetupRdmaSendPeer(int16_t peer){
 		uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + (m_rdmaSportCounter++));
-		uint16_t dstoffU = static_cast<uint16_t>(dstoff);
 
-		// -- register rx-flow completion on the receiver ----------------------------
 		// flowKey matches the key RdmaHw builds in ReceiveUdp from (ch.sip, ch.udp.pg, ch.udp.sport)
 		uint64_t flowKey = ((uint64_t)m_app->GetMyIp().Get() << 32)
 		                 | ((uint64_t)MSCCL_RDMA_PG << 16)
 		                 | (uint64_t)sport;
 
-		Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(sendpeer));
+		Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(peer));
 		Ptr<CollectivesApplication> peerApp =
 			DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
 		MscclChannel* peerChan = peerApp->GetChannel(m_id);
 
-		// staging buffer: allocated here (if correctness check on), filled per-packet
-		// in ReceiveUdp, and freed inside the completion lambda
-		uint8_t* stagingBuf = m_app->GetCorrectnessCheck()
-			? new uint8_t[totalBytes] : nullptr;
-
-		// per-packet lambda: copies incoming payload bytes into the staging buffer
-		std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn = nullptr;
-		if (stagingBuf) {
-			uint8_t* sbuf = stagingBuf;
-			perPktFn = [sbuf](const uint8_t* payload, uint32_t sz, uint64_t seqOff){
-				memcpy(sbuf + seqOff, payload, sz);
+		// perPktFn forwards straight into the shared matching logic -- RdmaHw's wire-level
+		// sequence number is deliberately ignored; the receiver derives everything it needs
+		// (write offset, transfer boundaries) from its own local accumulators instead (see
+		// OnBytesArrivedFromPeer).
+		int16_t myId = static_cast<int16_t>(m_app->GetNode()->GetId());
+		std::function<void(const uint8_t*, uint32_t, uint64_t)> fragArrivedFn =
+			[peerChan, myId](const uint8_t* payload, uint32_t sz, uint64_t /*seqOffset*/){
+				peerChan->OnBytesArrivedFromPeer(myId, payload, sz);
 			};
-		}
-
-		// completion lambda: fires when last byte lands at receiver's RdmaHw
-		DataType::Type dtype = m_dataType;
-		std::function<void()> completionFn = [peerApp, peerChan, dstbuf, dstoffU,
-		                                       totalBytes, stagingBuf, dtype](){
-			if (stagingBuf) {
-				// determine reduce vs plain copy at receive time (more likely RecvRedCp
-				// has been registered by now since data took propagation delay to arrive)
-				uint8_t* dst = (uint8_t*)peerApp->GetBufferPtr(dstbuf, dstoffU);
-				if (peerChan->IsPendingReduceCopy(dstbuf, dstoffU)) {
-					ReduceAdd(dst, stagingBuf, totalBytes, dtype);
-				} else {
-					memcpy(dst, stagingBuf, totalBytes);
-				}
-				delete[] stagingBuf;
-			}
-			NS_LOG_INFO("rx flow complete: NotifyTransferArrived dstbuf=" << (int)dstbuf
-				<< " dstoff=" << dstoffU
-				<< " at t=" << Simulator::Now().GetNanoSeconds());
-			peerChan->NotifyTransferArrived(dstbuf, dstoffU);
-		};
-
-		peerApp->GetRdmaDriver()->m_rdma->RegisterRxFlow(
-			flowKey, totalBytes, stagingBuf, std::move(perPktFn), std::move(completionFn));
+		peerApp->GetRdmaDriver()->m_rdma->RegisterRxFlow(flowKey, std::move(fragArrivedFn));
 
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
-			<< ": registered rx flow key=0x" << std::hex << flowKey << std::dec
-			<< " totalBytes=" << totalBytes << " dstbuf=" << (int)dstbuf << " dstoff=" << dstoffU
-			<< " at t=" << Simulator::Now().GetNanoSeconds());
-		// ---------------------------------------------------------------------------
+			<< ": registered persistent rx flow key=0x" << std::hex << flowKey << std::dec
+			<< " for peer " << peer << " at t=" << Simulator::Now().GetNanoSeconds());
+
+		Ptr<RdmaQueuePair> qp = m_app->GetRdmaDriver()->AddQueuePair(
+			m_app->GetNode()->GetId(), static_cast<uint32_t>(peer), /* tag */ 0, /* size */ 0, MSCCL_RDMA_PG,
+			m_app->GetMyIp(), m_app->GetPeerIp(peer), sport, MSCCL_RDMA_DPORT,
+			m_app->GetPeerWin(peer), m_app->GetPeerBaseRtt(peer), MSCCL_FLOW_ID_NONE, Callback<void>(), Callback<void>(),
+			nullptr, /* autoClose */ false);
+		m_rdmaQpByPeer[peer] = qp;
+	}
+
+	void MscclChannel::SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId){
+		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
+
+		auto it = m_rdmaQpByPeer.find(sendpeer);
+		if (it == m_rdmaQpByPeer.end()){
+			NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+				<< ": SendRdma to peer " << sendpeer << " but no persistent qp was established -- "
+				<< "peer " << sendpeer << " is missing from this channel's sendPeerInfo in the algorithm XML.");
+		}
+		Ptr<RdmaQueuePair> qp = it->second;
+
+		// srcDataPtr is passed into PushMessage so RdmaHw can resolve it BEFORE the first
+		// GetNxtPacket call for this message -- otherwise the first packet of the transfer
+		// would embed zero bytes instead of real data.
+		uint8_t* srcDataPtr = m_app->GetCorrectnessCheck()
+			? (uint8_t*)m_app->GetBufferPtr(srcbuf, srcoff) : nullptr;
 
 		// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
 		// requires operator!= on the functor, which closures don't have), so bind the
@@ -398,28 +431,11 @@ namespace ns3 {
 		Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
 			.Bind(bid).Bind(sid).Bind(sendpeer).Bind(srcbuf).Bind(srcoff).Bind(dstbuf).Bind(dstoff).Bind(nElems);
 
-		// RdmaHw owns pacing/congestion-control/PFC end-to-end; no manual fragmentation needed.
-		// win/baseRtt bound in-flight bytes to the path's bandwidth-delay product
-		// (mirrors astra-sim's pairBdp/pairRtt) -- without this RdmaQueuePair::IsWinBound()
-		// never trips and the flow streams unbounded at full line rate.
-		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
-			<< sendpeer << " totalBytes=" << totalBytes << " win=" << m_app->GetPeerWin(sendpeer)
-			<< " baseRtt=" << m_app->GetPeerBaseRtt(sendpeer) << " at t=" << Simulator::Now().GetNanoSeconds());
-		// mscclFlowId comes from the XML algorithm's per-step "mscclflowid"
-		// attribute (parsed in algo_topology.cc); MSCCL_FLOW_ID_NONE if the step didn't
-		// assign one, in which case switches fall back to plain ECMP for this qp
-		// srcDataPtr is passed into AddQueuePair so RdmaHw can set it on the QP
-		// BEFORE NewQp fires DequeueAndTransmit -- otherwise the first GetNxtPacket
-		// call (which happens synchronously inside NewQp) would see nullptr and embed
-		// zero bytes in the very first packet of the transfer.
-		uint8_t* srcDataPtr = m_app->GetCorrectnessCheck()
-			? (uint8_t*)m_app->GetBufferPtr(srcbuf, srcoff) : nullptr;
+		qp->PushMessage(totalBytes, srcDataPtr, mscclFlowId, finishCb, Callback<void>());
 
-		m_app->GetRdmaDriver()->AddQueuePair(
-			m_app->GetNode()->GetId(), static_cast<uint32_t>(sendpeer), /* tag */ 0, totalBytes, MSCCL_RDMA_PG,
-			m_app->GetMyIp(), m_app->GetPeerIp(sendpeer), sport, MSCCL_RDMA_DPORT,
-			m_app->GetPeerWin(sendpeer), m_app->GetPeerBaseRtt(sendpeer), mscclFlowId, finishCb, Callback<void>(),
-			srcDataPtr);
+		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
+			<< sendpeer << " totalBytes=" << totalBytes
+			<< " at t=" << Simulator::Now().GetNanoSeconds());
 	}
 
 	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
@@ -434,18 +450,7 @@ namespace ns3 {
 	}
 
 	void MscclChannel::Recv(int8_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
-		if (dstoff < 0) NS_FATAL_ERROR("Invalid offset");
-		PendingTransfer recv(bid, sid, nElems * DataType::GetSizeBytes(m_dataType), MSCCL_RECV, 0, -1, dstbuf, dstoff);
-		std::pair<uint16_t, uint16_t> dstinfo(dstbuf, static_cast<uint16_t> (dstoff));
-		// if we have already received
-		if (m_recvReadyByBufferRegion.count(dstinfo) > 0 && m_recvReadyByBufferRegion[dstinfo] == true){
-			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
-			m_recvReadyByBufferRegion[dstinfo] = false;
-			return;
-		}
-		// else note this pending recv
-		SetPendingRecv(dstbuf, dstoff, recv);
-		// StepCompletion triggered during recv callback
+		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV);
 	}
 
 	void MscclChannel::RecvCpSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
@@ -457,15 +462,7 @@ namespace ns3 {
 	}
 
 	void MscclChannel::RecvRedCp(int8_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
-		if (dstoff < 0) NS_FATAL_ERROR("Invalid offset");
-		PendingTransfer recv(bid, sid, nElems * DataType::GetSizeBytes(m_dataType), MSCCL_RECV_REDUCE_COPY, 0, -1, dstbuf, dstoff);
-		std::pair<uint16_t, uint16_t> dstinfo(dstbuf, static_cast<uint16_t>(dstoff));
-		if (m_recvReadyByBufferRegion.count(dstinfo) > 0 && m_recvReadyByBufferRegion[dstinfo] == true){
-			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
-			m_recvReadyByBufferRegion[dstinfo] = false;
-			return;
-		}
-		SetPendingRecv(dstbuf, dstoff, recv);
+		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV_REDUCE_COPY);
 	}
 
 	void MscclChannel::RecvRedCpSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
@@ -480,11 +477,16 @@ namespace ns3 {
 			}
 		}
 		// unfinished recvs
-		/*for (auto& recvQueue : m_pendingRecvs){
+		for (auto& recvQueue : m_pendingRecvQueue){
 			if (!recvQueue.second.empty()){
-				NS_FATAL_ERROR("BUG: has pending recv on node " << m_app->GetNode()->GetId() << " channel " << m_id << " at application close.");
+				NS_FATAL_ERROR("BUG: has pending recv from peer " << recvQueue.first << " on node " << m_app->GetNode()->GetId() << " channel " << (int)m_id << " at application close.");
 			}
-		}*/
+		}
+		for (auto& unclaimed : m_unclaimedBytes){
+			if (unclaimed.second.gotBytes > 0){
+				NS_FATAL_ERROR("BUG: has " << unclaimed.second.gotBytes << " unclaimed bytes from peer " << unclaimed.first << " on node " << m_app->GetNode()->GetId() << " channel " << (int)m_id << " at application close.");
+			}
+		}
 		// socket close
 		if (m_listenSocket) m_listenSocket->Close();
 		for (auto& pair: m_sendPeerSockets){
@@ -492,6 +494,10 @@ namespace ns3 {
 		}
 		for (auto& pair: m_recvSocketPeers){
 			pair.first->Close();
+		}
+		// tear down persistent RDMA connections
+		for (auto& pair: m_rdmaQpByPeer){
+			m_app->GetRdmaDriver()->CloseQueuePair(pair.second);
 		}
 	}
 
@@ -820,6 +826,22 @@ namespace ns3 {
 			for (int s = 0; s < chanInfo->nSendPeers; ++s){
 				int16_t peer = chanInfo->sendPeerInfo[s].peer;
 				if (!IsRdmaPeer(peer)) chan->ConnectSendPeer(peer);
+			}
+		}
+		// RDMA peers must be set up after every node's m_channels above has been
+		// constructed (SetupRdmaSendPeer reaches into peerApp->GetChannel(m_id)), which is
+		// only guaranteed once every node's own synchronous Bootstrap() has run -- see
+		// SetupRdmaPeers for why deferring via ScheduleNow makes this safe across nodes.
+		Simulator::ScheduleNow(&CollectivesApplication::SetupRdmaPeers, this);
+	}
+
+	void CollectivesApplication::SetupRdmaPeers(){
+		for (int i = 0; i < m_algo->nChannels; ++i){
+			mscclChannelInfo* chanInfo = &(m_algo->mscclChannels[i]);
+			MscclChannel* chan = &m_channels[i];
+			for (int s = 0; s < chanInfo->nSendPeers; ++s){
+				int16_t peer = chanInfo->sendPeerInfo[s].peer;
+				if (IsRdmaPeer(peer)) chan->SetupRdmaSendPeer(peer);
 			}
 		}
 	}

@@ -9,6 +9,7 @@
 #include <ns3/custom-header.h>
 #include <ns3/int-header.h>
 #include <ns3/msccl-flow-id-header.h>
+#include <queue>
 #include <vector>
 
 namespace ns3 {
@@ -18,7 +19,7 @@ public:
 	Time startTime;
 	Ipv4Address sip, dip;
 	uint16_t sport, dport;
-	uint64_t m_size, m_init_size, m_tag;
+	uint64_t m_size, m_init_size, m_tag; // m_size/m_init_size are informational (monitoring/print only) since the message queue below drives GetBytesLeft/IsFinished
 	uint32_t m_mscclFlowId; // app-level msccl flow id, carried on the wire via MscclFlowIdHeader; MscclFlowIdHeader::NO_FLOW_ID if unset
 	uint32_t m_src, m_dest;
 	uint64_t snd_nxt, snd_una; // next seq to send, the highest unacked seq
@@ -31,9 +32,38 @@ public:
 	Time m_nextAvail;	//< Soonest time of next send
 	uint32_t wp; // current window of packets
 	uint32_t lastPktSize;
-	Callback<void> m_notifyAppFinish;
-	Callback<void> m_notifyAppSent;
-	uint8_t* m_srcDataPtr; // source buffer for this QP's transfer; nullptr if correctness check disabled
+	// true only once explicitly torn down via RdmaHw::CloseQueuePair/QpComplete -- the sole
+	// condition under which qbb-net-device's pacing sweep evicts this QP from its NIC's
+	// group. A QP with an empty message queue but m_closed==false (e.g. an MSCCL persistent
+	// connection idling between Send() calls) is left resident, since GetBytesLeft()==0
+	// already keeps it out of the pacing selection without needing eviction.
+	bool m_closed;
+	// when true (the default, preserving today's behavior for every existing non-MSCCL
+	// caller such as RdmaClient), RdmaHw automatically tears the whole qp down once its
+	// message queue drains completely. MSCCL sets this false on its persistent per-peer
+	// qps so draining between Send() calls is just normal idle, not teardown -- those qps
+	// are only closed explicitly, via RdmaHw::CloseQueuePair, at channel teardown.
+	bool m_autoClose;
+
+	// A persistent QP (reused across multiple logical transfers to the same peer) enqueues
+	// one RdmaMessage per transfer; snd_nxt/snd_una progress continuously across message
+	// boundaries so congestion-control state carries over between transfers, while
+	// completion is tracked per-message rather than for the whole QP.
+	class RdmaMessage {
+	public:
+		uint64_t m_size;
+		uint64_t m_startSeq;
+		uint8_t* m_srcDataPtr; // nullptr if correctness check disabled for this message
+		uint32_t m_mscclFlowId; // per-step flow id (XML "mscclflowid"); a persistent qp's messages can each carry a different one
+		Callback<void> m_notifyAppFinish;
+		Callback<void> m_notifyAppSent;
+	};
+	std::queue<RdmaMessage> m_messages;
+	void PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent);
+	void FinishMessage(); // pops the front message, fires its m_notifyAppFinish
+	bool IsCurMessageFinished(); // snd_una >= front.m_startSeq + front.m_size
+	uint8_t* GetCurSrcDataPtr(); // front message's srcDataPtr, or nullptr if no message pending
+	uint32_t GetCurMscclFlowId(); // front message's mscclFlowId, or this qp's own (fallback) if no message pending
 	/******************************
 	 * runtime states
 	 *****************************/
@@ -94,8 +124,6 @@ public:
 	void SetWin(uint32_t win);
 	void SetBaseRtt(uint64_t baseRtt);
 	void SetVarWin(bool v);
-	void SetAppNotifyCallback(Callback<void> notifyAppFinish);
-	void SetAppSentCallback(Callback<void> notifyAppSent);
 
 	uint64_t GetBytesLeft();
 	uint64_t GetInitialSize();
@@ -105,7 +133,6 @@ public:
 	void SetTag(uint64_t tag);void SetSrc(uint32_t src);void SetDest(uint32_t dest);void SetInitialSize(uint64_t size);
 	uint32_t GetMscclFlowId();
 	void SetMscclFlowId(uint32_t mscclFlowId);
-	void SetSrcDataPtr(uint8_t* ptr);
 	uint32_t GetHash(void);
 	void Acknowledge(uint64_t ack);
 	uint64_t GetOnTheFly();

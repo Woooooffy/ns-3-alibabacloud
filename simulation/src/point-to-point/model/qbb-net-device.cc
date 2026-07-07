@@ -118,17 +118,22 @@ namespace ns3 {
 					continue;
 				res = idx;
 				break;
-			}else if (qp->IsFinished()){
+			}else if (qp->m_closed){
+				// only explicitly-closed qps are evicted here -- IsFinished() (empty message
+				// queue) alone is the normal idle state for a persistent, reused qp (e.g.
+				// MSCCL's per-peer RDMA connections) between Send() calls, and such a qp is
+				// already excluded from selection above via GetBytesLeft()==0, so leaving it
+				// resident is harmless.
 				min_finish_id = idx < min_finish_id ? idx : min_finish_id;
 			}
 		}
 
-		// clear the finished qp
+		// clear the closed qp
 		if (min_finish_id < 0xffffffff){
 			int nxt = min_finish_id;
 			auto &qps = m_qpGrp->m_qps;
-			for (int i = min_finish_id + 1; i < fcount; i++) if (!qps[i]->IsFinished()){
-				if (i == res) // update res to the idx after removing finished qp
+			for (int i = min_finish_id + 1; i < fcount; i++) if (!qps[i]->m_closed){
+				if (i == res) // update res to the idx after removing closed qp
 					res = nxt;
 				qps[nxt] = qps[i];
 				nxt++;
