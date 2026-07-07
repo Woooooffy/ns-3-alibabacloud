@@ -20,47 +20,47 @@ Node 7 chan 0: send step complete bid=6 sid=0
 Node 7 chan 1: send step complete bid=9 sid=0
 Node 7 chan 1: send step complete bid=11 sid=0
 Node 1 chan 1: transfer complete from 0 dstInfo=(1,5) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=5 at t=2695835
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=5 at t=2927917
 Node 2 chan 0: transfer complete from 0 dstInfo=(1,4) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=4 at t=2695835
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=4 at t=2927917
 Node 3 chan 0: transfer complete from 0 dstInfo=(1,3) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=3 at t=2695835
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=3 at t=2927917
 Node 4 chan 1: transfer complete from 0 dstInfo=(1,5) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=5 at t=2695835
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=5 at t=2927917
 Node 0 chan 1: transfer complete from 1 dstInfo=(1,10) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=10 at t=2695835
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=10 at t=2927917
 Node 3 chan 1: transfer complete from 1 dstInfo=(1,7) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=7 at t=2695835
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=7 at t=2927917
 Node 3 chan 1: transfer complete from 2 dstInfo=(1,17) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=17 at t=2695835
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=17 at t=2927917
 Node 6 chan 1: transfer complete from 2 dstInfo=(1,17) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=17 at t=2695835
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=17 at t=2927917
 Node 7 chan 0: transfer complete from 3 dstInfo=(1,23) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=23 at t=2695835
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=23 at t=2927917
 Node 5 chan 1: transfer complete from 4 dstInfo=(1,24) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=2695835
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=2927917
 Node 6 chan 0: transfer complete from 4 dstInfo=(1,27) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=27 at t=2695835
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=27 at t=2927917
 Node 1 chan 0: transfer complete from 5 dstInfo=(1,34) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=2695835
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=2927917
 Node 4 chan 1: transfer complete from 5 dstInfo=(1,31) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=31 at t=2695835
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=31 at t=2927917
 Node 6 chan 0: transfer complete from 5 dstInfo=(1,34) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=2695835
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=2927917
 Node 7 chan 1: transfer complete from 5 dstInfo=(1,35) totalBytes=67108864
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=35 at t=2695835
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=35 at t=2927917
 Node 2 chan 1: transfer complete from 6 dstInfo=(1,38) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=38 at t=2695835
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=38 at t=2927917
 Node 4 chan 0: transfer complete from 6 dstInfo=(1,39) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=2695835
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=2927917
 Node 5 chan 0: transfer complete from 6 dstInfo=(1,38) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=2695835
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=2927917
 Node 3 chan 0: transfer complete from 7 dstInfo=(1,47) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=47 at t=2695835
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=47 at t=2927917
 Node 5 chan 1: transfer complete from 7 dstInfo=(1,46) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=46 at t=2695835
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=46 at t=2927917
 Node 6 chan 1: transfer complete from 7 dstInfo=(1,42) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=42 at t=2695835
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=42 at t=2927917
 Node 0 chan 0: send step complete bid=6 sid=0
 Node 0 chan 0: send step complete bid=10 sid=0
 Node 1 chan 0: send step complete bid=6 sid=0
@@ -110,101 +110,101 @@ Node 7 chan 0: send step complete bid=6 sid=1
 Node 7 chan 1: send step complete bid=9 sid=1
 Node 7 chan 1: send step complete bid=11 sid=1
 Node 1 chan 0: transfer complete from 0 dstInfo=(1,0) totalBytes=134217728
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=5390970
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=5855132
 Node 4 chan 0: transfer complete from 0 dstInfo=(1,1) totalBytes=134217728
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=5390970
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=5855132
 Node 0 chan 0: transfer complete from 1 dstInfo=(1,6) totalBytes=134217728
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=6 at t=5390970
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=6 at t=5855132
 Node 2 chan 0: transfer complete from 1 dstInfo=(1,6) totalBytes=134217728
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=6 at t=5390970
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=6 at t=5855132
 Node 3 chan 0: transfer complete from 1 dstInfo=(1,9) totalBytes=134217728
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=9 at t=5390970
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=9 at t=5855132
 Node 5 chan 0: transfer complete from 1 dstInfo=(1,8) totalBytes=134217728
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=8 at t=5390970
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=8 at t=5855132
 Node 0 chan 0: transfer complete from 2 dstInfo=(1,13) totalBytes=134217728
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=13 at t=5390970
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=13 at t=5855132
 Node 1 chan 0: transfer complete from 2 dstInfo=(1,16) totalBytes=134217728
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=5390970
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=5855132
 Node 3 chan 0: transfer complete from 2 dstInfo=(1,14) totalBytes=134217728
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=14 at t=5390970
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=14 at t=5855132
 Node 6 chan 0: transfer complete from 2 dstInfo=(1,12) totalBytes=134217728
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=12 at t=5390970
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=12 at t=5855132
 Node 0 chan 0: transfer complete from 3 dstInfo=(1,20) totalBytes=134217728
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=5390970
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=5855132
 Node 1 chan 0: transfer complete from 3 dstInfo=(1,22) totalBytes=134217728
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=5390970
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=5855132
 Node 1 chan 1: transfer complete from 3 dstInfo=(1,18) totalBytes=134217728
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=18 at t=5390970
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=18 at t=5855132
 Node 2 chan 0: transfer complete from 3 dstInfo=(1,18) totalBytes=134217728
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=5390970
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=5855132
 Node 2 chan 1: transfer complete from 3 dstInfo=(1,20) totalBytes=134217728
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=20 at t=5390970
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=20 at t=5855132
 Node 0 chan 0: transfer complete from 4 dstInfo=(1,25) totalBytes=134217728
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=5390970
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=5855132
 Node 0 chan 1: transfer complete from 4 dstInfo=(1,27) totalBytes=134217728
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=27 at t=5390970
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=27 at t=5855132
 Node 5 chan 0: transfer complete from 4 dstInfo=(1,27) totalBytes=134217728
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=27 at t=5390970
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=27 at t=5855132
 Node 7 chan 0: transfer complete from 4 dstInfo=(1,25) totalBytes=134217728
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=5390970
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=5855132
 Node 4 chan 0: transfer complete from 5 dstInfo=(1,33) totalBytes=134217728
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=5390970
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=5855132
 Node 7 chan 0: transfer complete from 5 dstInfo=(1,30) totalBytes=134217728
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=5390970
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=5855132
 Node 2 chan 0: transfer complete from 6 dstInfo=(1,40) totalBytes=134217728
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=5390970
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=5855132
 Node 7 chan 0: transfer complete from 6 dstInfo=(1,38) totalBytes=134217728
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=5390970
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=5855132
 Node 7 chan 1: transfer complete from 6 dstInfo=(1,40) totalBytes=134217728
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=40 at t=5390970
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=40 at t=5855132
 Node 4 chan 0: transfer complete from 7 dstInfo=(1,45) totalBytes=134217728
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=5390970
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=5855132
 Node 5 chan 0: transfer complete from 7 dstInfo=(1,42) totalBytes=134217728
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=42 at t=5390970
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=42 at t=5855132
 Node 6 chan 0: transfer complete from 7 dstInfo=(1,45) totalBytes=134217728
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=5390970
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=5855132
 Node 1 chan 1: transfer complete from 0 dstInfo=(1,3) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=3 at t=5390970
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=3 at t=5855134
 Node 2 chan 0: transfer complete from 0 dstInfo=(1,2) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=2 at t=5390970
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=2 at t=5855134
 Node 3 chan 0: transfer complete from 0 dstInfo=(1,0) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=5390970
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=5855134
 Node 4 chan 1: transfer complete from 0 dstInfo=(1,3) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=3 at t=5390970
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=3 at t=5855134
 Node 0 chan 1: transfer complete from 1 dstInfo=(1,8) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=5390970
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=5855134
 Node 3 chan 1: transfer complete from 1 dstInfo=(1,11) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=11 at t=5390970
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=11 at t=5855134
 Node 3 chan 1: transfer complete from 2 dstInfo=(1,12) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=12 at t=5390970
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=12 at t=5855134
 Node 6 chan 1: transfer complete from 2 dstInfo=(1,15) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=15 at t=5390970
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=15 at t=5855134
 Node 7 chan 0: transfer complete from 3 dstInfo=(1,19) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=19 at t=5390970
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=19 at t=5855134
 Node 5 chan 1: transfer complete from 4 dstInfo=(1,29) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=29 at t=5390970
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=29 at t=5855134
 Node 6 chan 0: transfer complete from 4 dstInfo=(1,24) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=24 at t=5390970
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=24 at t=5855134
 Node 1 chan 0: transfer complete from 5 dstInfo=(1,32) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=5390970
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=5855134
 Node 4 chan 1: transfer complete from 5 dstInfo=(1,35) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=35 at t=5390970
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=35 at t=5855134
 Node 6 chan 0: transfer complete from 5 dstInfo=(1,32) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=5390970
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=5855134
 Node 7 chan 1: transfer complete from 5 dstInfo=(1,32) totalBytes=67108864
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=32 at t=5390970
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=32 at t=5855134
 Node 2 chan 1: transfer complete from 6 dstInfo=(1,36) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=36 at t=5390970
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=36 at t=5855134
 Node 4 chan 0: transfer complete from 6 dstInfo=(1,37) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=37 at t=5390970
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=37 at t=5855134
 Node 5 chan 0: transfer complete from 6 dstInfo=(1,36) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=36 at t=5390970
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=36 at t=5855134
 Node 3 chan 0: transfer complete from 7 dstInfo=(1,44) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=44 at t=5390970
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=44 at t=5855134
 Node 5 chan 1: transfer complete from 7 dstInfo=(1,44) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=44 at t=5390970
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=44 at t=5855134
 Node 6 chan 1: transfer complete from 7 dstInfo=(1,47) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=47 at t=5390970
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=47 at t=5855134
 Node 1 chan 0: send step complete bid=8 sid=1
 Node 1 chan 0: send step complete bid=9 sid=1
 Node 3 chan 0: send step complete bid=6 sid=1
@@ -233,59 +233,59 @@ Node 4 chan 1: send step complete bid=9 sid=2
 Node 3 chan 1: send step complete bid=10 sid=1
 Node 3 chan 1: send step complete bid=8 sid=1
 Node 2 chan 0: transfer complete from 1 dstInfo=(1,34) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=8086105
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=8782349
 Node 3 chan 0: transfer complete from 1 dstInfo=(1,34) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=8086105
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=8782349
 Node 0 chan 0: transfer complete from 3 dstInfo=(1,47) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=47 at t=8086105
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=47 at t=8782349
 Node 6 chan 1: transfer complete from 2 dstInfo=(1,4) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=4 at t=8086105
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=4 at t=8782351
 Node 6 chan 0: transfer complete from 4 dstInfo=(1,31) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=31 at t=8086105
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=31 at t=8782351
 Node 2 chan 1: transfer complete from 6 dstInfo=(1,42) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=42 at t=8086105
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=42 at t=8782351
 Node 4 chan 0: transfer complete from 6 dstInfo=(1,17) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=17 at t=8086105
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=17 at t=8782351
 Node 5 chan 0: transfer complete from 6 dstInfo=(1,17) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=17 at t=8086105
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=17 at t=8782351
 Node 3 chan 1: transfer complete from 1 dstInfo=(1,1) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=1 at t=8086805
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=1 at t=8783049
 Node 7 chan 0: transfer complete from 3 dstInfo=(1,10) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=10 at t=8086805
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=10 at t=8783049
 Node 1 chan 1: transfer complete from 0 dstInfo=(1,13) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=13 at t=8086805
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=13 at t=8783049
 Node 5 chan 0: transfer complete from 1 dstInfo=(1,16) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=8086805
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=8783049
 Node 0 chan 1: transfer complete from 1 dstInfo=(1,19) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=19 at t=8086805
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=19 at t=8783049
 Node 6 chan 0: transfer complete from 2 dstInfo=(1,21) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=21 at t=8086805
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=21 at t=8783049
 Node 1 chan 0: transfer complete from 0 dstInfo=(1,28) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=28 at t=8086805
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=28 at t=8783049
 Node 1 chan 0: transfer complete from 2 dstInfo=(1,41) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=41 at t=8086805
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=41 at t=8783049
 Node 4 chan 0: transfer complete from 7 dstInfo=(1,41) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=41 at t=8086805
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=41 at t=8783049
 Node 0 chan 0: transfer complete from 4 dstInfo=(1,46) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=46 at t=8086805
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=46 at t=8783049
 Node 7 chan 0: transfer complete from 4 dstInfo=(1,3) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=3 at t=8086805
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=3 at t=8783051
 Node 5 chan 1: transfer complete from 7 dstInfo=(1,19) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=19 at t=8086805
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=19 at t=8783051
 Node 6 chan 0: transfer complete from 5 dstInfo=(1,29) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=8086805
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=8783051
 Node 1 chan 0: transfer complete from 5 dstInfo=(1,29) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=8086805
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=8783051
 Node 0 chan 1: transfer complete from 4 dstInfo=(1,35) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=35 at t=8086805
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=35 at t=8783051
 Node 3 chan 1: transfer complete from 2 dstInfo=(1,36) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=36 at t=8086805
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=36 at t=8783051
 Node 5 chan 1: transfer complete from 4 dstInfo=(1,37) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=37 at t=8086805
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=37 at t=8783051
 Node 2 chan 1: transfer complete from 3 dstInfo=(1,44) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=44 at t=8086805
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=44 at t=8783051
 Node 1 chan 1: transfer complete from 3 dstInfo=(1,44) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=44 at t=8086805
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=44 at t=8783051
 Node 2 chan 0: send step complete bid=6 sid=1
 Node 6 chan 1: send step complete bid=11 sid=1
 Node 7 chan 1: send step complete bid=11 sid=2
@@ -312,7 +312,6 @@ Node 7 chan 0: send step complete bid=10 sid=1
 Node 7 chan 0: send step complete bid=6 sid=2
 Node 2 chan 0: send step complete bid=8 sid=1
 Node 7 chan 0: send step complete bid=8 sid=1
-Node 5 chan 0: send step complete bid=7 sid=1
 Node 1 chan 1: send step complete bid=10 sid=3
 Node 3 chan 0: send step complete bid=11 sid=3
 Node 0 chan 1: send step complete bid=7 sid=3
@@ -323,6 +322,7 @@ Node 0 chan 0: send step complete bid=6 sid=2
 Node 2 chan 0: send step complete bid=7 sid=2
 Node 7 chan 0: send step complete bid=7 sid=2
 Node 4 chan 0: send step complete bid=6 sid=2
+Node 5 chan 0: send step complete bid=7 sid=1
 Node 4 chan 0: send step complete bid=11 sid=2
 Node 7 chan 1: send step complete bid=9 sid=3
 Node 5 chan 0: send step complete bid=9 sid=3
@@ -333,97 +333,97 @@ Node 4 chan 1: send step complete bid=9 sid=3
 Node 3 chan 1: send step complete bid=10 sid=2
 Node 3 chan 1: send step complete bid=8 sid=2
 Node 0 chan 0: transfer complete from 2 dstInfo=(1,15) totalBytes=134217728
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=15 at t=10781240
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=15 at t=11709564
 Node 7 chan 1: transfer complete from 6 dstInfo=(1,36) totalBytes=134217728
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=36 at t=10781240
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=36 at t=11709564
 Node 6 chan 1: transfer complete from 7 dstInfo=(1,43) totalBytes=134217728
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=43 at t=10781240
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=43 at t=11709566
 Node 2 chan 0: transfer complete from 1 dstInfo=(1,5) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=5 at t=10781240
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=5 at t=11709566
 Node 3 chan 0: transfer complete from 1 dstInfo=(1,32) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=10781240
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=11709566
 Node 0 chan 0: transfer complete from 3 dstInfo=(1,44) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=44 at t=10781240
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=44 at t=11709566
 Node 6 chan 1: transfer complete from 2 dstInfo=(1,2) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=2 at t=10781240
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=2 at t=11709568
 Node 6 chan 0: transfer complete from 4 dstInfo=(1,1) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=10781240
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=11709568
 Node 2 chan 1: transfer complete from 6 dstInfo=(1,27) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=27 at t=10781240
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=27 at t=11709568
 Node 4 chan 0: transfer complete from 6 dstInfo=(1,12) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=12 at t=10781240
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=12 at t=11709568
 Node 5 chan 0: transfer complete from 6 dstInfo=(1,15) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=15 at t=10781240
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=15 at t=11709568
 Node 5 chan 0: transfer complete from 4 dstInfo=(1,1) totalBytes=134217728
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=10781940
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=11710264
 Node 7 chan 1: transfer complete from 5 dstInfo=(1,8) totalBytes=134217728
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=10781940
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=11710264
 Node 4 chan 1: transfer complete from 5 dstInfo=(1,8) totalBytes=134217728
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=10781940
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=11710264
 Node 4 chan 1: transfer complete from 0 dstInfo=(1,13) totalBytes=134217728
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=13 at t=10781940
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=13 at t=11710264
 Node 1 chan 0: transfer complete from 3 dstInfo=(1,14) totalBytes=134217728
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=14 at t=10781940
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=14 at t=11710264
 Node 7 chan 0: transfer complete from 6 dstInfo=(1,12) totalBytes=134217728
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=12 at t=10781940
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=12 at t=11710264
 Node 4 chan 0: transfer complete from 0 dstInfo=(1,20) totalBytes=134217728
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=10781940
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=11710264
 Node 0 chan 0: transfer complete from 1 dstInfo=(1,22) totalBytes=134217728
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=10781940
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=11710264
 Node 3 chan 0: transfer complete from 0 dstInfo=(1,25) totalBytes=134217728
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=10781940
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=11710264
 Node 2 chan 0: transfer complete from 0 dstInfo=(1,25) totalBytes=134217728
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=10781940
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=11710264
 Node 7 chan 0: transfer complete from 5 dstInfo=(1,27) totalBytes=134217728
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=27 at t=10781940
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=27 at t=11710264
 Node 6 chan 0: transfer complete from 7 dstInfo=(1,25) totalBytes=134217728
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=10781940
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=25 at t=11710264
 Node 3 chan 0: transfer complete from 7 dstInfo=(1,30) totalBytes=134217728
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=10781940
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=11710264
 Node 3 chan 0: transfer complete from 2 dstInfo=(1,40) totalBytes=134217728
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=10781940
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=11710264
 Node 5 chan 0: transfer complete from 7 dstInfo=(1,40) totalBytes=134217728
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=10781940
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=11710264
 Node 4 chan 0: transfer complete from 5 dstInfo=(1,43) totalBytes=134217728
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=43 at t=10781940
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=43 at t=11710266
 Node 3 chan 1: transfer complete from 1 dstInfo=(1,8) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=10781940
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=11710266
 Node 7 chan 0: transfer complete from 3 dstInfo=(1,22) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=10781940
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=11710266
 Node 1 chan 1: transfer complete from 0 dstInfo=(1,4) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=4 at t=10781940
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=4 at t=11710266
 Node 5 chan 0: transfer complete from 1 dstInfo=(1,3) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=3 at t=10781940
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=3 at t=11710266
 Node 0 chan 1: transfer complete from 1 dstInfo=(1,17) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=17 at t=10781940
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=17 at t=11710266
 Node 6 chan 0: transfer complete from 2 dstInfo=(1,18) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=10781940
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=11710266
 Node 1 chan 0: transfer complete from 0 dstInfo=(1,26) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=26 at t=10781940
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=26 at t=11710266
 Node 1 chan 0: transfer complete from 2 dstInfo=(1,38) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=10781940
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=11710266
 Node 4 chan 0: transfer complete from 7 dstInfo=(1,47) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=47 at t=10781940
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=47 at t=11710266
 Node 0 chan 0: transfer complete from 4 dstInfo=(1,39) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=10781940
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=11710266
 Node 7 chan 0: transfer complete from 4 dstInfo=(1,1) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=10781940
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=11710268
 Node 5 chan 1: transfer complete from 7 dstInfo=(1,47) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=47 at t=10781940
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=47 at t=11710268
 Node 6 chan 0: transfer complete from 5 dstInfo=(1,8) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=8 at t=10781940
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=8 at t=11710268
 Node 1 chan 0: transfer complete from 5 dstInfo=(1,27) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=27 at t=10781940
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=27 at t=11710268
 Node 0 chan 1: transfer complete from 4 dstInfo=(1,31) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=31 at t=10781940
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=31 at t=11710268
 Node 3 chan 1: transfer complete from 2 dstInfo=(1,4) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=4 at t=10781940
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=4 at t=11710268
 Node 5 chan 1: transfer complete from 4 dstInfo=(1,5) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=5 at t=10781940
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=5 at t=11710268
 Node 2 chan 1: transfer complete from 3 dstInfo=(1,3) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=3 at t=10781940
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=3 at t=11710268
 Node 1 chan 1: transfer complete from 3 dstInfo=(1,12) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=12 at t=10781940
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=12 at t=11710268
 Node 2 chan 0: send step complete bid=6 sid=2
 Node 6 chan 1: send step complete bid=11 sid=2
 Node 7 chan 1: send step complete bid=11 sid=3
@@ -450,7 +450,6 @@ Node 7 chan 0: send step complete bid=10 sid=2
 Node 7 chan 0: send step complete bid=6 sid=3
 Node 2 chan 0: send step complete bid=8 sid=2
 Node 7 chan 0: send step complete bid=8 sid=2
-Node 5 chan 0: send step complete bid=7 sid=2
 Node 1 chan 1: send step complete bid=10 sid=4
 Node 3 chan 0: send step complete bid=11 sid=4
 Node 0 chan 1: send step complete bid=7 sid=4
@@ -461,6 +460,7 @@ Node 0 chan 0: send step complete bid=6 sid=3
 Node 2 chan 0: send step complete bid=7 sid=3
 Node 7 chan 0: send step complete bid=7 sid=3
 Node 4 chan 0: send step complete bid=6 sid=3
+Node 5 chan 0: send step complete bid=7 sid=2
 Node 4 chan 0: send step complete bid=11 sid=3
 Node 7 chan 1: send step complete bid=9 sid=4
 Node 5 chan 0: send step complete bid=9 sid=4
@@ -473,101 +473,101 @@ Node 3 chan 1: send step complete bid=8 sid=3
 Node 3 chan 0: send step complete bid=9 sid=1
 Node 6 chan 0: send step complete bid=6 sid=1
 Node 0 chan 0: transfer complete from 2 dstInfo=(1,40) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=13476375
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=14636781
 Node 7 chan 1: transfer complete from 6 dstInfo=(1,17) totalBytes=67108864
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=17 at t=13476375
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=17 at t=14636781
 Node 6 chan 1: transfer complete from 7 dstInfo=(1,30) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=30 at t=13476375
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=30 at t=14636783
 Node 2 chan 0: transfer complete from 1 dstInfo=(1,0) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=13476375
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=14636783
 Node 3 chan 0: transfer complete from 1 dstInfo=(1,16) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=13476375
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=14636783
 Node 0 chan 0: transfer complete from 3 dstInfo=(1,18) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=13476375
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=14636783
 Node 6 chan 1: transfer complete from 2 dstInfo=(1,14) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=14 at t=13476375
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=14 at t=14636785
 Node 6 chan 0: transfer complete from 4 dstInfo=(1,28) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=28 at t=13476375
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=28 at t=14636785
 Node 2 chan 1: transfer complete from 6 dstInfo=(1,24) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=13476375
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=14636785
 Node 4 chan 0: transfer complete from 6 dstInfo=(1,40) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=13476375
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=40 at t=14636785
 Node 5 chan 0: transfer complete from 6 dstInfo=(1,12) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=12 at t=13476375
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=12 at t=14636785
 Node 5 chan 0: transfer complete from 4 dstInfo=(1,39) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=13477075
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=14637481
 Node 7 chan 1: transfer complete from 5 dstInfo=(1,24) totalBytes=67108864
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=13477075
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=14637481
 Node 4 chan 1: transfer complete from 5 dstInfo=(1,38) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=38 at t=13477075
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=38 at t=14637481
 Node 4 chan 1: transfer complete from 0 dstInfo=(1,10) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=10 at t=13477075
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=10 at t=14637481
 Node 1 chan 0: transfer complete from 3 dstInfo=(1,47) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=47 at t=13477075
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=47 at t=14637481
 Node 7 chan 0: transfer complete from 6 dstInfo=(1,15) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=15 at t=13477075
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=15 at t=14637481
 Node 4 chan 0: transfer complete from 0 dstInfo=(1,7) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=7 at t=13477075
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=7 at t=14637481
 Node 0 chan 0: transfer complete from 1 dstInfo=(1,32) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=13477075
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=14637481
 Node 3 chan 0: transfer complete from 0 dstInfo=(1,28) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=28 at t=13477075
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=28 at t=14637481
 Node 2 chan 0: transfer complete from 0 dstInfo=(1,1) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=13477075
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=1 at t=14637481
 Node 7 chan 0: transfer complete from 5 dstInfo=(1,33) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=13477075
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=14637481
 Node 6 chan 0: transfer complete from 7 dstInfo=(1,19) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=19 at t=13477075
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=19 at t=14637481
 Node 3 chan 0: transfer complete from 7 dstInfo=(1,43) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=43 at t=13477075
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=43 at t=14637481
 Node 3 chan 0: transfer complete from 2 dstInfo=(1,38) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=13477075
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=14637481
 Node 5 chan 0: transfer complete from 7 dstInfo=(1,26) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=26 at t=13477075
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=26 at t=14637481
 Node 4 chan 0: transfer complete from 5 dstInfo=(1,36) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=36 at t=13477075
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=36 at t=14637483
 Node 3 chan 1: transfer complete from 1 dstInfo=(1,6) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=6 at t=13477075
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=6 at t=14637483
 Node 7 chan 0: transfer complete from 3 dstInfo=(1,18) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=13477075
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=14637483
 Node 1 chan 1: transfer complete from 0 dstInfo=(1,2) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=2 at t=13477075
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=2 at t=14637483
 Node 5 chan 0: transfer complete from 1 dstInfo=(1,0) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=13477075
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=14637483
 Node 0 chan 1: transfer complete from 1 dstInfo=(1,11) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=11 at t=13477075
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=11 at t=14637483
 Node 6 chan 0: transfer complete from 2 dstInfo=(1,7) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=7 at t=13477075
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=7 at t=14637483
 Node 1 chan 0: transfer complete from 0 dstInfo=(1,20) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=13477075
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=14637483
 Node 1 chan 0: transfer complete from 2 dstInfo=(1,36) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=36 at t=13477075
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=36 at t=14637483
 Node 4 chan 0: transfer complete from 7 dstInfo=(1,42) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=42 at t=13477075
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=42 at t=14637483
 Node 0 chan 0: transfer complete from 4 dstInfo=(1,37) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=37 at t=13477075
-Node 7 chan 0: transfer complete from 4 dstInfo=(1,29) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=13477075
-Node 5 chan 1: transfer complete from 7 dstInfo=(1,45) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=45 at t=13477075
-Node 6 chan 0: transfer complete from 5 dstInfo=(1,35) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=35 at t=13477075
-Node 1 chan 0: transfer complete from 5 dstInfo=(1,33) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=13477075
-Node 0 chan 1: transfer complete from 4 dstInfo=(1,24) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=13477075
-Node 3 chan 1: transfer complete from 2 dstInfo=(1,13) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=13 at t=13477075
-Node 5 chan 1: transfer complete from 4 dstInfo=(1,25) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=25 at t=13477075
-Node 2 chan 1: transfer complete from 3 dstInfo=(1,23) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=23 at t=13477075
-Node 1 chan 1: transfer complete from 3 dstInfo=(1,21) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=21 at t=13477075
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=37 at t=14637483
 Node 2 chan 0: transfer complete from 3 dstInfo=(1,9) totalBytes=201326592
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=9 at t=13477076
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=9 at t=14637483
 Node 2 chan 0: transfer complete from 6 dstInfo=(1,45) totalBytes=201326592
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=13477076
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=14637483
+Node 7 chan 0: transfer complete from 4 dstInfo=(1,29) totalBytes=67108864
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=14637485
+Node 5 chan 1: transfer complete from 7 dstInfo=(1,45) totalBytes=67108864
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=45 at t=14637485
+Node 6 chan 0: transfer complete from 5 dstInfo=(1,35) totalBytes=67108864
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=35 at t=14637485
+Node 1 chan 0: transfer complete from 5 dstInfo=(1,33) totalBytes=67108864
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=14637485
+Node 0 chan 1: transfer complete from 4 dstInfo=(1,24) totalBytes=67108864
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=14637485
+Node 3 chan 1: transfer complete from 2 dstInfo=(1,13) totalBytes=67108864
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=13 at t=14637485
+Node 5 chan 1: transfer complete from 4 dstInfo=(1,25) totalBytes=67108864
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=25 at t=14637485
+Node 2 chan 1: transfer complete from 3 dstInfo=(1,23) totalBytes=67108864
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=23 at t=14637485
+Node 1 chan 1: transfer complete from 3 dstInfo=(1,21) totalBytes=67108864
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=21 at t=14637485
 Node 6 chan 1: send step complete bid=11 sid=3
 Node 2 chan 1: send step complete bid=11 sid=5
 Node 4 chan 0: send step complete bid=10 sid=5
@@ -581,7 +581,6 @@ Node 0 chan 0: send step complete bid=9 sid=4
 Node 0 chan 0: send step complete bid=8 sid=4
 Node 5 chan 0: send step complete bid=10 sid=3
 Node 7 chan 0: send step complete bid=6 sid=4
-Node 5 chan 0: send step complete bid=7 sid=3
 Node 1 chan 1: send step complete bid=10 sid=5
 Node 3 chan 0: send step complete bid=11 sid=5
 Node 0 chan 1: send step complete bid=7 sid=5
@@ -589,6 +588,7 @@ Node 1 chan 0: send step complete bid=11 sid=4
 Node 1 chan 1: send step complete bid=7 sid=5
 Node 0 chan 0: send step complete bid=6 sid=4
 Node 7 chan 0: send step complete bid=7 sid=4
+Node 5 chan 0: send step complete bid=7 sid=3
 Node 4 chan 0: send step complete bid=11 sid=4
 Node 5 chan 0: send step complete bid=9 sid=5
 Node 2 chan 1: send step complete bid=9 sid=5
@@ -596,17 +596,17 @@ Node 4 chan 1: send step complete bid=9 sid=5
 Node 3 chan 1: send step complete bid=10 sid=4
 Node 6 chan 0: send step complete bid=6 sid=2
 Node 7 chan 1: transfer complete from 6 dstInfo=(1,4) totalBytes=67108864
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=4 at t=16171510
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=4 at t=17563998
 Node 6 chan 1: transfer complete from 2 dstInfo=(1,6) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=6 at t=16171510
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=6 at t=17564002
 Node 6 chan 0: transfer complete from 4 dstInfo=(1,20) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=16171510
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=17564002
 Node 2 chan 1: transfer complete from 6 dstInfo=(1,29) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=29 at t=16171510
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=29 at t=17564002
 Node 4 chan 0: transfer complete from 6 dstInfo=(1,18) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=16171510
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=18 at t=17564002
 Node 5 chan 0: transfer complete from 6 dstInfo=(1,21) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=21 at t=16171510
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=21 at t=17564002
 Node 7 chan 1: send step complete bid=11 sid=4
 Node 3 chan 1: send step complete bid=8 sid=4
 Node 3 chan 0: send step complete bid=6 sid=4
@@ -614,80 +614,80 @@ Node 4 chan 1: send step complete bid=7 sid=4
 Node 7 chan 1: send step complete bid=9 sid=5
 Node 5 chan 1: send step complete bid=11 sid=4
 Node 0 chan 1: send step complete bid=11 sid=4
+Node 2 chan 0: send step complete bid=7 sid=4
+Node 2 chan 0: send step complete bid=6 sid=3
 Node 1 chan 0: send step complete bid=6 sid=3
 Node 1 chan 0: send step complete bid=9 sid=4
 Node 1 chan 0: send step complete bid=8 sid=4
 Node 2 chan 0: send step complete bid=10 sid=4
-Node 2 chan 0: send step complete bid=7 sid=4
-Node 2 chan 0: send step complete bid=6 sid=3
 Node 4 chan 1: transfer complete from 5 dstInfo=(1,32) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=32 at t=16172210
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=32 at t=17564698
 Node 7 chan 0: transfer complete from 6 dstInfo=(1,21) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=21 at t=16172210
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=21 at t=17564698
 Node 4 chan 0: transfer complete from 0 dstInfo=(1,23) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=23 at t=16172210
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=23 at t=17564698
 Node 3 chan 0: transfer complete from 0 dstInfo=(1,39) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=16172210
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=17564698
 Node 2 chan 0: transfer complete from 0 dstInfo=(1,39) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=16172210
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=17564698
 Node 7 chan 0: transfer complete from 5 dstInfo=(1,16) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=16172210
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=17564698
 Node 3 chan 0: transfer complete from 7 dstInfo=(1,37) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=37 at t=16172210
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=37 at t=17564698
 Node 4 chan 0: transfer complete from 5 dstInfo=(1,16) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=16172210
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=17564700
 Node 3 chan 1: transfer complete from 1 dstInfo=(1,27) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=27 at t=16172210
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=27 at t=17564700
 Node 7 chan 0: transfer complete from 3 dstInfo=(1,11) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=11 at t=16172210
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=11 at t=17564700
 Node 1 chan 1: transfer complete from 0 dstInfo=(1,35) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=35 at t=16172210
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=35 at t=17564700
 Node 5 chan 0: transfer complete from 1 dstInfo=(1,11) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=11 at t=16172210
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=11 at t=17564700
 Node 0 chan 1: transfer complete from 1 dstInfo=(1,12) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=12 at t=16172210
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=12 at t=17564700
 Node 1 chan 0: transfer complete from 0 dstInfo=(1,46) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=46 at t=16172210
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=46 at t=17564700
 Node 4 chan 0: transfer complete from 7 dstInfo=(1,22) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=16172210
-Node 7 chan 0: transfer complete from 4 dstInfo=(1,20) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=16172210
-Node 6 chan 0: transfer complete from 5 dstInfo=(1,16) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=16172210
-Node 3 chan 1: transfer complete from 2 dstInfo=(1,42) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=42 at t=16172210
-Node 5 chan 1: transfer complete from 4 dstInfo=(1,20) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=20 at t=16172210
-Node 2 chan 1: transfer complete from 3 dstInfo=(1,8) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=16172210
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=17564700
 Node 2 chan 0: transfer complete from 6 dstInfo=(1,43) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=43 at t=16172211
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=43 at t=17564700
+Node 7 chan 0: transfer complete from 4 dstInfo=(1,20) totalBytes=67108864
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=20 at t=17564702
+Node 6 chan 0: transfer complete from 5 dstInfo=(1,16) totalBytes=67108864
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=16 at t=17564702
+Node 3 chan 1: transfer complete from 2 dstInfo=(1,42) totalBytes=67108864
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=42 at t=17564702
+Node 5 chan 1: transfer complete from 4 dstInfo=(1,20) totalBytes=67108864
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=20 at t=17564702
+Node 2 chan 1: transfer complete from 3 dstInfo=(1,8) totalBytes=67108864
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=8 at t=17564702
 Node 6 chan 1: transfer complete from 7 dstInfo=(1,33) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=33 at t=16172910
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=33 at t=17565398
 Node 1 chan 1: transfer complete from 3 dstInfo=(1,43) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=43 at t=16172910
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=43 at t=17565398
 Node 0 chan 0: transfer complete from 3 dstInfo=(1,38) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=16172910
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=38 at t=17565398
 Node 0 chan 1: transfer complete from 4 dstInfo=(1,36) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=36 at t=16172910
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=36 at t=17565400
 Node 5 chan 1: transfer complete from 7 dstInfo=(1,18) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=18 at t=16172910
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=18 at t=17565400
 Node 7 chan 1: transfer complete from 5 dstInfo=(1,0) totalBytes=67108864
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=0 at t=16172910
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=0 at t=17565400
 Node 4 chan 1: transfer complete from 0 dstInfo=(1,11) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=11 at t=16172910
-Node 0 chan 0: transfer complete from 1 dstInfo=(1,33) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=16172910
-Node 3 chan 0: transfer complete from 1 dstInfo=(1,33) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=16172910
-Node 2 chan 0: transfer complete from 1 dstInfo=(1,33) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=16172910
-Node 6 chan 0: transfer complete from 2 dstInfo=(1,23) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=23 at t=16172910
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=11 at t=17565400
 Node 1 chan 0: transfer complete from 2 dstInfo=(1,45) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=16172911
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=17565400
 Node 0 chan 0: transfer complete from 2 dstInfo=(1,45) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=16172911
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=17565400
+Node 0 chan 0: transfer complete from 1 dstInfo=(1,33) totalBytes=67108864
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=17565402
+Node 3 chan 0: transfer complete from 1 dstInfo=(1,33) totalBytes=67108864
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=17565402
+Node 2 chan 0: transfer complete from 1 dstInfo=(1,33) totalBytes=67108864
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=33 at t=17565402
+Node 6 chan 0: transfer complete from 2 dstInfo=(1,23) totalBytes=67108864
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=23 at t=17565402
 Node 6 chan 1: send step complete bid=11 sid=4
 Node 2 chan 1: send step complete bid=11 sid=6
 Node 4 chan 0: send step complete bid=10 sid=6
@@ -705,7 +705,6 @@ Node 0 chan 0: send step complete bid=9 sid=5
 Node 0 chan 0: send step complete bid=8 sid=5
 Node 5 chan 0: send step complete bid=10 sid=4
 Node 7 chan 0: send step complete bid=6 sid=5
-Node 5 chan 0: send step complete bid=7 sid=4
 Node 1 chan 1: send step complete bid=10 sid=6
 Node 3 chan 0: send step complete bid=11 sid=6
 Node 0 chan 1: send step complete bid=7 sid=6
@@ -713,6 +712,7 @@ Node 1 chan 0: send step complete bid=11 sid=5
 Node 1 chan 1: send step complete bid=7 sid=6
 Node 0 chan 0: send step complete bid=6 sid=5
 Node 7 chan 0: send step complete bid=7 sid=5
+Node 5 chan 0: send step complete bid=7 sid=4
 Node 4 chan 0: send step complete bid=11 sid=5
 Node 5 chan 0: send step complete bid=9 sid=6
 Node 2 chan 1: send step complete bid=9 sid=6
@@ -721,116 +721,116 @@ Node 3 chan 1: send step complete bid=10 sid=5
 Node 3 chan 0: send step complete bid=9 sid=2
 Node 6 chan 0: send step complete bid=6 sid=3
 Node 7 chan 1: transfer complete from 6 dstInfo=(1,2) totalBytes=67108864
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=2 at t=18866645
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=2 at t=20491215
 Node 6 chan 1: transfer complete from 2 dstInfo=(1,0) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=0 at t=18866645
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=0 at t=20491219
 Node 6 chan 0: transfer complete from 4 dstInfo=(1,3) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=3 at t=18866645
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=3 at t=20491219
 Node 2 chan 1: transfer complete from 6 dstInfo=(1,37) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=37 at t=18866645
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=37 at t=20491219
 Node 4 chan 0: transfer complete from 6 dstInfo=(1,4) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=4 at t=18866645
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=4 at t=20491219
 Node 5 chan 0: transfer complete from 6 dstInfo=(1,4) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=4 at t=18866645
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=4 at t=20491219
 Node 5 chan 0: send step complete bid=6 sid=5
-Node 4 chan 0: send step complete bid=6 sid=4
 Node 7 chan 1: send step complete bid=11 sid=5
 Node 3 chan 1: send step complete bid=8 sid=5
 Node 3 chan 0: send step complete bid=6 sid=5
+Node 4 chan 0: send step complete bid=6 sid=4
+Node 2 chan 0: send step complete bid=8 sid=3
 Node 4 chan 1: send step complete bid=7 sid=5
 Node 7 chan 1: send step complete bid=9 sid=6
 Node 5 chan 1: send step complete bid=11 sid=5
 Node 0 chan 1: send step complete bid=11 sid=5
+Node 2 chan 0: send step complete bid=7 sid=5
+Node 2 chan 0: send step complete bid=6 sid=4
 Node 1 chan 0: send step complete bid=6 sid=4
 Node 1 chan 0: send step complete bid=9 sid=5
 Node 1 chan 0: send step complete bid=8 sid=5
 Node 2 chan 0: send step complete bid=10 sid=5
-Node 2 chan 0: send step complete bid=8 sid=3
-Node 2 chan 0: send step complete bid=7 sid=5
-Node 2 chan 0: send step complete bid=6 sid=4
 Node 5 chan 0: transfer complete from 4 dstInfo=(1,13) totalBytes=134217728
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=13 at t=18867345
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=13 at t=20491913
 Node 1 chan 0: transfer complete from 3 dstInfo=(1,30) totalBytes=134217728
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=18867345
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=20491913
 Node 6 chan 0: transfer complete from 7 dstInfo=(1,9) totalBytes=134217728
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=9 at t=18867345
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=9 at t=20491913
 Node 5 chan 0: transfer complete from 7 dstInfo=(1,22) totalBytes=134217728
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=18867345
-Node 4 chan 1: transfer complete from 5 dstInfo=(1,30) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=30 at t=18867345
-Node 7 chan 0: transfer complete from 6 dstInfo=(1,14) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=14 at t=18867345
-Node 4 chan 0: transfer complete from 0 dstInfo=(1,15) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=15 at t=18867345
-Node 3 chan 0: transfer complete from 0 dstInfo=(1,5) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=5 at t=18867345
-Node 2 chan 0: transfer complete from 0 dstInfo=(1,35) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=35 at t=18867345
-Node 7 chan 0: transfer complete from 5 dstInfo=(1,5) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=5 at t=18867345
-Node 3 chan 0: transfer complete from 7 dstInfo=(1,35) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=35 at t=18867345
-Node 4 chan 0: transfer complete from 5 dstInfo=(1,0) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=18867345
-Node 3 chan 1: transfer complete from 1 dstInfo=(1,2) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=2 at t=18867345
-Node 7 chan 0: transfer complete from 3 dstInfo=(1,6) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=6 at t=18867345
-Node 1 chan 1: transfer complete from 0 dstInfo=(1,24) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=18867345
-Node 5 chan 0: transfer complete from 1 dstInfo=(1,6) totalBytes=67108864
-Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=6 at t=18867345
-Node 0 chan 1: transfer complete from 1 dstInfo=(1,9) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=9 at t=18867345
-Node 1 chan 0: transfer complete from 0 dstInfo=(1,37) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=37 at t=18867345
-Node 4 chan 0: transfer complete from 7 dstInfo=(1,19) totalBytes=67108864
-Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=19 at t=18867345
-Node 7 chan 0: transfer complete from 4 dstInfo=(1,7) totalBytes=67108864
-Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=7 at t=18867345
-Node 6 chan 0: transfer complete from 5 dstInfo=(1,5) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=5 at t=18867345
-Node 3 chan 1: transfer complete from 2 dstInfo=(1,24) totalBytes=67108864
-Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=18867345
-Node 5 chan 1: transfer complete from 4 dstInfo=(1,7) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=7 at t=18867345
-Node 2 chan 1: transfer complete from 3 dstInfo=(1,22) totalBytes=67108864
-Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=22 at t=18867345
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=22 at t=20491913
 Node 2 chan 0: transfer complete from 3 dstInfo=(1,30) totalBytes=134217728
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=18867346
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=20491915
+Node 4 chan 1: transfer complete from 5 dstInfo=(1,30) totalBytes=67108864
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=30 at t=20491915
+Node 7 chan 0: transfer complete from 6 dstInfo=(1,14) totalBytes=67108864
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=14 at t=20491915
+Node 4 chan 0: transfer complete from 0 dstInfo=(1,15) totalBytes=67108864
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=15 at t=20491915
+Node 3 chan 0: transfer complete from 0 dstInfo=(1,5) totalBytes=67108864
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=5 at t=20491915
+Node 2 chan 0: transfer complete from 0 dstInfo=(1,35) totalBytes=67108864
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=35 at t=20491915
+Node 7 chan 0: transfer complete from 5 dstInfo=(1,5) totalBytes=67108864
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=5 at t=20491915
+Node 3 chan 0: transfer complete from 7 dstInfo=(1,35) totalBytes=67108864
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=35 at t=20491915
+Node 4 chan 0: transfer complete from 5 dstInfo=(1,0) totalBytes=67108864
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=0 at t=20491917
+Node 3 chan 1: transfer complete from 1 dstInfo=(1,2) totalBytes=67108864
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=2 at t=20491917
+Node 7 chan 0: transfer complete from 3 dstInfo=(1,6) totalBytes=67108864
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=6 at t=20491917
+Node 1 chan 1: transfer complete from 0 dstInfo=(1,24) totalBytes=67108864
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=20491917
+Node 5 chan 0: transfer complete from 1 dstInfo=(1,6) totalBytes=67108864
+Node 5 chan 0: NotifyTransferArrived dstbuf=1 dstoff=6 at t=20491917
+Node 0 chan 1: transfer complete from 1 dstInfo=(1,9) totalBytes=67108864
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=9 at t=20491917
+Node 1 chan 0: transfer complete from 0 dstInfo=(1,37) totalBytes=67108864
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=37 at t=20491917
+Node 4 chan 0: transfer complete from 7 dstInfo=(1,19) totalBytes=67108864
+Node 4 chan 0: NotifyTransferArrived dstbuf=1 dstoff=19 at t=20491917
 Node 2 chan 0: transfer complete from 6 dstInfo=(1,32) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=18867346
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=32 at t=20491917
+Node 7 chan 0: transfer complete from 4 dstInfo=(1,7) totalBytes=67108864
+Node 7 chan 0: NotifyTransferArrived dstbuf=1 dstoff=7 at t=20491919
+Node 6 chan 0: transfer complete from 5 dstInfo=(1,5) totalBytes=67108864
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=5 at t=20491919
+Node 3 chan 1: transfer complete from 2 dstInfo=(1,24) totalBytes=67108864
+Node 3 chan 1: NotifyTransferArrived dstbuf=1 dstoff=24 at t=20491919
+Node 5 chan 1: transfer complete from 4 dstInfo=(1,7) totalBytes=67108864
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=7 at t=20491919
+Node 2 chan 1: transfer complete from 3 dstInfo=(1,22) totalBytes=67108864
+Node 2 chan 1: NotifyTransferArrived dstbuf=1 dstoff=22 at t=20491919
 Node 1 chan 0: transfer complete from 5 dstInfo=(1,39) totalBytes=134217728
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=18868045
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=39 at t=20492613
 Node 0 chan 0: transfer complete from 4 dstInfo=(1,41) totalBytes=134217728
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=41 at t=18868045
-Node 6 chan 1: transfer complete from 7 dstInfo=(1,22) totalBytes=67108864
-Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=22 at t=18868045
-Node 1 chan 1: transfer complete from 3 dstInfo=(1,25) totalBytes=67108864
-Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=25 at t=18868045
-Node 0 chan 0: transfer complete from 3 dstInfo=(1,30) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=18868045
-Node 0 chan 1: transfer complete from 4 dstInfo=(1,43) totalBytes=67108864
-Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=43 at t=18868045
-Node 5 chan 1: transfer complete from 7 dstInfo=(1,10) totalBytes=67108864
-Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=10 at t=18868045
-Node 7 chan 1: transfer complete from 5 dstInfo=(1,34) totalBytes=67108864
-Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=34 at t=18868045
-Node 4 chan 1: transfer complete from 0 dstInfo=(1,6) totalBytes=67108864
-Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=6 at t=18868045
-Node 0 chan 0: transfer complete from 1 dstInfo=(1,29) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=18868045
-Node 3 chan 0: transfer complete from 1 dstInfo=(1,29) totalBytes=67108864
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=18868045
-Node 2 chan 0: transfer complete from 1 dstInfo=(1,28) totalBytes=67108864
-Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=28 at t=18868045
-Node 6 chan 0: transfer complete from 2 dstInfo=(1,11) totalBytes=67108864
-Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=11 at t=18868045
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=41 at t=20492615
 Node 3 chan 0: transfer complete from 2 dstInfo=(1,45) totalBytes=134217728
-Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=18868046
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=45 at t=20492615
+Node 6 chan 1: transfer complete from 7 dstInfo=(1,22) totalBytes=67108864
+Node 6 chan 1: NotifyTransferArrived dstbuf=1 dstoff=22 at t=20492615
+Node 1 chan 1: transfer complete from 3 dstInfo=(1,25) totalBytes=67108864
+Node 1 chan 1: NotifyTransferArrived dstbuf=1 dstoff=25 at t=20492615
+Node 0 chan 0: transfer complete from 3 dstInfo=(1,30) totalBytes=67108864
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=30 at t=20492615
+Node 0 chan 1: transfer complete from 4 dstInfo=(1,43) totalBytes=67108864
+Node 0 chan 1: NotifyTransferArrived dstbuf=1 dstoff=43 at t=20492617
+Node 5 chan 1: transfer complete from 7 dstInfo=(1,10) totalBytes=67108864
+Node 5 chan 1: NotifyTransferArrived dstbuf=1 dstoff=10 at t=20492617
+Node 7 chan 1: transfer complete from 5 dstInfo=(1,34) totalBytes=67108864
+Node 7 chan 1: NotifyTransferArrived dstbuf=1 dstoff=34 at t=20492617
+Node 4 chan 1: transfer complete from 0 dstInfo=(1,6) totalBytes=67108864
+Node 4 chan 1: NotifyTransferArrived dstbuf=1 dstoff=6 at t=20492617
 Node 1 chan 0: transfer complete from 2 dstInfo=(1,42) totalBytes=67108864
-Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=42 at t=18868046
+Node 1 chan 0: NotifyTransferArrived dstbuf=1 dstoff=42 at t=20492617
 Node 0 chan 0: transfer complete from 2 dstInfo=(1,34) totalBytes=67108864
-Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=18868046
-Total simulated time: 18868046 nanoseconds
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=34 at t=20492617
+Node 0 chan 0: transfer complete from 1 dstInfo=(1,29) totalBytes=67108864
+Node 0 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=20492619
+Node 3 chan 0: transfer complete from 1 dstInfo=(1,29) totalBytes=67108864
+Node 3 chan 0: NotifyTransferArrived dstbuf=1 dstoff=29 at t=20492619
+Node 2 chan 0: transfer complete from 1 dstInfo=(1,28) totalBytes=67108864
+Node 2 chan 0: NotifyTransferArrived dstbuf=1 dstoff=28 at t=20492619
+Node 6 chan 0: transfer complete from 2 dstInfo=(1,11) totalBytes=67108864
+Node 6 chan 0: NotifyTransferArrived dstbuf=1 dstoff=11 at t=20492619
 Done simulation
+Total simulated time: 20492619 nanoseconds
