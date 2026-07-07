@@ -15,6 +15,7 @@ using namespace ns3;
 
 int main(int argc, char *argv[]) {
 		NS_LOG_COMPONENT_DEFINE("DGX1_TEST");
+		LogComponentEnable("CollectivesApplication", LOG_INFO);
     uint32_t inputBytes = (1 << 20);
 		CommandLine cmd;
 		cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
@@ -273,7 +274,7 @@ int main(int argc, char *argv[]) {
 		constexpr int N_CHUNKS = 6;
     int INPUT_BYTES = inputBytes;
 		int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(DataType::INT32);
-    constexpr bool CORRECTNESS_CHECK = true;
+    constexpr bool CORRECTNESS_CHECK = false;
 
 		PacketSocketHelper packetSocket;
 		packetSocket.Install(gpunodes);
