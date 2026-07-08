@@ -1,15 +1,15 @@
-Node 0 chan 0: registered persistent rx flow key=0xa00000100034e20 for peer 1 at t=0
-Node 0 chan 0: registered persistent rx flow key=0xa00000100034e21 for peer 2 at t=0
-Node 0 chan 0: registered persistent rx flow key=0xa00000100034e22 for peer 3 at t=0
-Node 1 chan 0: registered persistent rx flow key=0xa00000200034e20 for peer 0 at t=0
-Node 1 chan 0: registered persistent rx flow key=0xa00000200034e21 for peer 2 at t=0
-Node 1 chan 0: registered persistent rx flow key=0xa00000200034e22 for peer 3 at t=0
-Node 2 chan 0: registered persistent rx flow key=0xa00000300034e20 for peer 0 at t=0
-Node 2 chan 0: registered persistent rx flow key=0xa00000300034e21 for peer 1 at t=0
-Node 2 chan 0: registered persistent rx flow key=0xa00000300034e22 for peer 3 at t=0
-Node 3 chan 0: registered persistent rx flow key=0xa00000400034e20 for peer 0 at t=0
-Node 3 chan 0: registered persistent rx flow key=0xa00000400034e21 for peer 1 at t=0
-Node 3 chan 0: registered persistent rx flow key=0xa00000400034e22 for peer 2 at t=0
+Node 0 chan 0: established persistent rx qp (sport=20000) for peer 1 at t=0
+Node 0 chan 0: established persistent rx qp (sport=20001) for peer 2 at t=0
+Node 0 chan 0: established persistent rx qp (sport=20002) for peer 3 at t=0
+Node 1 chan 0: established persistent rx qp (sport=20000) for peer 0 at t=0
+Node 1 chan 0: established persistent rx qp (sport=20001) for peer 2 at t=0
+Node 1 chan 0: established persistent rx qp (sport=20002) for peer 3 at t=0
+Node 2 chan 0: established persistent rx qp (sport=20000) for peer 0 at t=0
+Node 2 chan 0: established persistent rx qp (sport=20001) for peer 1 at t=0
+Node 2 chan 0: established persistent rx qp (sport=20002) for peer 3 at t=0
+Node 3 chan 0: established persistent rx qp (sport=20000) for peer 0 at t=0
+Node 3 chan 0: established persistent rx qp (sport=20001) for peer 1 at t=0
+Node 3 chan 0: established persistent rx qp (sport=20002) for peer 2 at t=0
 Node 0 chan 0: RDMA send to 1 totalBytes=1048576 at t=0
 Node 1 chan 0: RDMA send to 0 totalBytes=1048576 at t=0
 Node 2 chan 0: RDMA send to 3 totalBytes=1048576 at t=0

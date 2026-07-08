@@ -1,15 +1,15 @@
-Node 0 chan 0: registered persistent rx flow key=0xa00000100034e20 for peer 1 at t=0
-Node 0 chan 0: registered persistent rx flow key=0xa00000100034e21 for peer 2 at t=0
-Node 0 chan 0: registered persistent rx flow key=0xa00000100034e22 for peer 3 at t=0
-Node 1 chan 0: registered persistent rx flow key=0xa00000200034e20 for peer 0 at t=0
-Node 1 chan 0: registered persistent rx flow key=0xa00000200034e21 for peer 2 at t=0
-Node 1 chan 0: registered persistent rx flow key=0xa00000200034e22 for peer 3 at t=0
-Node 2 chan 0: registered persistent rx flow key=0xa00000300034e20 for peer 0 at t=0
-Node 2 chan 0: registered persistent rx flow key=0xa00000300034e21 for peer 3 at t=0
-Node 2 chan 1: registered persistent rx flow key=0xa00000300034e20 for peer 0 at t=0
-Node 3 chan 0: registered persistent rx flow key=0xa00000400034e20 for peer 1 at t=0
-Node 3 chan 0: registered persistent rx flow key=0xa00000400034e21 for peer 2 at t=0
-Node 3 chan 1: registered persistent rx flow key=0xa00000400034e20 for peer 1 at t=0
+Node 0 chan 0: established persistent rx qp (sport=20000) for peer 1 at t=0
+Node 0 chan 0: established persistent rx qp (sport=20001) for peer 2 at t=0
+Node 0 chan 0: established persistent rx qp (sport=20002) for peer 3 at t=0
+Node 1 chan 0: established persistent rx qp (sport=20000) for peer 0 at t=0
+Node 1 chan 0: established persistent rx qp (sport=20001) for peer 2 at t=0
+Node 1 chan 0: established persistent rx qp (sport=20002) for peer 3 at t=0
+Node 2 chan 0: established persistent rx qp (sport=20000) for peer 0 at t=0
+Node 2 chan 0: established persistent rx qp (sport=20001) for peer 3 at t=0
+Node 2 chan 1: established persistent rx qp (sport=20002) for peer 0 at t=0
+Node 3 chan 0: established persistent rx qp (sport=20000) for peer 1 at t=0
+Node 3 chan 0: established persistent rx qp (sport=20001) for peer 2 at t=0
+Node 3 chan 1: established persistent rx qp (sport=20002) for peer 1 at t=0
 Node 0 chan 0: RDMA send to 3 totalBytes=1048576 at t=0
 Node 1 chan 0: RDMA send to 0 totalBytes=1048576 at t=0
 Node 2 chan 0: RDMA send to 3 totalBytes=1048576 at t=0
@@ -31,12 +31,20 @@ Node 0 chan 0: RDMA send to 2 complete (sender side) dstInfo=(1,0) at t=43342
 Node 1 chan 0: RDMA send to 3 complete (sender side) dstInfo=(1,1) at t=43342
 Node 0 chan 0: RDMA send to 1 totalBytes=1048576 at t=43342
 Node 1 chan 0: RDMA send to 2 totalBytes=1048576 at t=43342
+Node 3 chan 0: RDMA send to 1 complete (sender side) dstInfo=(1,3) at t=43404
 Node 3 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=1048576 at t=44773
+Node 2 chan 0: RDMA send to 0 complete (sender side) dstInfo=(1,2) at t=63585
 Node 0 chan 0: RDMA send to 1 complete (sender side) dstInfo=(1,0) at t=65013
 Node 1 chan 0: RDMA send to 2 complete (sender side) dstInfo=(1,1) at t=65013
-Node 1 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=1048576 at t=66444
+Node 3 chan 1: RDMA send to 1 complete (sender side) dstInfo=(1,2) at t=65013
+Node 2 chan 1: RDMA send to 0 complete (sender side) dstInfo=(1,3) at t=65013
+Node 3 chan 0: transfer complete from peer 1 dst=(1,1) totalBytes=1048576 at t=66444
 Node 2 chan 0: transfer complete from peer 1 dst=(1,1) totalBytes=1048576 at t=67906
-Total simulated time: 67906 nanoseconds
-Allgather incorrect.
+Node 1 chan 0: transfer complete from peer 3 dst=(1,3) totalBytes=1048576 at t=70849
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=1048576 at t=71750
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=1048576 at t=76555
+Node 1 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=1048576 at t=87622
+Node 1 chan 1: transfer complete from peer 3 dst=(1,2) totalBytes=1048576 at t=95839
+Total simulated time: 95839 nanoseconds
+Allgather verified.
 Done simulation
-
