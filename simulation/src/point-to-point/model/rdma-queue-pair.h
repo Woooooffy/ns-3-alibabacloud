@@ -9,7 +9,9 @@
 #include <ns3/custom-header.h>
 #include <ns3/int-header.h>
 #include <ns3/msccl-flow-id-header.h>
+#include <queue>
 #include <vector>
+#include <functional>
 
 namespace ns3 {
 
@@ -18,7 +20,7 @@ public:
 	Time startTime;
 	Ipv4Address sip, dip;
 	uint16_t sport, dport;
-	uint64_t m_size, m_init_size, m_tag;
+	uint64_t m_size, m_init_size, m_tag; // m_size/m_init_size are informational (monitoring/print only) since the message queue below drives GetBytesLeft/IsFinished
 	uint32_t m_mscclFlowId; // app-level msccl flow id, carried on the wire via MscclFlowIdHeader; MscclFlowIdHeader::NO_FLOW_ID if unset
 	uint32_t m_src, m_dest;
 	uint64_t snd_nxt, snd_una; // next seq to send, the highest unacked seq
@@ -31,8 +33,38 @@ public:
 	Time m_nextAvail;	//< Soonest time of next send
 	uint32_t wp; // current window of packets
 	uint32_t lastPktSize;
-	Callback<void> m_notifyAppFinish;
-	Callback<void> m_notifyAppSent;
+	// true only once explicitly torn down via RdmaHw::CloseQueuePair/QpComplete -- the sole
+	// condition under which qbb-net-device's pacing sweep evicts this QP from its NIC's
+	// group. A QP with an empty message queue but m_closed==false (e.g. an MSCCL persistent
+	// connection idling between Send() calls) is left resident, since GetBytesLeft()==0
+	// already keeps it out of the pacing selection without needing eviction.
+	bool m_closed;
+	// when true (the default, preserving today's behavior for every existing non-MSCCL
+	// caller such as RdmaClient), RdmaHw automatically tears the whole qp down once its
+	// message queue drains completely. MSCCL sets this false on its persistent per-peer
+	// qps so draining between Send() calls is just normal idle, not teardown -- those qps
+	// are only closed explicitly, via RdmaHw::CloseQueuePair, at channel teardown.
+	bool m_autoClose;
+
+	// A persistent QP (reused across multiple logical transfers to the same peer) enqueues
+	// one RdmaMessage per transfer; snd_nxt/snd_una progress continuously across message
+	// boundaries so congestion-control state carries over between transfers, while
+	// completion is tracked per-message rather than for the whole QP.
+	class RdmaMessage {
+	public:
+		uint64_t m_size;
+		uint64_t m_startSeq;
+		uint8_t* m_srcDataPtr; // nullptr if correctness check disabled for this message
+		uint32_t m_mscclFlowId; // per-step flow id (XML "mscclflowid"); a persistent qp's messages can each carry a different one
+		Callback<void> m_notifyAppFinish;
+		Callback<void> m_notifyAppSent;
+	};
+	std::queue<RdmaMessage> m_messages;
+	void PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent);
+	void FinishMessage(); // pops the front message, fires its m_notifyAppFinish
+	bool IsCurMessageFinished(); // snd_una >= front.m_startSeq + front.m_size
+	uint8_t* GetCurSrcDataPtr(); // front message's srcDataPtr, or nullptr if no message pending
+	uint32_t GetCurMscclFlowId(); // front message's mscclFlowId, or this qp's own (fallback) if no message pending
 	/******************************
 	 * runtime states
 	 *****************************/
@@ -93,8 +125,6 @@ public:
 	void SetWin(uint32_t win);
 	void SetBaseRtt(uint64_t baseRtt);
 	void SetVarWin(bool v);
-	void SetAppNotifyCallback(Callback<void> notifyAppFinish);
-	void SetAppSentCallback(Callback<void> notifyAppSent);
 
 	uint64_t GetBytesLeft();
 	uint64_t GetInitialSize();
@@ -132,6 +162,12 @@ public:
 	int32_t m_milestone_rx;
 	uint32_t m_lastNACK;
 	EventId QcnTimerEvent; // if destroy this rxQp, remember to cancel this timer
+	// per-flow rx-side byte-arrival notification, set once (eagerly, at connection setup --
+	// see MscclChannel::SetupRdmaSendPeer) for as long as this rx qp lives. Called for every
+	// in-order packet on this flow: (payload, payloadSize, seqOffset). Living directly on the
+	// rx qp means callers get uniqueness for free from RdmaHw's own (senderIp,senderSport,pg)
+	// rx-qp key instead of needing a second, independently-derived key.
+	std::function<void(const uint8_t*, uint32_t, uint64_t)> m_perPktFn;
 
 	static TypeId GetTypeId (void);
 	RdmaRxQueuePair();

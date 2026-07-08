@@ -34,12 +34,13 @@ public:
 	void SetRdmaHw(Ptr<RdmaHw> rdma);
 
 	// add a queue pair
-	void AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent);
+	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true);
+	void CloseQueuePair(Ptr<RdmaQueuePair> qp);
 
 	// enable NVLS
 	void EnbaleNVLS();
 	void DisableNVLS();
-	
+
 	// callback when qp completes
 	void QpComplete(Ptr<RdmaQueuePair> q);
     void SendComplete(Ptr<RdmaQueuePair> q);

@@ -1,4 +1,6 @@
 #include <ns3/simulator.h>
+#include <functional>
+#include <vector>
 #include <ns3/simple-seq-ts-header.h>
 #include <ns3/udp-header.h>
 #include <ns3/ipv4-header.h>
@@ -21,6 +23,7 @@
 namespace ns3{
 
 NS_OBJECT_ENSURE_REGISTERED(RdmaHw);
+NS_LOG_COMPONENT_DEFINE("RdmaHw");
 
 TypeId RdmaHw::GetTypeId (void)
 {
@@ -185,7 +188,7 @@ TypeId RdmaHw::GetTypeId (void)
 				"the number of gpus in a server, used for routing",
 				UintegerValue(1),
 				MakeUintegerAccessor(&RdmaHw::m_gpus_per_server),
-				MakeUintegerChecker<uint32_t>())	
+				MakeUintegerChecker<uint32_t>())
 		.AddAttribute("TotalPauseTimes",
 				"The number of pause times to simulate PFC pause due to PCIe",
 				UintegerValue(0),
@@ -272,20 +275,23 @@ Ptr<RdmaQueuePair> RdmaHw::GetQp(uint32_t dip, uint16_t sport, uint16_t pg){
 		return it->second;
 	return NULL;
 }
-void RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent){
+Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose){
 	// create qp
 	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
 	qp->SetSrc(src);
 	qp->SetDest(dest);
 	qp->SetTag(tag);
 	qp->SetMscclFlowId(mscclFlowId);
-	qp->SetSize(size);
-	qp->SetInitialSize(size);
 	qp->SetWin(win);
 	qp->SetBaseRtt(baseRtt);
 	qp->SetVarWin(m_var_win);
-	qp->SetAppNotifyCallback(notifyAppFinish);
-	qp->SetAppSentCallback(notifyAppSent);
+	qp->m_autoClose = autoClose;
+	// size == 0 is used to eagerly establish a persistent connection (see
+	// MscclChannel::SetupRdmaSendPeer) with no message queued yet; a non-persistent caller
+	// (e.g. RdmaClient) or the first message of a persistent connection instead pushes here.
+	if (size != 0){
+		qp->PushMessage(size, srcDataPtr, mscclFlowId, notifyAppFinish, notifyAppSent);
+	}
 	// add qp
 	uint32_t nic_idx = GetNicIdxOfQp(qp);
 
@@ -320,6 +326,12 @@ void RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t si
 	else qp->nvls_enable = 0;
 	// Notify Nic
 	m_nic[nic_idx].dev->NewQp(qp);
+	return qp;
+}
+
+void RdmaHw::TriggerTransmit(Ptr<RdmaQueuePair> qp){
+	uint32_t nic_idx = GetNicIdxOfQp(qp);
+	m_nic[nic_idx].dev->TriggerTransmit();
 }
 
 void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
@@ -373,19 +385,19 @@ uint32_t RdmaHw::GetNicIdxOfRxQp(Ptr<RdmaRxQueuePair> q){
 		auto &v = m_rtTable[q->dip];
 		if(v.size() > 0)
 			return v[q->GetHash() % v.size()];
-		else 
+		else
 			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 	} else if(m_rtTable_nxthop_nvswitch.count(q->dip) != 0) {
 		auto &v = m_rtTable_nxthop_nvswitch[q->dip];
 		if(v.size() > 0)
 			return v[q->GetHash() % v.size()];
-		else 
+		else
 			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 	} else {
 		NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 	}
 	NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-	
+
 }
 void RdmaHw::DeleteRxQp(uint32_t dip, uint16_t pg, uint16_t dport){
 	uint64_t key = ((uint64_t)dip << 32) | ((uint64_t)pg << 16) | (uint64_t)dport;
@@ -414,7 +426,10 @@ int RdmaHw::SendPacketComplete(Ptr<Packet> p, CustomHeader &ch)
 		// send completion instead of waiting for one.
 		uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 		qp->Acknowledge(seq + payload_size);
-		if (qp->IsFinished()){
+		while (!qp->m_messages.empty() && qp->IsCurMessageFinished()){
+			QpCompleteMessage(qp);
+		}
+		if (qp->m_autoClose && qp->IsFinished()){
 			QpComplete(qp);
 		}
 	}
@@ -430,7 +445,7 @@ void RdmaHw::SendComplete(Ptr<RdmaQueuePair> qp)
 
 int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 	uint8_t ecnbits = ch.GetIpv4EcnBits();
-	
+
 	uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 	// TODO find corresponding rx queue pair
 	Ptr<RdmaRxQueuePair> rxQp = GetRxQp(ch.dip, ch.sip, ch.udp.dport, ch.udp.sport, ch.udp.pg, true);
@@ -442,6 +457,22 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 	rxQp->m_milestone_rx = m_ack_interval;
 
 	int x = ReceiverCheckSeq(ch.udp.seq, rxQp, payload_size);
+
+	// rx-flow completion: fire per-packet copy callback and count down bytes. Registered
+	// directly on this rx qp (eagerly, at connection setup -- see
+	// MscclChannel::SetupRdmaSendPeer), so uniqueness comes for free from the rx-qp lookup
+	// above instead of a second, independently-keyed table. No byte-count/completion
+	// bookkeeping here; all of that lives in the application layer
+	// (MscclChannel::OnBytesArrivedFromPeer).
+	if ((x == 1 || x == 5) && rxQp->m_perPktFn) { // in-order delivery
+		// extract payload from packet: CopyData writes all bytes (headers+payload)
+		// into tmp; payload starts at ch.GetSerializedSize()
+		uint32_t headerSize = ch.GetSerializedSize();
+		std::vector<uint8_t> tmp(p->GetSize());
+		p->CopyData(tmp.data(), p->GetSize());
+		rxQp->m_perPktFn(tmp.data() + headerSize, payload_size, ch.udp.seq);
+	}
+
 	if (x == 1 || x == 2){ //generate ACK or NACK
 		qbbHeader seqh;
 		seqh.SetSeq(rxQp->ReceiverNextExpectedSeq);
@@ -504,7 +535,7 @@ int RdmaHw::ReceiveCnp(Ptr<Packet> p, CustomHeader &ch){
 	uint32_t nic_idx = GetNicIdxOfQp(qp);
 	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev;
 
-	if (qp->m_rate == 0)			//lazy initialization	
+	if (qp->m_rate == 0)			//lazy initialization
 	{
 		qp->m_rate = dev->GetDataRate();
 		if (m_cc_mode == 1){
@@ -548,7 +579,10 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 			uint64_t goback_seq = seq / m_chunk * m_chunk;
 			qp->Acknowledge(goback_seq);
 		}
-		if (qp->IsFinished()){
+		while (!qp->m_messages.empty() && qp->IsCurMessageFinished()){
+			QpCompleteMessage(qp);
+		}
+		if (qp->m_autoClose && qp->IsFinished()){
 			QpComplete(qp);
 		}
 	}
@@ -561,7 +595,7 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 		qp_cnp[key]++; // update for the number of cnp this qp has received
 		if (m_cc_mode == 1){ // mlx version
 			cnp_received_mlx(qp);
-		} 
+		}
 	}
 
 	if (m_cc_mode == 3){
@@ -626,7 +660,7 @@ int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size
 		}else
 			return 4;
 	}else {
-		// Duplicate. 
+		// Duplicate.
 		return 3;
 	}
 }
@@ -648,6 +682,10 @@ void RdmaHw::RecoverQueue(Ptr<RdmaQueuePair> qp){
 	qp->snd_nxt = qp->snd_una;
 }
 
+void RdmaHw::QpCompleteMessage(Ptr<RdmaQueuePair> qp){
+	qp->FinishMessage();
+}
+
 void RdmaHw::QpComplete(Ptr<RdmaQueuePair> qp){
 	NS_ASSERT(!m_qpCompleteCallback.IsNull());
 	if (m_cc_mode == 1){
@@ -660,10 +698,22 @@ void RdmaHw::QpComplete(Ptr<RdmaQueuePair> qp){
 	// It may also delete the rxQp on the receiver
 	m_qpCompleteCallback(qp);
 
-	qp->m_notifyAppFinish();
+	// any messages still queued (shouldn't normally happen -- autoClose-triggered teardown
+	// only fires once the queue is empty, and an explicit CloseQueuePair call is the
+	// caller's responsibility to make only once its own bookkeeping is done) are drained
+	// here so their callbacks still fire rather than being silently dropped.
+	while (!qp->m_messages.empty()){
+		qp->FinishMessage();
+	}
+
+	qp->m_closed = true;
 
 	// delete the qp
 	DeleteQueuePair(qp);
+}
+
+void RdmaHw::CloseQueuePair(Ptr<RdmaQueuePair> qp){
+	QpComplete(qp);
 }
 
 void RdmaHw::SetLinkDown(Ptr<QbbNetDevice> dev){
@@ -706,13 +756,20 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	uint64_t payload_size = qp->GetBytesLeft();
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
-	Ptr<Packet> p = Create<Packet> ((uint32_t)payload_size);
+	// source pointer, if any, belongs to the current message and is indexed relative to
+	// that message's own start offset -- not the connection-wide snd_nxt -- since each
+	// message on a persistent qp can come from a different source buffer (different
+	// srcbuf/srcoff per MSCCL Send() call).
+	uint8_t* curSrcDataPtr = qp->GetCurSrcDataPtr();
+	Ptr<Packet> p = (curSrcDataPtr != nullptr)
+		? Create<Packet>(curSrcDataPtr + (qp->snd_nxt - qp->m_messages.front().m_startSeq), (uint32_t)payload_size)
+		: Create<Packet>((uint32_t)payload_size);
 	// carry the qp's msccl flow id as a real header (innermost, right next to the
 	// payload) so switches can do custom flow-based forwarding instead of plain
 	// ECMP when enabled. Added before SimpleSeqTsHeader so it doesn't shift the
 	// fixed byte offsets switches use to reach the INT header.
 	MscclFlowIdHeader mscclFlowIdHeader;
-	mscclFlowIdHeader.SetFlowId(qp->GetMscclFlowId());
+	mscclFlowIdHeader.SetFlowId(qp->GetCurMscclFlowId());
 	p->AddHeader(mscclFlowIdHeader);
 	// add SimpleSeqTsHeader
 	SimpleSeqTsHeader seqTs;

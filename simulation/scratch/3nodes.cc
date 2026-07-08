@@ -14,175 +14,23 @@
 using namespace ns3;
 
 int main(int argc, char *argv[]) {
-<<<<<<< HEAD
-		NS_LOG_COMPONENT_DEFINE("DGX1_TEST");
-    LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
-    uint32_t inputBytes = (1 << 20);
-		CommandLine cmd;
-		cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
-		cmd.Parse(argc, argv);
-=======
 	NS_LOG_COMPONENT_DEFINE("3NODES_TEST");
     LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
-	LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
+	// LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
+    LogComponentEnable("RdmaHw", LOG_LEVEL_ALL);
     uint32_t inputBytes = (1 << 20);
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
 	cmd.Parse(argc, argv);
->>>>>>> file_sync
 
     NodeContainer gpunodes;
     NodeContainer regswtches;
     NodeContainer nvswtches;
-<<<<<<< HEAD
-    
-=======
 
->>>>>>> file_sync
     // PFC backpressure (CheckAndSendPfc) runs unconditionally in SwitchNode, but only
     // has an effect once QcnEnabled lets a stalled NIC's queue resume; ECN marking is
     // separately gated per-switch by the EcnEnabled attribute set below.
     Config::SetDefault("ns3::QbbNetDevice::QcnEnabled", BooleanValue(true));
-<<<<<<< HEAD
-    
-    for (uint32_t i = 0; i < 3; ++i) { gpunodes.Add(CreateObject<GPU>()); }
-    for (uint32_t i = 0; i < 1; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
-    QbbHelper link_helper0;
-    link_helper0.SetDeviceAttribute("Mtu", UintegerValue(9000));
-    link_helper0.SetChannelAttribute("Delay", StringValue("1us"));
-    link_helper0.SetDeviceAttribute("DataRate", StringValue("71Gbps"));
-    
-    NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), regswtches.Get(0));
-    
-    NetDeviceContainer devs0_1 = link_helper0.Install(gpunodes.Get(1), regswtches.Get(0));
-    
-    NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), regswtches.Get(0));
-    
-    // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
-    InternetStackHelper internetStack;
-    internetStack.Install(gpunodes);
-    
-    {
-        struct _IpAssign { Ptr<NetDevice> dev; const char* hostMask; };
-        std::vector<_IpAssign> _ipAssigns = {
-            {devs0_0.Get(0), "0.0.0.1"},
-            {devs0_1.Get(0), "0.0.0.2"},
-            {devs0_2.Get(0), "0.0.0.3"},
-        };
-        for (auto& a : _ipAssigns) {
-            Ipv4AddressHelper _ipv4;
-            _ipv4.SetBase("10.0.0.0", "255.0.0.0", a.hostMask);
-            NetDeviceContainer _tmp;
-            _tmp.Add(a.dev);
-            _ipv4.Assign(_tmp);
-        }
-    }
-    
-    // SwitchNode routing tables (BFS ECMP)
-    {
-        struct _Route { Ptr<SwitchNode> node; Ipv4Address dst; Ptr<NetDevice> dev; };
-        std::vector<_Route> _routes = {
-            {DynamicCast<SwitchNode>(regswtches.Get(0)), Ipv4Address("10.0.0.1"), devs0_0.Get(1)},
-            {DynamicCast<SwitchNode>(regswtches.Get(0)), Ipv4Address("10.0.0.2"), devs0_1.Get(1)},
-            {DynamicCast<SwitchNode>(regswtches.Get(0)), Ipv4Address("10.0.0.3"), devs0_2.Get(1)},
-        };
-        for (auto& r : _routes) {
-            r.node->AddTableEntry(r.dst, r.dev->GetIfIndex());
-        }
-    }
-    
-    // RdmaHw + RdmaDriver setup per GPU
-    {
-        struct _RdmaRoute { Ipv4Address dst; uint32_t ifIndex; bool isNvswitch; };
-        struct _GpuRdmaSetup { Ptr<Node> gpu; Ipv4Address myIp; std::vector<_RdmaRoute> routes; };
-        std::vector<_GpuRdmaSetup> _gpuSetups = {
-            {gpunodes.Get(0), Ipv4Address("10.0.0.1"), {{Ipv4Address("10.0.0.2"), devs0_0.Get(0)->GetIfIndex(), false}, {Ipv4Address("10.0.0.3"), devs0_0.Get(0)->GetIfIndex(), false}}},
-            {gpunodes.Get(1), Ipv4Address("10.0.0.2"), {{Ipv4Address("10.0.0.1"), devs0_1.Get(0)->GetIfIndex(), false}, {Ipv4Address("10.0.0.3"), devs0_1.Get(0)->GetIfIndex(), false}}},
-            {gpunodes.Get(2), Ipv4Address("10.0.0.3"), {{Ipv4Address("10.0.0.1"), devs0_2.Get(0)->GetIfIndex(), false}, {Ipv4Address("10.0.0.2"), devs0_2.Get(0)->GetIfIndex(), false}}},
-        };
-        for (auto& g : _gpuSetups) {
-            Ptr<RdmaHw> rdmaHw = CreateObject<RdmaHw>();
-            rdmaHw->SetAttribute("GPUsPerServer", UintegerValue(1));
-            rdmaHw->SetAttribute("CcMode", UintegerValue(12));
-            rdmaHw->SetAttribute("L2AckInterval", UintegerValue(1));
-            rdmaHw->SetAttribute("L2ChunkSize", UintegerValue(4000));
-            rdmaHw->SetAttribute("Mtu", UintegerValue(1500));
-            Ptr<RdmaDriver> rdmaDriver = CreateObject<RdmaDriver>();
-            rdmaDriver->SetNode(g.gpu);
-            rdmaDriver->SetRdmaHw(rdmaHw);
-            rdmaDriver->Init();
-            for (auto& r : g.routes) {
-                rdmaHw->AddTableEntry(r.dst, r.ifIndex, r.isNvswitch);
-            }
-            DynamicCast<GPU>(g.gpu)->SetMyIp(g.myIp);
-            g.gpu->AggregateObject(rdmaDriver);
-        }
-    }
-    
-    // peer IP bookkeeping for the collectives app's RDMA-routed peers
-    {
-        struct _PeerIp { Ptr<Node> gpu; int16_t peerIdx; Ipv4Address peerIp; };
-        std::vector<_PeerIp> _peerIps = {
-            {gpunodes.Get(1), 0, Ipv4Address("10.0.0.1")},
-            {gpunodes.Get(1), 2, Ipv4Address("10.0.0.3")},
-            {gpunodes.Get(2), 0, Ipv4Address("10.0.0.1")},
-            {gpunodes.Get(2), 1, Ipv4Address("10.0.0.2")},
-            {gpunodes.Get(0), 1, Ipv4Address("10.0.0.2")},
-            {gpunodes.Get(0), 2, Ipv4Address("10.0.0.3")},
-        };
-        for (auto& p : _peerIps) {
-            DynamicCast<GPU>(p.gpu)->PushPeerIpAddr(p.peerIdx, p.peerIp);
-        }
-    }
-    
-    // peer RDMA pacing: bandwidth-delay-product window + base RTT per peer
-    {
-        struct _PeerPacing { Ptr<Node> gpu; int16_t peerIdx; uint32_t winBytes; uint64_t baseRttNs; };
-        std::vector<_PeerPacing> _peerPacing = {
-            {gpunodes.Get(1), 0, 53500, 6028},
-            {gpunodes.Get(1), 2, 53500, 6028},
-            {gpunodes.Get(2), 0, 53500, 6028},
-            {gpunodes.Get(2), 1, 53500, 6028},
-            {gpunodes.Get(0), 1, 53500, 6028},
-            {gpunodes.Get(0), 2, 53500, 6028},
-        };
-        for (auto& p : _peerPacing) {
-            DynamicCast<GPU>(p.gpu)->PushPeerWin(p.peerIdx, p.winBytes);
-            DynamicCast<GPU>(p.gpu)->PushPeerBaseRtt(p.peerIdx, p.baseRttNs);
-        }
-    }
-    
-    // switch/nvswitch MMU: PFC headroom + ECN thresholds per port (otherwise
-    // SwitchMmu's headroom[]/kmin[]/kmax[]/pmax[]/pfc_a_shift[] are uninitialized,
-    // which disables realistic PFC backpressure under incast)
-    {
-        struct _MmuNode { Ptr<Node> node; Ptr<SwitchMmu> mmu; uint32_t nPorts; bool isSwitch; };
-        std::vector<_MmuNode> _mmuNodes = {
-            {regswtches.Get(0), DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu, 3, true},
-        };
-        for (auto& n : _mmuNodes) {
-            if (n.isSwitch) n.node->SetAttribute("EcnEnabled", BooleanValue(true));
-            n.mmu->ConfigNPort(n.nPorts);
-            n.mmu->node_id = n.node->GetId();
-        }
-    }
-    
-    {
-        struct _MmuPort { Ptr<SwitchMmu> mmu; uint32_t port; uint32_t headroomBytes; uint32_t kminKB; uint32_t kmaxKB; double pmax; uint32_t shift; };
-        std::vector<_MmuPort> _mmuPorts = {
-            {DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu, devs0_0.Get(1)->GetIfIndex(), 26625, 36, 71, 0.2, 3},
-            {DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu, devs0_1.Get(1)->GetIfIndex(), 26625, 36, 71, 0.2, 3},
-            {DynamicCast<SwitchNode>(regswtches.Get(0))->m_mmu, devs0_2.Get(1)->GetIfIndex(), 26625, 36, 71, 0.2, 3},
-        };
-        for (auto& p : _mmuPorts) {
-            p.mmu->ConfigEcn(p.port, p.kminKB, p.kmaxKB, p.pmax);
-            p.mmu->ConfigHdrm(p.port, p.headroomBytes);
-            p.mmu->pfc_a_shift[p.port] = p.shift;
-        }
-    }
-    
-    
-=======
 
     for (uint32_t i = 0; i < 3; ++i) { gpunodes.Add(CreateObject<GPU>()); }
     for (uint32_t i = 0; i < 1; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
@@ -202,7 +50,7 @@ int main(int argc, char *argv[]) {
     NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), regswtches.Get(0));
 
     Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
-    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
+    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(1));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
 
@@ -213,26 +61,21 @@ int main(int argc, char *argv[]) {
     RdmaFabricHelper rdmaFabric;
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
 
->>>>>>> file_sync
     /*
         n0 -> sw: devs0_0
         n1 -> sw: devs0_1
         n2 -> sw: devs0_2
     */
 
-<<<<<<< HEAD
-		const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
-    std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
-		// std::string XML_ALGO = "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/teccl.xml";
-=======
 	const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
     // algo3nodes.xml has mscclflowid set on every step; star_switch_entry.json maps
     // those same flow ids to switch ports, exercising the pipeline end to end (XML
     // attribute -> mscclTransfer -> RdmaQueuePair -> MscclFlowIdHeader on the wire ->
     // switch lookup).
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/algo3nodes.xml");
+//    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/algo3nodes.xml");
+		std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
+
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/star_switch_entry.json");
->>>>>>> file_sync
 
 
     // constexpr int N_NODES = 3;
@@ -241,21 +84,16 @@ int main(int argc, char *argv[]) {
     const uint32_t INPUT_BYTES = inputBytes;
     int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
     // in elements, so total bytes is CHUNK_SIZE * N_CHUNKS * sizeof(datatype)
-<<<<<<< HEAD
-    bool CORRECTNESS_CHECK = false;
-
-    TopoNodeSet topo(gpunodes);
-    AlgoParseResult result = ParseAlgoFromXml(XML_ALGO.c_str(), topo);
-    if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
-=======
     bool CORRECTNESS_CHECK = true;
+		bool FLOW_ID = false;
 
     AlgoTopology topo(gpunodes, regswtches);
     AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
     if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
-    AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str());
-    if (switchResult != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing switch JSON, error code " << switchResult);
->>>>>>> file_sync
+		if (FLOW_ID) {
+	    AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str());
+  	  if (switchResult != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing switch JSON, error code " << switchResult);
+		}
 
     static std::ofstream logtxt;
 
@@ -296,9 +134,5 @@ int main(int argc, char *argv[]) {
     Simulator::Destroy();
     NS_LOG_UNCOND("Done simulation");
     return 0;
-<<<<<<< HEAD
-    
-=======
 
->>>>>>> file_sync
 }

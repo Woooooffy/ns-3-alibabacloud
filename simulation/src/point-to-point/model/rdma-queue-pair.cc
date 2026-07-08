@@ -32,6 +32,8 @@ RdmaQueuePair::RdmaQueuePair(uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, ui
 	m_dest = -1;
 	m_tag = -1;
 	m_mscclFlowId = MscclFlowIdHeader::NO_FLOW_ID;
+	m_closed = false;
+	m_autoClose = true;
 	snd_nxt = snd_una = 0;
 	m_pg = pg;
 	m_ipid = 0;
@@ -130,17 +132,49 @@ void RdmaQueuePair::SetVarWin(bool v){
 	m_var_win = v;
 }
 
-void RdmaQueuePair::SetAppNotifyCallback(Callback<void> notifyAppFinish){
-	m_notifyAppFinish = notifyAppFinish;
+void RdmaQueuePair::PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent){
+	RdmaMessage msg;
+	msg.m_size = size;
+	msg.m_startSeq = m_messages.empty() ? snd_nxt : (m_messages.back().m_startSeq + m_messages.back().m_size);
+	msg.m_srcDataPtr = srcDataPtr;
+	msg.m_mscclFlowId = mscclFlowId;
+	msg.m_notifyAppFinish = notifyAppFinish;
+	msg.m_notifyAppSent = notifyAppSent;
+	m_messages.push(msg);
+	// m_size/m_init_size are informational only (monitoring/print output); no longer drive
+	// GetBytesLeft/IsFinished, which are computed relative to the message queue below.
+	m_size += size;
+	if (m_init_size == 0)
+		m_init_size = size;
 }
 
-void RdmaQueuePair::SetAppSentCallback(Callback<void> notifyAppSent){
-	m_notifyAppSent = notifyAppSent;
+void RdmaQueuePair::FinishMessage(){
+	NS_ASSERT_MSG(!m_messages.empty(), "RdmaQueuePair::FinishMessage(): message queue is empty");
+	RdmaMessage msg = m_messages.front();
+	m_messages.pop();
+	if (!msg.m_notifyAppFinish.IsNull())
+		msg.m_notifyAppFinish();
 }
 
+bool RdmaQueuePair::IsCurMessageFinished(){
+	if (m_messages.empty())
+		return true;
+	return snd_una >= m_messages.front().m_startSeq + m_messages.front().m_size;
+}
+
+uint8_t* RdmaQueuePair::GetCurSrcDataPtr(){
+	return m_messages.empty() ? nullptr : m_messages.front().m_srcDataPtr;
+}
+
+uint32_t RdmaQueuePair::GetCurMscclFlowId(){
+	return m_messages.empty() ? GetMscclFlowId() : m_messages.front().m_mscclFlowId;
+}
 
 uint64_t RdmaQueuePair::GetBytesLeft(){
-	return m_size >= snd_nxt ? m_size - snd_nxt : 0;
+	if (m_messages.empty())
+		return 0;
+	uint64_t end = m_messages.front().m_startSeq + m_messages.front().m_size;
+	return end >= snd_nxt ? end - snd_nxt : 0;
 }
 
 uint32_t RdmaQueuePair::GetHash(void){
@@ -202,7 +236,7 @@ uint64_t RdmaQueuePair::HpGetCurWin(){
 }
 
 bool RdmaQueuePair::IsFinished(){
-	return snd_una >= m_size;
+	return m_messages.empty();
 }
 
 /*********************

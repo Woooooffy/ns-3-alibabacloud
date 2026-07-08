@@ -7,6 +7,7 @@
 #include <ns3/custom-header.h>
 #include "qbb-net-device.h"
 #include <unordered_map>
+#include <functional>
 #include <set>
 #include "pint.h"
 
@@ -39,7 +40,7 @@ public:
 	bool m_backto0;
 	bool m_var_win, m_fast_react;
 	bool m_rateBound;
-	uint32_t m_total_pause_times; 
+	uint32_t m_total_pause_times;
 	uint32_t m_paused_times;
 	std::vector<RdmaInterfaceMgr> m_nic; // list of running nic controlled by this RdmaHw
 	std::unordered_map<uint64_t, Ptr<RdmaQueuePair> > m_qpMap; // mapping from uint64_t to qp
@@ -77,7 +78,21 @@ public:
 	static uint64_t GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg); // get the lookup key for m_qpMap
 	Ptr<RdmaQueuePair> GetQp(uint32_t dip, uint16_t sport, uint16_t pg); // get the qp
 	uint32_t GetNicIdxOfQp(Ptr<RdmaQueuePair> qp); // get the NIC index of the qp
-	void AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent); // add a new qp (new send)
+	// creates a new qp and, if size != 0, pushes it as the qp's first message (size == 0 is
+	// used to eagerly establish a persistent MSCCL connection at bootstrap with no data
+	// queued yet -- see MscclChannel::SetupRdmaSendPeer). Returns the qp so callers that
+	// intend to reuse it (push further messages directly via qp->PushMessage(...), bypassing
+	// this method) can hold onto it; one-shot callers (e.g. RdmaClient) can simply ignore it,
+	// since autoClose defaults to true and behaves exactly as before.
+	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true);
+	// explicit whole-qp teardown for reused/persistent qps (autoClose == false); thin
+	// wrapper over QpComplete that exists purely for call-site clarity.
+	void CloseQueuePair(Ptr<RdmaQueuePair> qp);
+	// wakes up qp's NIC so it re-polls for data: needed after pushing a message directly
+	// onto an existing/persistent qp (bypassing AddQueuePair, which does this once at qp
+	// creation via NewQp) -- otherwise a qp that had drained to idle never gets re-selected
+	// by RdmaEgressQueue::GetNextQindex, and the new message just sits in the queue forever.
+	void TriggerTransmit(Ptr<RdmaQueuePair> qp);
 	void DeleteQueuePair(Ptr<RdmaQueuePair> qp);
 
 	Ptr<RdmaRxQueuePair> GetRxQp(uint32_t sip, uint32_t dip, uint16_t sport, uint16_t dport, uint16_t pg, bool create); // get a rxQp
@@ -92,7 +107,7 @@ public:
 	void PCIePause(uint32_t nic_idx, uint32_t qIndex);
 	void PCIeResume(uint32_t nic_idx, uint32_t qIndex);
 	void EnablePause();
-	bool enable_pcie_pause; 
+	bool enable_pcie_pause;
 
 	void CheckandSendQCN(Ptr<RdmaRxQueuePair> q);
 	int ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size);
@@ -100,6 +115,15 @@ public:
 	static uint16_t EtherToPpp (uint16_t protocol);
 
 	void RecoverQueue(Ptr<RdmaQueuePair> qp);
+	// per-message completion: pops the qp's front message and fires its callback, without
+	// tearing down the qp itself. Called whenever IsCurMessageFinished() (queue non-empty
+	// and its front message's bytes are all acked), in place of the old
+	// "whole qp finished -> QpComplete" check.
+	void QpCompleteMessage(Ptr<RdmaQueuePair> qp);
+	// whole-qp teardown: only called explicitly now (e.g. RdmaClient once its single
+	// message finishes, or MscclChannel::Close() for a persistent MSCCL connection at
+	// simulation end) -- never automatically inferred from a temporarily-empty message
+	// queue, since that's the normal idle state for a persistent, reused qp.
 	void QpComplete(Ptr<RdmaQueuePair> qp);
 	void SetLinkDown(Ptr<QbbNetDevice> dev);
 
