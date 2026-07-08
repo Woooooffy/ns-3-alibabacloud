@@ -57,19 +57,6 @@ public:
     typedef Callback<void, Ptr<RdmaQueuePair> > SendCompleteCallback;
     SendCompleteCallback m_sendCompleteCallback;
 
-	// per-flow rx-side byte-arrival notification. Purely a transport-level forwarding
-	// registration: RdmaHw owns no buffer and makes no completion/correctness decision here
-	// -- it just calls perPktFn for every in-order packet on this flow, for as long as the
-	// registration lives (a connection's lifetime; see MscclChannel::SetupRdmaSendPeer).
-	// All buffer ownership, the reduce-vs-copy decision, accumulation, and completion
-	// notification live in collectives.cc's MscclChannel::OnBytesArrivedFromPeer.
-	struct RxFlowEntry {
-		std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn; // called per in-order packet: (payload, payloadSize, seqOffset)
-	};
-	std::unordered_map<uint64_t, RxFlowEntry> m_rxFlowCallbacks; // flowKey → entry
-
-	void RegisterRxFlow(uint64_t flowKey, std::function<void(const uint8_t*, uint32_t, uint64_t)> perPktFn);
-
     // for monitor
 	std::vector<uint64_t> tx_bytes; // <port_id, tx_bytes>
 	std::unordered_map<uint64_t, uint32_t> qp_cnp; // key of qp ---> received cnp number

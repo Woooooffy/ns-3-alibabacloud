@@ -136,9 +136,10 @@ namespace ns3 {
 			// called once per (channel,peer) from CollectivesApplication::SetupRdmaPeers,
 			// deferred one tick past Bootstrap() so every node's m_channels already exists
 			// (see CollectivesApplication::Bootstrap()). Creates the peer's persistent qp and
-			// registers this connection's rx-flow callback on the peer's RdmaHw -- that
-			// callback forwards straight into OnBytesArrivedFromPeer, ignoring RdmaHw's
-			// wire-level sequence number entirely (see OnBytesArrivedFromPeer's comment).
+			// force-creates the peer's RdmaRxQueuePair for this connection, hanging a callback
+			// directly off it (RdmaRxQueuePair::m_perPktFn) -- that callback forwards straight
+			// into OnBytesArrivedFromPeer, ignoring RdmaHw's wire-level sequence number entirely
+			// (see OnBytesArrivedFromPeer's comment).
 			void SetupRdmaSendPeer(int16_t peer);
 			// bound as the RdmaDriver::AddQueuePair completion callback
 			void OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems);
@@ -179,7 +180,6 @@ namespace ns3 {
 			std::map<Ptr<Socket>, std::queue<PendingTransfer>> m_pendingSends;
 			// persistent per-peer RDMA connection, established once in SetupRdmaSendPeer
 			std::map<int16_t, Ptr<RdmaQueuePair>> m_rdmaQpByPeer;
-			uint16_t m_rdmaSportCounter = 0; // allocated once per peer in SetupRdmaSendPeer, not per Send() call
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			uint32_t m_flowId_counter = 0;
@@ -223,6 +223,13 @@ namespace ns3 {
 			uint32_t GetPeerWin(int16_t peer);
 			uint64_t GetPeerBaseRtt(int16_t peer);
 			MscclChannel* GetChannel(int8_t chanId); // lets a sender reach into the peer's matching channel directly
+			// hands out a node-global, monotonically increasing counter for RDMA sport
+			// allocation (see MscclChannel::SetupRdmaSendPeer). Must be shared across every
+			// MscclChannel on this node, not scoped per channel -- the sport is the only field
+			// that makes RdmaHw's (senderIp,senderSport,pg) rx-qp key unique, and two channels
+			// both connecting to the same peer would otherwise allocate the same sport and
+			// collide on that key.
+			uint16_t AllocateRdmaSport();
 			#ifdef FLOW_ID_TEST
 			// void SetFlowIdTableForChannel(std::map<std::pair<int, int>, uint32_t>*, int channel);
 			// void SetFlowIdTableForAllChannels(std::map<std::pair<int, int>, uint32_t>* table);
@@ -270,6 +277,7 @@ namespace ns3 {
 			DataBuffer m_srcBuf;
 			DataBuffer m_dstBuf;
 			DataBuffer m_scratchBuf;
+			uint16_t m_rdmaSportCounter = 0; // node-global; see AllocateRdmaSport
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			#endif

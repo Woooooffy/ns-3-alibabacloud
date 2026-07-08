@@ -368,37 +368,42 @@ namespace ns3 {
 	// eagerly establishes this channel's persistent RDMA connection to `peer`: allocates
 	// this connection's sport once (for its whole lifetime, not per Send() call -- the
 	// receiver's ReceiverCheckSeq relies on all of this connection's bytes sharing one
-	// sequence space to guarantee in-order delivery), registers the rx-flow forwarding
-	// callback on the peer's RdmaHw once, and creates the persistent qp itself with no
-	// message queued yet (autoClose=false, so idling between Send() calls never tears it
+	// sequence space to guarantee in-order delivery), force-creates the peer's rx qp and
+	// hangs the byte-arrival callback on it once, and creates the persistent qp itself with
+	// no message queued yet (autoClose=false, so idling between Send() calls never tears it
 	// down -- see RdmaQueuePair::m_autoClose).
 	void MscclChannel::SetupRdmaSendPeer(int16_t peer){
-		uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + (m_rdmaSportCounter++));
-
-		// flowKey matches the key RdmaHw builds in ReceiveUdp from (ch.sip, ch.udp.pg, ch.udp.sport)
-		uint64_t flowKey = ((uint64_t)m_app->GetMyIp().Get() << 32)
-		                 | ((uint64_t)MSCCL_RDMA_PG << 16)
-		                 | (uint64_t)sport;
+		// node-global (not per-channel) -- see CollectivesApplication::AllocateRdmaSport for why
+		uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + m_app->AllocateRdmaSport());
 
 		Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(peer));
 		Ptr<CollectivesApplication> peerApp =
 			DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
 		MscclChannel* peerChan = peerApp->GetChannel(m_id);
 
+		// Force-create (rather than wait for the first packet to lazily create) the peer's
+		// RdmaRxQueuePair for this connection and hang the byte-arrival callback directly off
+		// it -- this piggybacks on RdmaHw's own (senderIp,senderSport,pg) rx-qp key instead of
+		// deriving a second, independent key, so uniqueness is guaranteed by construction as
+		// long as sport is unique (see AllocateRdmaSport). Parameter mapping mirrors
+		// RdmaHw::ReceiveUdp's GetRxQp(ch.dip, ch.sip, ch.udp.dport, ch.udp.sport, ch.udp.pg,
+		// true) call from the sender's side of that connection: this node is "ch.sip"/"dip",
+		// the peer is "ch.dip"/"sip", MSCCL_RDMA_DPORT is "ch.udp.dport"/"sport", and this
+		// connection's freshly allocated sport is "ch.udp.sport"/"dport".
 		// perPktFn forwards straight into the shared matching logic -- RdmaHw's wire-level
 		// sequence number is deliberately ignored; the receiver derives everything it needs
 		// (write offset, transfer boundaries) from its own local accumulators instead (see
 		// OnBytesArrivedFromPeer).
 		int16_t myId = static_cast<int16_t>(m_app->GetNode()->GetId());
-		std::function<void(const uint8_t*, uint32_t, uint64_t)> fragArrivedFn =
-			[peerChan, myId](const uint8_t* payload, uint32_t sz, uint64_t /*seqOffset*/){
-				peerChan->OnBytesArrivedFromPeer(myId, payload, sz);
-			};
-		peerApp->GetRdmaDriver()->m_rdma->RegisterRxFlow(flowKey, std::move(fragArrivedFn));
+		Ptr<RdmaRxQueuePair> rxQp = peerApp->GetRdmaDriver()->m_rdma->GetRxQp(
+			m_app->GetPeerIp(peer).Get(), m_app->GetMyIp().Get(), MSCCL_RDMA_DPORT, sport, MSCCL_RDMA_PG, true);
+		rxQp->m_perPktFn = [peerChan, myId](const uint8_t* payload, uint32_t sz, uint64_t /*seqOffset*/){
+			peerChan->OnBytesArrivedFromPeer(myId, payload, sz);
+		};
 
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
-			<< ": registered persistent rx flow key=0x" << std::hex << flowKey << std::dec
-			<< " for peer " << peer << " at t=" << Simulator::Now().GetNanoSeconds());
+			<< ": established persistent rx qp (sport=" << sport << ") for peer " << peer
+			<< " at t=" << Simulator::Now().GetNanoSeconds());
 
 		Ptr<RdmaQueuePair> qp = m_app->GetRdmaDriver()->AddQueuePair(
 			m_app->GetNode()->GetId(), static_cast<uint32_t>(peer), /* tag */ 0, /* size */ 0, MSCCL_RDMA_PG,
@@ -613,6 +618,10 @@ namespace ns3 {
 
 	MscclChannel* CollectivesApplication::GetChannel(int8_t chanId){
 		return &m_channels.at(chanId);
+	}
+
+	uint16_t CollectivesApplication::AllocateRdmaSport(){
+		return m_rdmaSportCounter++;
 	}
 
 	DataType::Type CollectivesApplication::GetDataType(){

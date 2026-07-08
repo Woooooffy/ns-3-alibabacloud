@@ -11,6 +11,7 @@
 #include <ns3/msccl-flow-id-header.h>
 #include <queue>
 #include <vector>
+#include <functional>
 
 namespace ns3 {
 
@@ -161,6 +162,12 @@ public:
 	int32_t m_milestone_rx;
 	uint32_t m_lastNACK;
 	EventId QcnTimerEvent; // if destroy this rxQp, remember to cancel this timer
+	// per-flow rx-side byte-arrival notification, set once (eagerly, at connection setup --
+	// see MscclChannel::SetupRdmaSendPeer) for as long as this rx qp lives. Called for every
+	// in-order packet on this flow: (payload, payloadSize, seqOffset). Living directly on the
+	// rx qp means callers get uniqueness for free from RdmaHw's own (senderIp,senderSport,pg)
+	// rx-qp key instead of needing a second, independently-derived key.
+	std::function<void(const uint8_t*, uint32_t, uint64_t)> m_perPktFn;
 
 	static TypeId GetTypeId (void);
 	RdmaRxQueuePair();
