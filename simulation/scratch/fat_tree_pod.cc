@@ -15,7 +15,7 @@ using namespace ns3;
 
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("FAT_TREE_POD_TEST");
-    LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
+    LogComponentEnable("CollectivesApplication", LOG_INFO);
 //	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     uint32_t inputBytes = (1 << 20);
 	CommandLine cmd;
@@ -77,8 +77,13 @@ int main(int argc, char *argv[]) {
 
     const std::string LOG_FILE = "/data/commit/graphit/wangyj05/workspace/gloo-ns3-examples/logs/Allgather_DSL_test.txt";
 
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_2.xml");
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_switch_2.json");
+		std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_symmetric.xml");
+
+    // std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_2.xml");
+
+		std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_symmetric_switch.json");
+    // std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_switch_2.json");
+
 
 
     constexpr DataType::Type dtype = DataType::INT32;

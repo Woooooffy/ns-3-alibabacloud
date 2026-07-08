@@ -72,8 +72,8 @@ int main(int argc, char *argv[]) {
     // those same flow ids to switch ports, exercising the pipeline end to end (XML
     // attribute -> mscclTransfer -> RdmaQueuePair -> MscclFlowIdHeader on the wire ->
     // switch lookup).
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/algo3nodes.xml");
-//		std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
+//    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/algo3nodes.xml");
+		std::string XML_ALGO = "/data/scratch/wangyj05/taccl/taccl/custom_examples/Allgather.n3-Custom-N4-.n1-steps1-tacclsol-improve-1781598576_i1_scRemote1_IBContig.sccl.xml";
 
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/star_switch_entry.json");
 
