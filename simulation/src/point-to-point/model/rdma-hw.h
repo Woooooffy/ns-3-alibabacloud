@@ -101,6 +101,11 @@ public:
 	// explicit whole-qp teardown for reused/persistent qps (autoClose == false); thin
 	// wrapper over QpComplete that exists purely for call-site clarity.
 	void CloseQueuePair(Ptr<RdmaQueuePair> qp);
+	// wakes up qp's NIC so it re-polls for data: needed after pushing a message directly
+	// onto an existing/persistent qp (bypassing AddQueuePair, which does this once at qp
+	// creation via NewQp) -- otherwise a qp that had drained to idle never gets re-selected
+	// by RdmaEgressQueue::GetNextQindex, and the new message just sits in the queue forever.
+	void TriggerTransmit(Ptr<RdmaQueuePair> qp);
 	void DeleteQueuePair(Ptr<RdmaQueuePair> qp);
 
 	Ptr<RdmaRxQueuePair> GetRxQp(uint32_t sip, uint32_t dip, uint16_t sport, uint16_t dport, uint16_t pg, bool create); // get a rxQp

@@ -329,6 +329,11 @@ Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t ta
 	return qp;
 }
 
+void RdmaHw::TriggerTransmit(Ptr<RdmaQueuePair> qp){
+	uint32_t nic_idx = GetNicIdxOfQp(qp);
+	m_nic[nic_idx].dev->TriggerTransmit();
+}
+
 void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
 	// remove qp from the m_qpMap
 	uint64_t key = GetQpKey(qp->dip.Get(), qp->sport, qp->m_pg);

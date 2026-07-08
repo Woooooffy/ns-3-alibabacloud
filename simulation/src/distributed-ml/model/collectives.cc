@@ -432,6 +432,11 @@ namespace ns3 {
 			.Bind(bid).Bind(sid).Bind(sendpeer).Bind(srcbuf).Bind(srcoff).Bind(dstbuf).Bind(dstoff).Bind(nElems);
 
 		qp->PushMessage(totalBytes, srcDataPtr, mscclFlowId, finishCb, Callback<void>());
+		// PushMessage only enqueues onto the qp; unlike AddQueuePair (which calls NewQp once
+		// at bootstrap for this persistent qp's creation), it doesn't wake up the NIC. Without
+		// this, a qp that had drained to idle between Send() calls never gets re-polled and
+		// the message sits forever -- see RdmaHw::TriggerTransmit.
+		m_app->GetRdmaDriver()->m_rdma->TriggerTransmit(qp);
 
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
 			<< sendpeer << " totalBytes=" << totalBytes
