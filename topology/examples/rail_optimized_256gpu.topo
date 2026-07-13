@@ -1,0 +1,50 @@
+// Rail-optimized single-plane spine-leaf tree.
+// 32 nodes x 8 GPUs = 256 GPUs, 8 leaf switches, 4 spine switches.
+// Each switch has 64 x 400Gbps ports.
+//
+// Port budget per leaf:  32 down (1 GPU rail from each of the 32 nodes)
+//                      + 32 up   (4 spines x 8 ports each) = 64 ports.
+// Port budget per spine: 8 leaves x 8 ports = 64 ports.
+//
+// Rail-optimized: leaf l attaches to GPU l of every node, so each of the 8
+// GPUs in a node lands on a distinct leaf (rail).
+
+// One node: 8 GPUs fully served by a single NVSwitch at 1800 GBps per GPU.
+module server() {
+    node nvsw type=nvswitch;
+    for g in (0, 7) {
+        node gpu{g} type=gpu;
+        link gpu{g} nvsw bandwidth=1800[GBps] latency=100[ns];
+    }
+}
+
+module main() {
+    // 32 nodes.
+    for s in (0, 31) {
+        use server() as srv{s};
+    }
+
+    // 8 leaf switches, 4 spine switches.
+    for l in (0, 7) {
+        node leaf{l} type=switch;
+    }
+    for p in (0, 3) {
+        node spine{p} type=switch;
+    }
+
+    // Rail-optimized leaf-GPU links: leaf l <- GPU l of every node.
+    // 8 leaves x 32 nodes = 256 links, one 400Gbps rail per GPU.
+    for l in (0, 7) {
+        for s in (0, 31) {
+            link leaf{l} srv{s}.gpu{l} bandwidth=400[Gbps] latency=700[ns];
+        }
+    }
+
+    // Fully-connected leaf-spine mesh. Each leaf-spine pair is one bundle of
+    // 8 x 400Gbps = 3200Gbps (8 ports on each side).
+    for l in (0, 7) {
+        for p in (0, 3) {
+            link leaf{l} spine{p} bandwidth=3200[Gbps] latency=700[ns];
+        }
+    }
+}
