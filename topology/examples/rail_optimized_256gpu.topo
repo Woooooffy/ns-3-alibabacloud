@@ -19,6 +19,7 @@ module server() {
 }
 
 module main() {
+    rdma L2AckInterval=0 L2ChunkSize=4000 Mtu=4096 CcMode=12;
     // 32 nodes.
     for s in (0, 31) {
         use server() as srv{s};
