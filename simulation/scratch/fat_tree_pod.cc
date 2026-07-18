@@ -88,10 +88,11 @@ int main(int argc, char *argv[]) {
 
     constexpr DataType::Type dtype = DataType::INT32;
     constexpr int N_CHUNKS = 1;
+    constexpr int N_NODES = 4;
     const uint32_t INPUT_BYTES = inputBytes;
     int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
     bool CORRECTNESS_CHECK = true;
-		bool FLOW_ID = true;
+	bool FLOW_ID = true;
 
     AlgoTopology topo(gpunodes, regswtches);
     AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
@@ -131,6 +132,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Total simulated time: "
         << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
 
+    std::cout << "Algorithm bandwidth: " << INPUT_BYTES * N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;
     if (CORRECTNESS_CHECK) {
         CollectiveTestResult allgather_res = tester.VerifyAllgather(CHUNK_SIZE * N_CHUNKS, N_CHUNKS);
         if (allgather_res == CollectiveTestResult::TEST_OK) std::cout << "Allgather verified." << std::endl;
