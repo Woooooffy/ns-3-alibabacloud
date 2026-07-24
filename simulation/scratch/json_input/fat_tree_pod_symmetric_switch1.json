@@ -11,7 +11,7 @@
       "1": {
         "next_hop_type": "gpu",
         "next_hop": 1,
-        "src_gpu": 2,
+        "src_gpu": 3,
         "dst_gpu": 1,
         "step": 0
       },
@@ -25,7 +25,7 @@
       "3": {
         "next_hop_type": "gpu",
         "next_hop": 0,
-        "src_gpu": 3,
+        "src_gpu": 2,
         "dst_gpu": 0,
         "step": 0
       },
@@ -36,21 +36,21 @@
         "dst_gpu": 1,
         "step": 1
       },
-      "7": {
+      "5": {
         "next_hop_type": "gpu",
         "next_hop": 0,
         "src_gpu": 1,
         "dst_gpu": 0,
         "step": 1
       },
-      "10": {
+      "8": {
         "next_hop_type": "gpu",
         "next_hop": 1,
         "src_gpu": 0,
         "dst_gpu": 1,
         "step": 2
       },
-      "11": {
+      "9": {
         "next_hop_type": "gpu",
         "next_hop": 0,
         "src_gpu": 1,
@@ -68,8 +68,8 @@
       },
       "1": {
         "next_hop_type": "switch",
-        "next_hop": 2,
-        "src_gpu": 2,
+        "next_hop": 3,
+        "src_gpu": 3,
         "dst_gpu": 1,
         "step": 0
       },
@@ -82,17 +82,10 @@
       },
       "3": {
         "next_hop_type": "switch",
-        "next_hop": 3,
-        "src_gpu": 3,
+        "next_hop": 2,
+        "src_gpu": 2,
         "dst_gpu": 0,
         "step": 0
-      },
-      "5": {
-        "next_hop_type": "gpu",
-        "next_hop": 2,
-        "src_gpu": 3,
-        "dst_gpu": 2,
-        "step": 1
       },
       "6": {
         "next_hop_type": "gpu",
@@ -101,34 +94,41 @@
         "dst_gpu": 3,
         "step": 1
       },
-      "8": {
+      "7": {
         "next_hop_type": "gpu",
         "next_hop": 2,
         "src_gpu": 3,
         "dst_gpu": 2,
-        "step": 2
+        "step": 1
       },
-      "9": {
+      "10": {
         "next_hop_type": "gpu",
         "next_hop": 3,
         "src_gpu": 2,
         "dst_gpu": 3,
         "step": 2
+      },
+      "11": {
+        "next_hop_type": "gpu",
+        "next_hop": 2,
+        "src_gpu": 3,
+        "dst_gpu": 2,
+        "step": 2
       }
     },
     "2": {
-      "1": {
-        "next_hop_type": "switch",
-        "next_hop": 0,
-        "src_gpu": 2,
-        "dst_gpu": 1,
-        "step": 0
-      },
       "2": {
         "next_hop_type": "switch",
         "next_hop": 1,
         "src_gpu": 0,
         "dst_gpu": 2,
+        "step": 0
+      },
+      "3": {
+        "next_hop_type": "switch",
+        "next_hop": 0,
+        "src_gpu": 2,
+        "dst_gpu": 0,
         "step": 0
       }
     },
@@ -140,11 +140,11 @@
         "dst_gpu": 3,
         "step": 0
       },
-      "3": {
+      "1": {
         "next_hop_type": "switch",
         "next_hop": 0,
         "src_gpu": 3,
-        "dst_gpu": 0,
+        "dst_gpu": 1,
         "step": 0
       }
     }

@@ -155,7 +155,6 @@ class NS3Writer:
 			f"NetDeviceContainer {container_expr} = "
 			f"link_helper{hid}.Install({src_expr}, {dst_expr});"
 		)
-		self.emit("")
 		self.container_map[(insn.src, insn.dst)] = container_expr
 
 		if src_type == "gpu" and dst_type == "gpu":
@@ -211,6 +210,7 @@ class NS3Writer:
 
 	# For now just print container map
 	def _emit_gpu_setup(self):
+		return
 		self.emit("")
 		self.emit("/*")
 		self.indent += 1

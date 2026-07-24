@@ -22,17 +22,17 @@ int main(int argc, char *argv[]) {
     for (uint32_t i = 0; i < 12; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
     for (uint32_t i = 0; i < 32; ++i) { nvswtches.Add(CreateObject<NVSwitchNode>()); }
     QbbHelper link_helper0;
-    link_helper0.SetDeviceAttribute("Mtu", UintegerValue(9000));
+    link_helper0.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper0.SetChannelAttribute("Delay", StringValue("100ns"));
     link_helper0.SetDeviceAttribute("DataRate", StringValue("1800GBps"));
     
     QbbHelper link_helper1;
-    link_helper1.SetDeviceAttribute("Mtu", UintegerValue(9000));
+    link_helper1.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper1.SetChannelAttribute("Delay", StringValue("700ns"));
     link_helper1.SetDeviceAttribute("DataRate", StringValue("400Gbps"));
     
     QbbHelper link_helper2;
-    link_helper2.SetDeviceAttribute("Mtu", UintegerValue(9000));
+    link_helper2.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper2.SetChannelAttribute("Delay", StringValue("700ns"));
     link_helper2.SetDeviceAttribute("DataRate", StringValue("3200Gbps"));
     
@@ -580,6 +580,11 @@ int main(int argc, char *argv[]) {
     NetDeviceContainer devs2_541 = link_helper2.Install(regswtches.Get(7), regswtches.Get(9));
     NetDeviceContainer devs2_542 = link_helper2.Install(regswtches.Get(7), regswtches.Get(10));
     NetDeviceContainer devs2_543 = link_helper2.Install(regswtches.Get(7), regswtches.Get(11));
+    Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
+    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
+    Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
+    Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
+    
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     RdmaFabricHelper rdmaFabric;
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
