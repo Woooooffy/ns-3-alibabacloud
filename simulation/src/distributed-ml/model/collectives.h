@@ -118,7 +118,7 @@ namespace ns3 {
 			void RecvCallback(Ptr<Socket> sock);
 
 			inline void PushPendingSend(Ptr<Socket> sendpeer, PendingTransfer send);
-			void Send(int8_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE);
+			void Send(int8_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE, double rateGBps = 0.0);
 			void Recv(int8_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
 			void RecvCpSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
 			void RecvRedSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
@@ -131,7 +131,7 @@ namespace ns3 {
 
 			// RDMA-fabric transport (gpu<->switch/nvswitch peers), as opposed to the
 			// p2p PacketSocket path above (gpu<->gpu direct peers)
-			void SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId);
+			void SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps);
 			// eagerly establishes this channel's persistent RDMA connection to `peer` --
 			// called once per (channel,peer) from CollectivesApplication::SetupRdmaPeers,
 			// deferred one tick past Bootstrap() so every node's m_channels already exists

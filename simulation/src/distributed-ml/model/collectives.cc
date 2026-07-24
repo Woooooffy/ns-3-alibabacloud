@@ -311,7 +311,7 @@ namespace ns3 {
 		m_pendingSends[sock].push(send);
 	}
 
-	void MscclChannel::Send(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId){
+	void MscclChannel::Send(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
 		if (sendpeer < 0){
 			NS_FATAL_ERROR("Send peer is negative in Send");
 		}
@@ -319,9 +319,12 @@ namespace ns3 {
 			NS_FATAL_ERROR("Invalid dst offset in Send");
 		}
 		if (m_app->IsRdmaPeer(sendpeer)){
-			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId);
+			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId, rateGBps);
 			return;
 		}
+		// gpu<->gpu p2p (socket) path: the host-side "rate" is ignored here, since this
+		// direct link is paced by the device data rate (see SendNextFragment), not by the
+		// schedule; only RDMA fabric transfers honor the XML rate.
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 		Ptr<Socket> sock = m_sendPeerSockets.at(sendpeer);
 		int flowId = 0;
@@ -413,7 +416,7 @@ namespace ns3 {
 		m_rdmaQpByPeer[peer] = qp;
 	}
 
-	void MscclChannel::SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId){
+	void MscclChannel::SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 
 		auto it = m_rdmaQpByPeer.find(sendpeer);
@@ -436,7 +439,12 @@ namespace ns3 {
 		Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
 			.Bind(bid).Bind(sid).Bind(sendpeer).Bind(srcbuf).Bind(srcoff).Bind(dstbuf).Bind(dstoff).Bind(nElems);
 
-		qp->PushMessage(totalBytes, srcDataPtr, mscclFlowId, finishCb, Callback<void>());
+		// host-side pacing cap: XML "rate" is in GB/s (gigabytes/s); DataRate is in bits/s,
+		// so convert bytes->bits. 0 (unspecified) maps to DataRate(0), i.e. no cap, and the
+		// qp paces at its congestion-controlled rate (see RdmaHw::UpdateNextAvail).
+		DataRate paceRate = rateGBps > 0.0 ? DataRate((uint64_t)(rateGBps * 8e9)) : DataRate(0);
+
+		qp->PushMessage(totalBytes, srcDataPtr, mscclFlowId, finishCb, Callback<void>(), paceRate);
 		// PushMessage only enqueues onto the qp; unlike AddQueuePair (which calls NewQp once
 		// at bootstrap for this persistent qp's creation), it doesn't wake up the NIC. Without
 		// this, a qp that had drained to idle between Send() calls never gets re-polled and
@@ -444,19 +452,26 @@ namespace ns3 {
 		m_app->GetRdmaDriver()->m_rdma->TriggerTransmit(qp);
 
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
-			<< sendpeer << " totalBytes=" << totalBytes
+			<< sendpeer << " totalBytes=" << totalBytes << " rateGBps=" << rateGBps
 			<< " at t=" << Simulator::Now().GetNanoSeconds());
+
+		// The send step completes as soon as the message is handed to the RDMA engine, not
+		// when the data physically finishes transmitting: from the host algorithm's view its
+		// job (posting the send) is done here. OnRdmaSendComplete still fires later, but only
+		// for logging now -- it no longer drives step completion.
+		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
 
 	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
 		uint16_t dstoffU = static_cast<uint16_t>(dstoff);
-		// sender's own step is done; receiver unblocking happens via the rx-flow
-		// completion callback registered in SendRdma (fires when data physically arrives)
+		// Logging only: the send step already completed in SendRdma when the message was
+		// handed to the RDMA engine. This fires later, when the data physically finishes
+		// transmitting, and no longer drives step completion.
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
-			<< ": RDMA send to " << sendpeer << " complete (sender side)"
+			<< ": RDMA send to " << sendpeer << " physically drained (sender side)"
+			<< " bid=" << (int)bid << " sid=" << sid
 			<< " dstInfo=(" << dstbuf << "," << dstoffU << ")"
 			<< " at t=" << Simulator::Now().GetNanoSeconds());
-		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
 
 	void MscclChannel::Recv(int8_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
@@ -689,7 +704,7 @@ namespace ns3 {
 		int16_t dstoff = tran->dstoffset;
 		switch (tran->type){
 			case MSCCL_SEND:
-				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId);
+				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId, tran->rate);
 				break;
 			case MSCCL_RECV:
 				chan->Recv(bid, sid, recvPeer, nElems, dstbuf, dstoff);

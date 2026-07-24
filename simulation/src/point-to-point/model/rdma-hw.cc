@@ -813,11 +813,14 @@ void RdmaHw::PktSent(Ptr<RdmaQueuePair> qp, Ptr<Packet> pkt, Time interframeGap)
 }
 
 void RdmaHw::UpdateNextAvail(Ptr<RdmaQueuePair> qp, Time interframeGap, uint32_t pkt_size){
-	Time sendingTime;
-	if (m_rateBound)
-		sendingTime = interframeGap + qp->m_rate.CalculateBytesTxTime(pkt_size);
-	else
-		sendingTime = interframeGap + qp->m_max_rate.CalculateBytesTxTime(pkt_size);
+	DataRate paceRate = m_rateBound ? qp->m_rate : qp->m_max_rate;
+	// honor the host-side per-message pacing cap (MSCCL XML "rate", GB/s) if the message
+	// currently on the wire carries one -- never let this qp outrun the schedule's
+	// requested rate. A zero/unset cap leaves the congestion-controlled rate untouched.
+	DataRate msgRate = qp->GetCurRate();
+	if (msgRate.GetBitRate() > 0 && msgRate < paceRate)
+		paceRate = msgRate;
+	Time sendingTime = interframeGap + paceRate.CalculateBytesTxTime(pkt_size);
 	qp->m_nextAvail = Simulator::Now() + sendingTime;
 }
 

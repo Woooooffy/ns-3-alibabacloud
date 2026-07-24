@@ -281,6 +281,17 @@ namespace ns3
 						}
 					}
 
+					// optional host-side pacing rate in GB/s (see mscclTransfer::rate);
+					// read leniently like mscclflowid since not every step carries one
+					double rate = 0.0;
+					{
+						xmlChar* rateProp = xmlGetProp(stepNode, BAD_CAST "rate");
+						if (rateProp) {
+							rate = atof((const char*)rateProp);
+							xmlFree(rateProp);
+						}
+					}
+
 					if (s >= MSCCL_MAX_NUM_STEPS){
 						NS_LOG_WARN("MSCCL: too many steps are requested. Max number of steps: " << MSCCL_MAX_NUM_STEPS << ", requested: " << s+1  << ". ");
 						return AlgoParseResult::INVALID_USE_ERROR;
@@ -377,6 +388,7 @@ namespace ns3
 						msccltran->dstbuffer = dstbufferInt;
 						msccltran->dstoffset = dstoffset;
 						msccltran->mscclFlowId = mscclFlowId;
+						msccltran->rate = rate;
 
 						if (count < 0 || count >= MSCCL_MAX_COUNT){
 							NS_LOG_WARN("MSCCL: count (" << count << ") must be positive and less than " << MSCCL_MAX_COUNT);

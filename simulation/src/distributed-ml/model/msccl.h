@@ -77,6 +77,11 @@ struct mscclTransfer {
   // custom flow-based forwarding instead of plain ECMP. MSCCL_FLOW_ID_NONE if
   // the XML algorithm didn't assign one to this step.
   uint32_t mscclFlowId;
+  // host-side pacing rate for this step's RDMA transfer, in GB/s (gigabytes per
+  // second), as specified by the XML "rate" attribute. 0 means unspecified/no cap.
+  // Ignored for gpu<->gpu p2p (socket) transfers; for RDMA transfers it caps the
+  // rate at which this step's fragments are paced onto the wire.
+  double rate;
 };
 
 // print method

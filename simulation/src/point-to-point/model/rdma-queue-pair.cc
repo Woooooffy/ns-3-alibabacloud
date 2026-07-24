@@ -132,12 +132,13 @@ void RdmaQueuePair::SetVarWin(bool v){
 	m_var_win = v;
 }
 
-void RdmaQueuePair::PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent){
+void RdmaQueuePair::PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, DataRate rate){
 	RdmaMessage msg;
 	msg.m_size = size;
 	msg.m_startSeq = m_messages.empty() ? snd_nxt : (m_messages.back().m_startSeq + m_messages.back().m_size);
 	msg.m_srcDataPtr = srcDataPtr;
 	msg.m_mscclFlowId = mscclFlowId;
+	msg.m_rate = rate;
 	msg.m_notifyAppFinish = notifyAppFinish;
 	msg.m_notifyAppSent = notifyAppSent;
 	m_messages.push(msg);
@@ -168,6 +169,10 @@ uint8_t* RdmaQueuePair::GetCurSrcDataPtr(){
 
 uint32_t RdmaQueuePair::GetCurMscclFlowId(){
 	return m_messages.empty() ? GetMscclFlowId() : m_messages.front().m_mscclFlowId;
+}
+
+DataRate RdmaQueuePair::GetCurRate(){
+	return m_messages.empty() ? DataRate(0) : m_messages.front().m_rate;
 }
 
 uint64_t RdmaQueuePair::GetBytesLeft(){

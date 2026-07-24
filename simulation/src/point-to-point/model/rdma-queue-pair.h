@@ -56,15 +56,20 @@ public:
 		uint64_t m_startSeq;
 		uint8_t* m_srcDataPtr; // nullptr if correctness check disabled for this message
 		uint32_t m_mscclFlowId; // per-step flow id (XML "mscclflowid"); a persistent qp's messages can each carry a different one
+		// per-message host-side pacing cap (XML "rate", GB/s -> DataRate); 0 (default)
+		// means no cap and pacing falls back to the qp's congestion-controlled rate.
+		// Like m_mscclFlowId, each message on a persistent qp can carry a different one.
+		DataRate m_rate;
 		Callback<void> m_notifyAppFinish;
 		Callback<void> m_notifyAppSent;
 	};
 	std::queue<RdmaMessage> m_messages;
-	void PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent);
+	void PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, DataRate rate = DataRate(0));
 	void FinishMessage(); // pops the front message, fires its m_notifyAppFinish
 	bool IsCurMessageFinished(); // snd_una >= front.m_startSeq + front.m_size
 	uint8_t* GetCurSrcDataPtr(); // front message's srcDataPtr, or nullptr if no message pending
 	uint32_t GetCurMscclFlowId(); // front message's mscclFlowId, or this qp's own (fallback) if no message pending
+	DataRate GetCurRate(); // front message's host-side pacing cap, or DataRate(0) (no cap) if no message pending
 	/******************************
 	 * runtime states
 	 *****************************/
