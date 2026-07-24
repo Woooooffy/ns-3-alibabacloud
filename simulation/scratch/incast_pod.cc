@@ -121,6 +121,9 @@ int main(int argc, char *argv[]) {
     std::cout << "Total simulated time: "
         << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
 
+    // alltoall algorithm bandwidth: total data moved per rank / time
+    std::cout << "Alltoall algorithm bandwidth: "
+        << (double) INPUT_BYTES * N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;
     // alltoall bus bandwidth: each rank exchanges INPUT_BYTES*(P-1)/P with the others
     std::cout << "Alltoall bus bandwidth: "
         << (double) INPUT_BYTES * (N_NODES - 1) / N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;

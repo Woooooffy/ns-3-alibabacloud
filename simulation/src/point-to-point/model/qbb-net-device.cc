@@ -325,10 +325,19 @@ namespace ns3 {
 				m_rdmaPktSent(lastQp, p, m_tInterframeGap);
 			}else { // no packet to send
 				NS_LOG_INFO("PAUSE prohibits send at node " << m_node->GetId());
+				// Only qps that still have bytes queued AND are merely rate-blocked (their
+				// m_nextAvail is in the future) tell us when to next attempt a send. Idle,
+				// fully-drained qps keep a stale m_nextAvail that drifts into the past as
+				// time advances; including them here would drag `t` to a past value and, via
+				// the `t > Now` guard below, silently skip rescheduling -- stranding a
+				// genuinely rate-limited qp so its message never gets sent. (Harmless at line
+				// rate, where m_nextAvail is always ~Now; exposed once per-message rate pacing
+				// pushes m_nextAvail well into the future.)
 				Time t = Simulator::GetMaximumSimulationTime();
 				for (uint32_t i = 0; i < m_rdmaEQ->GetFlowCount(); i++){
 					Ptr<RdmaQueuePair> qp = m_rdmaEQ->GetQp(i);
-					t = Min(qp->m_nextAvail, t);
+					if (qp->GetBytesLeft() > 0 && qp->m_nextAvail > Simulator::Now())
+						t = Min(qp->m_nextAvail, t);
 				}
 				if (m_nextSend.IsExpired() && t < Simulator::GetMaximumSimulationTime() && t > Simulator::Now()){
 					m_nextSend = Simulator::Schedule(t - Simulator::Now(), &QbbNetDevice::DequeueAndTransmit, this);
@@ -360,10 +369,14 @@ namespace ns3 {
 			}else{ //No queue can deliver any packet
 				NS_LOG_INFO("PAUSE prohibits send at node " << m_node->GetId());
 				if (m_node->GetNodeType() == 0 && m_qcnEnabled){ //nothing to send, possibly due to qcn flow control, if so reschedule sending
+					// see the matching comment in the host-send branch above: only rate-blocked
+					// qps that still have bytes queued may set the next wakeup time; a drained
+					// qp's stale (past) m_nextAvail would otherwise suppress the reschedule.
 					Time t = Simulator::GetMaximumSimulationTime();
 					for (uint32_t i = 0; i < m_rdmaEQ->GetFlowCount(); i++){
 						Ptr<RdmaQueuePair> qp = m_rdmaEQ->GetQp(i);
-						t = Min(qp->m_nextAvail, t);
+						if (qp->GetBytesLeft() > 0 && qp->m_nextAvail > Simulator::Now())
+							t = Min(qp->m_nextAvail, t);
 					}
 					if (m_nextSend.IsExpired() && t < Simulator::GetMaximumSimulationTime() && t > Simulator::Now()){
 						m_nextSend = Simulator::Schedule(t - Simulator::Now(), &QbbNetDevice::DequeueAndTransmit, this);
@@ -403,10 +416,14 @@ namespace ns3 {
 			m_rdmaPktSent(lastQp, p, m_tInterframeGap);
 		}else { // no packet to send
 			NS_LOG_INFO("PAUSE prohibits send at node " << m_node->GetId());
+			// see the matching comment in DequeueAndTransmit's host-send branch: only
+			// rate-blocked qps that still have bytes queued may set the next wakeup time;
+			// a drained qp's stale (past) m_nextAvail would otherwise suppress the reschedule.
 			Time t = Simulator::GetMaximumSimulationTime();
 			for (uint32_t i = 0; i < m_rdmaEQ->GetFlowCount(); i++){
 				Ptr<RdmaQueuePair> qp = m_rdmaEQ->GetQp(i);
-				t = Min(qp->m_nextAvail, t);
+				if (qp->GetBytesLeft() > 0 && qp->m_nextAvail > Simulator::Now())
+					t = Min(qp->m_nextAvail, t);
 			}
 			if (m_nextSend.IsExpired() && t < Simulator::GetMaximumSimulationTime() && t > Simulator::Now()){
 				m_nextSend = Simulator::Schedule(t - Simulator::Now(), &QbbNetDevice::SwitchAsHostSend, this);
