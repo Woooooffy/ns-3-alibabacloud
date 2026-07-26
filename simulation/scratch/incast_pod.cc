@@ -110,7 +110,7 @@ int main(int argc, char *argv[]) {
         esw1 -> spine (sw2): devs0_5
     */
 
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_single_spine_alltoall.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_single_spine_alltoall_no_rate.xml");
 
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_single_spine_alltoall_switch.json");
 
@@ -123,7 +123,7 @@ int main(int argc, char *argv[]) {
 
     constexpr DataType::Type dtype = DataType::INT32;
     const uint32_t INPUT_BYTES = inputBytes;
-    bool CORRECTNESS_CHECK = true;
+    bool CORRECTNESS_CHECK = false;
     bool FLOW_ID = true;
 
     AlgoTopology topo(gpunodes, regswtches);
