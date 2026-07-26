@@ -35,6 +35,23 @@ namespace ns3
 		int GetNSwitchNodes();
 		Ptr<Node> GetSwitchNode(int i);
 
+		// Algorithm-level parameters captured from the parsed XML. Valid only after a
+		// successful ParseAlgoXml (0 / empty before then). Exposing them here makes the parsed
+		// algorithm the single source of truth for the chunk count, so the app's ChunkSize and
+		// the tester's setup/verify no longer have to be hand-kept in sync with the XML.
+		//
+		// GetNInputChunks() is the per-GPU input chunk count (the <gpu> i_chunks attribute) and
+		// is the value the CollectiveTester wants: it equals the number of chunks each rank
+		// contributes. For alltoall this coincides with nchunksperloop; for allgather it does
+		// not (there nchunksperloop == ngpus * i_chunks), so use this rather than
+		// GetNChunksPerLoop() to drive the tester.
+		int GetNInputChunks() const { return m_nInputChunks; }
+		int GetNChunksPerLoop() const { return m_nChunksPerLoop; }
+		int GetNChannels() const { return m_nChannels; }
+		// GPU ids carrying a non-empty algorithm (>=1 threadblock), ascending. These are the
+		// active participants; any other GPU in the container is passive for this algorithm.
+		const std::vector<int>& GetActiveGpuIds() const { return m_activeGpuIds; }
+
 		AlgoParseResult ParseAlgoXml(const char* xmlFilePath);
 		AlgoParseResult ParseSwitchJson(const char* jsonFilePath);
 
@@ -42,6 +59,10 @@ namespace ns3
 
 		NodeContainer m_gpuNodes;
 		NodeContainer m_switchNodes;
+		int m_nInputChunks = 0;              // per-GPU input chunk count (i_chunks); tester n_chunks
+		int m_nChunksPerLoop = 0;            // nchunksperloop from the <algo> root
+		int m_nChannels = 0;                 // nchannels from the <algo> root
+		std::vector<int> m_activeGpuIds;     // gpu ids with a non-empty algorithm, ascending
 		// switch node id -> (neighbor node id -> outgoing ifIndex), built lazily
 		// the first time a given switch is touched by ParseSwitchJson
 		std::map<uint32_t, std::map<uint32_t, uint32_t>> m_switchPortCache;

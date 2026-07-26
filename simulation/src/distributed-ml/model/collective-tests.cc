@@ -1,4 +1,5 @@
 #include "collective-tests.h"
+#include "algo_topology.h"
 namespace ns3{
 
 	CollectiveTester::CollectiveTester(ApplicationContainer& apps, bool verbose, std::ostream& log,
@@ -99,6 +100,14 @@ namespace ns3{
 		return CollectiveTestResult::TEST_FAILED;
 	}
 
+	void CollectiveTester::SetupAllgather(AlgoTopology& topo, size_t input_elts){
+		SetupAllgather(input_elts, topo.GetNInputChunks());
+	}
+
+	CollectiveTestResult CollectiveTester::VerifyAllgather(AlgoTopology& topo, size_t input_elts){
+		return VerifyAllgather(input_elts, topo.GetNInputChunks());
+	}
+
 	void CollectiveTester::SetupAlltoall(size_t input_elts, int n_chunks){
 		int P = m_nParticipants;
 		NS_ASSERT_MSG((input_elts % n_chunks) == 0, "Input element count not multiple of number of chunks.");
@@ -183,5 +192,13 @@ namespace ns3{
 		}
 		else m_log << "Alltoall incorrect." << std::endl;
 		return CollectiveTestResult::TEST_FAILED;
+	}
+
+	void CollectiveTester::SetupAlltoall(AlgoTopology& topo, size_t input_elts){
+		SetupAlltoall(input_elts, topo.GetNInputChunks());
+	}
+
+	CollectiveTestResult CollectiveTester::VerifyAlltoall(AlgoTopology& topo, size_t input_elts){
+		return VerifyAlltoall(input_elts, topo.GetNInputChunks());
 	}
 }

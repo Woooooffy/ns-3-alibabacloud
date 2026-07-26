@@ -73,13 +73,7 @@ int main(int argc, char *argv[]) {
     const std::string LOG_FILE = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "Alltoall_DSL_test.txt");
 
     constexpr DataType::Type dtype = DataType::INT32;
-    // alltoall over P=4 participants: the XML splits each rank's 16 input chunks into 4
-    // per-destination partitions (nchunksperloop=16, i_chunks=16), so n_chunks must be 16
-    // and divisible by P.
-    constexpr int N_CHUNKS = 16;
-    constexpr int N_NODES = 4;
     const uint32_t INPUT_BYTES = inputBytes;
-    int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
     bool CORRECTNESS_CHECK = true;
     bool FLOW_ID = true;
 
@@ -100,18 +94,27 @@ int main(int argc, char *argv[]) {
     }
     chmod(LOG_FILE.c_str(), 0666);
 
+    // Chunk count and participant set come straight from the parsed algorithm, so ChunkSize
+    // and the tester can never drift from the XML: for alltoall the per-rank input chunk count
+    // equals nchunksperloop (16 in ..._more_epochs, 8 in the single-loop variant), and swapping
+    // XMLs needs no source edit here.
+    const int N_CHUNKS = topo.GetNInputChunks();
+    const int N_NODES = (int) topo.GetActiveGpuIds().size();
+    NS_ASSERT_MSG(N_CHUNKS > 0, "Parsed algorithm reports zero input chunks; check the XML.");
+    const int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
+
     // install apps
     CollectivesApplicationHelper app_helper;
     app_helper.SetAttribute("DataType", EnumValue(dtype));
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
-    ApplicationContainer apps = app_helper.Install<GPU>(gpunodes);
+    ApplicationContainer apps = app_helper.Install<GPU>(topo);
 
     NS_LOG_INFO("Finished installing collective apps.");
 
     CollectiveTester tester(apps, true, logtxt);
     if (CORRECTNESS_CHECK) {
-        tester.SetupAlltoall(CHUNK_SIZE * N_CHUNKS, N_CHUNKS);
+        tester.SetupAlltoall(topo, CHUNK_SIZE * N_CHUNKS);
     }
     else{
         NS_LOG_UNCOND("Skipping correctness check.");
@@ -128,7 +131,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Alltoall bus bandwidth: "
         << (double) INPUT_BYTES * (N_NODES - 1) / N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;
     if (CORRECTNESS_CHECK) {
-        CollectiveTestResult alltoall_res = tester.VerifyAlltoall(CHUNK_SIZE * N_CHUNKS, N_CHUNKS);
+        CollectiveTestResult alltoall_res = tester.VerifyAlltoall(topo, CHUNK_SIZE * N_CHUNKS);
         if (alltoall_res == CollectiveTestResult::TEST_OK) std::cout << "Alltoall verified." << std::endl;
         else std::cout << "Alltoall incorrect." << std::endl;
     }

@@ -6,6 +6,7 @@
 #include "json.hpp"
 #include "ns3/switch-node.h"
 #include "ns3/qbb-channel.h"
+#include <algorithm>
 #include <fstream>
 
 namespace ns3
@@ -129,6 +130,11 @@ namespace ns3
 		int nChunksPerLoop;
   	XML_GET_PROP_INT(root, "nchannels", nChannels);
   	XML_GET_PROP_INT(root, "nchunksperloop", nChunksPerLoop);
+		// Reset per-parse algorithm summary captured for the topo-driven helper/tester paths.
+		m_nChannels = nChannels;
+		m_nChunksPerLoop = nChunksPerLoop;
+		m_nInputChunks = 0;
+		m_activeGpuIds.clear();
 		const char*  collectiveType;
 		CollectiveType collType;
 		XML_GET_PROP_STR(root, "coll", collectiveType);
@@ -516,7 +522,23 @@ namespace ns3
 			}
 
 			mscclAlgo->isValid = true;
+
+			// A GPU that carries at least one threadblock is an active participant. Record it
+			// (ascending gpu-id order, enforced below) and its per-GPU input chunk count so the
+			// topo-driven helper/tester paths can install and set up without the caller
+			// re-specifying either. Symmetric collectives give every active rank the same
+			// i_chunks; warn if that assumption is violated rather than silently pick one.
+			if (mscclAlgo->nBlocks > 0){
+				m_activeGpuIds.push_back(gpuId);
+				if (m_nInputChunks != 0 && m_nInputChunks != iChunks){
+					NS_LOG_WARN("MSCCL: GPU " << gpuId << " has i_chunks " << iChunks
+						<< " differing from earlier active GPUs (" << m_nInputChunks
+						<< "); topo-driven tester setup assumes a uniform per-rank input size.");
+				}
+				m_nInputChunks = iChunks;
+			}
     } // gpu
+		std::sort(m_activeGpuIds.begin(), m_activeGpuIds.end());
 		xmlFreeDoc(doc);
 		return ALGO_PARSE_SUCCESS;
 	#else
