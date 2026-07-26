@@ -570,7 +570,14 @@ namespace ns3 {
 		p->AddHeader(pauseh);
 		Ipv4Header ipv4h;  // Prepare IPv4 header
 		ipv4h.SetProtocol(0xFE);
-		ipv4h.SetSource(m_node->GetObject<Ipv4>()->GetAddress(m_ifIndex, 0).GetLocal());
+		// Switch nodes forward at L2 and have no Ipv4 stack, so GetObject<Ipv4>() is null on
+		// them. The PFC frame's source IP is link-local scaffolding the receiver never reads:
+		// PFC (l3Prot 0xFE) is consumed hop-by-hop in QbbNetDevice::Receive purely on
+		// pfc.qIndex/pfc.time and is never forwarded (so it never reaches ECMP/GetOutDev where
+		// ch.sip is used). Fall back to a null source rather than dereferencing a missing stack.
+		Ptr<Ipv4> ipv4 = m_node->GetObject<Ipv4>();
+		if (ipv4) ipv4h.SetSource(ipv4->GetAddress(m_ifIndex, 0).GetLocal());
+		else ipv4h.SetSource(Ipv4Address("0.0.0.0"));
 		ipv4h.SetDestination(Ipv4Address("255.255.255.255"));
 		ipv4h.SetPayloadSize(p->GetSize());
 		ipv4h.SetTtl(1);
