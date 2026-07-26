@@ -482,9 +482,17 @@ namespace ns3 {
 		m_paused[qIndex] = false;
 		NS_LOG_INFO("Node " << m_node->GetId() << " dev " << m_ifIndex << " queue " << qIndex <<
 			" resumed at " << Simulator::Now().GetSeconds());
-		Ptr<RdmaQueuePair> lastQp = m_rdmaEQ->GetQp(qIndex);
-		if(lastQp->nvls_enable == 1 && m_node->GetNodeType() == 2) SwitchAsHostSend(); 
-		else DequeueAndTransmit();
+		// qIndex is a PFC priority class (0..7), not a qp index. Only an NVSwitch acting as a
+		// host needs to consult a qp's nvls flag on resume, and only when a qp actually exists
+		// at this index. A plain switch's RDMA egress queue holds no qps at all, and a host may
+		// have fewer qps than priority classes, so GetQp(qIndex) would index out of bounds and
+		// return a null/garbage Ptr -- guard the lookup instead of dereferencing unconditionally.
+		if (m_node->GetNodeType() == 2 && qIndex < m_rdmaEQ->GetFlowCount()
+			&& m_rdmaEQ->GetQp(qIndex)->nvls_enable == 1){
+			SwitchAsHostSend();
+		}else{
+			DequeueAndTransmit();
+		}
 	}
 
 	void
