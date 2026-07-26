@@ -5,21 +5,65 @@
 #include "ns3/distributed-ml-module.h"
 
 #include <sys/stat.h>
+#include <cstdio>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <string>
 #include <vector>
 #include <array>
 #include <map>
+#include <tuple>
 
 using namespace ns3;
+
+// ---- event-driven congestion monitoring ----------------------------------------------
+// These are TracedCallbacks fired synchronously from inside existing packet events on the
+// switch egress ports (QbbNetDevice's QbbEnqueue/QbbDequeue/QbbDrop/QbbPfc trace sources).
+// Because they run as a side effect of events already in the queue, they schedule NOTHING
+// of their own -- the simulator's event list, its natural termination, and Simulator::Now()
+// (hence the reported algorithm latency/bandwidth) are all completely unaffected.
+
+// running per-(switch id, port ifIndex, priority queue) egress occupancy in bytes,
+// reconstructed from enqueue/dequeue deltas so each row carries the exact post-event depth.
+static std::map<std::tuple<uint32_t, uint32_t, uint32_t>, int64_t> g_qBytes;
+
+// QbbEnqueue: fires just before a packet is pushed onto egress queue `qIndex`.
+static void OnSwitchEnqueue(FILE* out, uint32_t swId, uint32_t port, Ptr<const Packet> p, uint32_t qIndex) {
+    int64_t& depth = g_qBytes[std::make_tuple(swId, port, qIndex)];
+    depth += p->GetSize();
+    fprintf(out, "%ld,%u,%u,%u,%ld,enq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
+}
+
+// QbbDequeue: fires as a packet leaves egress queue `qIndex` onto the wire.
+static void OnSwitchDequeue(FILE* out, uint32_t swId, uint32_t port, Ptr<const Packet> p, uint32_t qIndex) {
+    int64_t& depth = g_qBytes[std::make_tuple(swId, port, qIndex)];
+    depth -= p->GetSize();
+    if (depth < 0) depth = 0; // guard against control pkts (e.g. PFC) not counted on enqueue
+    fprintf(out, "%ld,%u,%u,%u,%ld,deq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
+}
+
+// QbbDrop: fires when admission control / buffer overflow discards a packet.
+static void OnSwitchDrop(FILE* out, uint32_t swId, uint32_t port, Ptr<const Packet> p, uint32_t qIndex) {
+    fprintf(out, "%ld,%u,%u,%u,%u,drop\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, p->GetSize());
+}
+
+// QbbPfc: type 1 = PAUSE sent upstream (this port's ingress is congested), 0 = RESUME.
+// q_id and bytes columns are left blank so PFC rows share the drop event schema.
+static void OnSwitchPfc(FILE* out, uint32_t swId, uint32_t port, uint32_t type) {
+    fprintf(out, "%ld,%u,%u,,,%s\n", Simulator::Now().GetNanoSeconds(), swId, port, type == 1 ? "pause" : "resume");
+}
 
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("INCAST_POD_TEST");
     LogComponentEnable("CollectivesApplication", LOG_INFO);
 //	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     uint32_t inputBytes = (1 << 20);
+    // label distinguishes output files between runs, e.g. --label=with_rate vs --label=no_rate
+    std::string label = "run";
     CommandLine cmd;
     cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
+    cmd.AddValue("label", "Suffix for the congestion-monitor output CSVs", label);
     cmd.Parse(argc, argv);
 
     NodeContainer gpunodes;
@@ -51,7 +95,7 @@ int main(int argc, char *argv[]) {
     Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
-    Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
+    Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
 
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     RdmaFabricHelper rdmaFabric;
@@ -66,11 +110,16 @@ int main(int argc, char *argv[]) {
         esw1 -> spine (sw2): devs0_5
     */
 
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_single_spine_alltoall_more_epochs.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_single_spine_alltoall.xml");
 
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_single_spine_alltoall_more_epochs_switch.json");
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_single_spine_alltoall_switch.json");
 
-    const std::string LOG_FILE = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "Alltoall_DSL_test.txt");
+    // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
+    // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
+    const std::string LOG_DIR = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/logs");
+    ns3::SystemPath::MakeDirectories(LOG_DIR); // no-op if it already exists
+
+    const std::string LOG_FILE = ns3::SystemPath::Append(LOG_DIR, "Alltoall_DSL_test.txt");
 
     constexpr DataType::Type dtype = DataType::INT32;
     const uint32_t INPUT_BYTES = inputBytes;
@@ -119,7 +168,39 @@ int main(int argc, char *argv[]) {
     else{
         NS_LOG_UNCOND("Skipping correctness check.");
     }
+
+    // ---- congestion monitoring: event-driven switch egress queue / drop / PFC traces ----
+    // Connect to the QbbNetDevice trace sources on every switch egress port. These fire
+    // synchronously from within packet events, so they add no simulator events and leave the
+    // reported latency/bandwidth (Simulator::Now()) untouched. Each qlen row is emitted on an
+    // actual enqueue/dequeue, giving an exact, unsampled occupancy trace.
+    std::string qlenPath = ns3::SystemPath::Append(LOG_DIR, "switch_qlen_" + label + ".csv");
+    std::string eventPath = ns3::SystemPath::Append(LOG_DIR, "switch_events_" + label + ".csv");
+    FILE* qlenOut = fopen(qlenPath.c_str(), "w");
+    FILE* eventOut = fopen(eventPath.c_str(), "w");
+    if (!qlenOut || !eventOut) NS_FATAL_ERROR("Failed to open congestion-monitor output files.");
+    fprintf(qlenOut, "time_ns,sw_id,port_id,q_id,qlen_bytes,op\n");
+    fprintf(eventOut, "time_ns,sw_id,port_id,q_id,bytes,op\n"); // drops (with size) and PFC pause/resume (bytes/q_id blank)
+
+    for (uint32_t s = 0; s < regswtches.GetN(); ++s) {
+        Ptr<Node> sw = regswtches.Get(s);
+        uint32_t swId = sw->GetId();
+        for (uint32_t d = 0; d < sw->GetNDevices(); ++d) {
+            Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(sw->GetDevice(d));
+            if (!dev) continue; // skip any non-Qbb (e.g. loopback) device
+            uint32_t port = dev->GetIfIndex();
+            dev->TraceConnectWithoutContext("QbbEnqueue", MakeBoundCallback(&OnSwitchEnqueue, qlenOut, swId, port));
+            dev->TraceConnectWithoutContext("QbbDequeue", MakeBoundCallback(&OnSwitchDequeue, qlenOut, swId, port));
+            dev->TraceConnectWithoutContext("QbbDrop",    MakeBoundCallback(&OnSwitchDrop, eventOut, swId, port));
+            dev->TraceConnectWithoutContext("QbbPfc",     MakeBoundCallback(&OnSwitchPfc, eventOut, swId, port));
+        }
+    }
+
     Simulator::Run();
+    fclose(qlenOut);
+    fclose(eventOut);
+    std::cout << "Switch queue trace: " << qlenPath << std::endl;
+    std::cout << "Switch drop/PFC trace: " << eventPath << std::endl;
     Time simTime = Simulator::Now();
     std::cout << "Total simulated time: "
         << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
