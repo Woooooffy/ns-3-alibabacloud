@@ -180,7 +180,7 @@ int main(int argc, char *argv[]) {
     FILE* eventOut = fopen(eventPath.c_str(), "w");
     if (!qlenOut || !eventOut) NS_FATAL_ERROR("Failed to open congestion-monitor output files.");
     fprintf(qlenOut, "time_ns,sw_id,port_id,q_id,qlen_bytes,op\n");
-    fprintf(eventOut, "time_ns,sw_id,port_id,q_id,bytes,op\n"); // drops (with size) and PFC pause/resume (bytes/q_id blank)
+    fprintf(eventOut, "time_ns,node_id,port_id,q_id,bytes,op\n"); // node_id 0-3=GPU, 4-6=switch; drops (with size) and PFC pause/resume (bytes/q_id blank)
 
     for (uint32_t s = 0; s < regswtches.GetN(); ++s) {
         Ptr<Node> sw = regswtches.Get(s);
@@ -193,6 +193,24 @@ int main(int argc, char *argv[]) {
             dev->TraceConnectWithoutContext("QbbDequeue", MakeBoundCallback(&OnSwitchDequeue, qlenOut, swId, port));
             dev->TraceConnectWithoutContext("QbbDrop",    MakeBoundCallback(&OnSwitchDrop, eventOut, swId, port));
             dev->TraceConnectWithoutContext("QbbPfc",     MakeBoundCallback(&OnSwitchPfc, eventOut, swId, port));
+        }
+    }
+
+    // The QbbPfc trace fires on the device that RECEIVES a PAUSE, and a switch backpressures a
+    // congested ingress link by pausing the sender on the far end -- which for edge-switch <-> GPU
+    // links is a host NIC, not a switch. So also connect the drop/PFC traces on the GPU NICs;
+    // otherwise switch->host backpressure (the common case here) is never recorded. In the events
+    // file, node ids 0..3 are GPUs and 4..6 are switches. Queue-occupancy (enqueue/dequeue) stays
+    // switch-only, since host egress is just the GPU injecting and isn't the congestion of interest.
+    for (uint32_t g = 0; g < gpunodes.GetN(); ++g) {
+        Ptr<Node> gpu = gpunodes.Get(g);
+        uint32_t gpuId = gpu->GetId();
+        for (uint32_t d = 0; d < gpu->GetNDevices(); ++d) {
+            Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(gpu->GetDevice(d));
+            if (!dev) continue;
+            uint32_t port = dev->GetIfIndex();
+            dev->TraceConnectWithoutContext("QbbDrop", MakeBoundCallback(&OnSwitchDrop, eventOut, gpuId, port));
+            dev->TraceConnectWithoutContext("QbbPfc",  MakeBoundCallback(&OnSwitchPfc, eventOut, gpuId, port));
         }
     }
 
