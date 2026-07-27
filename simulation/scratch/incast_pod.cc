@@ -93,6 +93,9 @@ int main(int argc, char *argv[]) {
     NetDeviceContainer devs0_5 = link_helper0.Install(regswtches.Get(1), regswtches.Get(2));
 
     Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
+    // Make the per-flow XML "rate" a true target (accumulating token-bucket shaper) rather than
+    // just an upper bound, so a higher-rate flow actually runs faster instead of sharing equally.
+    Config::SetDefault("ns3::RdmaHw::RateTargeting", BooleanValue(true));
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
@@ -110,7 +113,7 @@ int main(int argc, char *argv[]) {
         esw1 -> spine (sw2): devs0_5
     */
 
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_single_spine_alltoall.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_single_spine_alltoall_no_rate.xml");
 
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_single_spine_alltoall_switch.json");
 

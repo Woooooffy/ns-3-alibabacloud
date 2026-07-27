@@ -133,6 +133,13 @@ void RdmaQueuePair::SetVarWin(bool v){
 }
 
 void RdmaQueuePair::PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, DataRate rate){
+	// Wake-from-idle: when a message lands on a qp whose message queue was empty, the qp has
+	// been idle and its m_nextAvail is stale. Under rate targeting (accumulating pacer) start
+	// the shaper clock fresh at Now so no credit banked before the idle gap is applied. Only
+	// on the empty->backlogged edge -- appending behind an in-flight message must not reset
+	// the pacer. No-op when m_pacerAccumulate is false (legacy reset-to-now pacing).
+	if (m_pacerAccumulate && m_messages.empty())
+		m_nextAvail = Simulator::Now();
 	RdmaMessage msg;
 	msg.m_size = size;
 	msg.m_startSeq = m_messages.empty() ? snd_nxt : (m_messages.back().m_startSeq + m_messages.back().m_size);

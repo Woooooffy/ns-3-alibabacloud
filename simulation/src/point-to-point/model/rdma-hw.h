@@ -40,6 +40,14 @@ public:
 	bool m_backto0;
 	bool m_var_win, m_fast_react;
 	bool m_rateBound;
+	// When true, per-message rate pacing (the MSCCL/XML "rate") accumulates credit like a
+	// token-bucket shaper so a qp actually reaches its target rate, instead of merely being
+	// upper-bounded. See RdmaHw::UpdateNextAvail and the rate-targeting design notes.
+	bool m_rateTargeting;
+	// Max banked catch-up "burst" for the accumulating pacer, in bytes (the ConnectX
+	// max_burst_sz / packet_pacing_burst_bound analog). Converted to a time budget at the
+	// qp's pace rate; bounds how far a starved qp may run ahead after an idle gap.
+	uint32_t m_paceMaxCreditBytes;
 	uint32_t m_total_pause_times; 
 	uint32_t m_paused_times;
 	std::vector<RdmaInterfaceMgr> m_nic; // list of running nic controlled by this RdmaHw

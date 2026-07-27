@@ -139,6 +139,19 @@ TypeId RdmaHw::GetTypeId (void)
 				BooleanValue(true),
 				MakeBooleanAccessor(&RdmaHw::m_rateBound),
 				MakeBooleanChecker())
+		.AddAttribute("RateTargeting",
+				"Make per-message rate pacing accumulate credit (token-bucket shaper) so a qp "
+				"reaches its target rate rather than only being upper-bounded. Default off "
+				"preserves legacy reset-to-now pacing.",
+				BooleanValue(false),
+				MakeBooleanAccessor(&RdmaHw::m_rateTargeting),
+				MakeBooleanChecker())
+		.AddAttribute("PaceMaxCreditBytes",
+				"Max banked catch-up burst for the accumulating rate-targeting pacer, in bytes "
+				"(max_burst_sz analog). Only used when RateTargeting is true.",
+				UintegerValue(8192),
+				MakeUintegerAccessor(&RdmaHw::m_paceMaxCreditBytes),
+				MakeUintegerChecker<uint32_t>())
 		.AddAttribute("MultiRate",
 				"Maintain multiple rates in HPCC",
 				BooleanValue(true),
@@ -285,6 +298,7 @@ Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t ta
 	qp->SetWin(win);
 	qp->SetBaseRtt(baseRtt);
 	qp->SetVarWin(m_var_win);
+	qp->m_pacerAccumulate = m_rateTargeting; // must be set before any PushMessage below
 	qp->m_autoClose = autoClose;
 	// size == 0 is used to eagerly establish a persistent connection (see
 	// MscclChannel::SetupRdmaSendPeer) with no message queued yet; a non-persistent caller
@@ -821,7 +835,25 @@ void RdmaHw::UpdateNextAvail(Ptr<RdmaQueuePair> qp, Time interframeGap, uint32_t
 	if (msgRate.GetBitRate() > 0 && msgRate < paceRate)
 		paceRate = msgRate;
 	Time sendingTime = interframeGap + paceRate.CalculateBytesTxTime(pkt_size);
-	qp->m_nextAvail = Simulator::Now() + sendingTime;
+	if (m_rateTargeting){
+		// Token-bucket shaper: advance the qp's next-eligible time from its PRIOR deadline
+		// rather than from Now. This is what lets the pace rate be a *target* instead of a
+		// mere ceiling -- when the arbiter serves this qp late (busy with a sibling), the
+		// lateness is not baked in: m_nextAvail only moves forward by one sendingTime, so the
+		// qp stays eligible and catches back up to its target rate. (Legacy reset-to-now, in
+		// the else branch, permanently loses any scheduling lateness, drifting below target.)
+		// The floor bounds banked credit to m_paceMaxCreditBytes worth of transmission at the
+		// current pace rate (the max_burst_sz analog), so a qp idle for a while cannot then
+		// burst unboundedly. Wake-from-idle resets m_nextAvail to Now in RdmaQueuePair::
+		// PushMessage, so no stale credit crosses an idle gap.
+		Time newAvail = qp->m_nextAvail + sendingTime;
+		Time floor = Simulator::Now() - paceRate.CalculateBytesTxTime(m_paceMaxCreditBytes);
+		if (newAvail < floor)
+			newAvail = floor;
+		qp->m_nextAvail = newAvail;
+	} else {
+		qp->m_nextAvail = Simulator::Now() + sendingTime;
+	}
 }
 
 void RdmaHw::ChangeRate(Ptr<RdmaQueuePair> qp, DataRate new_rate){

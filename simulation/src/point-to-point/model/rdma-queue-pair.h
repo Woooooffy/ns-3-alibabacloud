@@ -31,6 +31,10 @@ public:
 	DataRate m_max_rate; // max rate
 	bool m_var_win; // variable window size
 	Time m_nextAvail;	//< Soonest time of next send
+	// When true, PushMessage resets m_nextAvail to Now on an idle->backlogged transition so the
+	// accumulating rate-targeting pacer (RdmaHw::UpdateNextAvail) does not carry stale credit
+	// across an idle gap. Set from RdmaHw::m_rateTargeting at qp creation; false = legacy pacing.
+	bool m_pacerAccumulate = false;
 	uint32_t wp; // current window of packets
 	uint32_t lastPktSize;
 	// true only once explicitly torn down via RdmaHw::CloseQueuePair/QpComplete -- the sole
