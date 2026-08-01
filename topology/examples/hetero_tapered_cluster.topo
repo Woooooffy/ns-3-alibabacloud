@@ -1,0 +1,48 @@
+// Small IRREGULAR tapered cluster (port of TE-CCL HeteroTaperedCluster).
+// 3 heterogeneous hosts (each: full-mesh NVSwitch internal at 1800 GBps per GPU)
+// tapered up to 2 top switches. Every host has FEWER uplinks than GPUs, so egress
+// relay is forced, and the coarse graph has no non-trivial automorphism.
+//
+//   Host A: 4 GPUs, uplinks {g0 -> top0, g1 -> top1}            (2 uplinks)
+//   Host B: 4 GPUs, uplinks {g0 -> top0}                        (1 uplink, single-homed to top0)
+//   Host C: 6 GPUs, uplinks {g0 -> top0, g3 -> top1, g5 -> top1}(3 uplinks, TWO landing on top1)
+//
+// Heterogeneous BW: A/C host uplinks 100 GBps, B's lone uplink 50 GBps,
+// top0 <-> top1 top mesh 200 GBps.
+
+// One host: N GPUs fully served by a single NVSwitch at 1800 GBps per GPU.
+module server(N) {
+    node nvsw type=nvswitch;
+    for g in (0, {N}-1) {
+        node gpu{g} type=gpu;
+        link gpu{g} nvsw bandwidth=1800[GBps] latency=100[ns];
+    }
+}
+
+module main() {
+    rdma L2AckInterval=0 L2ChunkSize=4000 Mtu=4096 CcMode=12;
+
+    // 3 heterogeneous hosts.
+    use server(4) as hostA;
+    use server(4) as hostB;
+    use server(6) as hostC;
+
+    // 2 top switches forming the top mesh.
+    node top0 type=switch;
+    node top1 type=switch;
+
+    // Host A uplinks: g0 -> top0, g1 -> top1 (100 GBps each).
+    link hostA.gpu0 top0 bandwidth=100[GBps] latency=700[ns];
+    link hostA.gpu1 top1 bandwidth=100[GBps] latency=700[ns];
+
+    // Host B uplink: single-homed g0 -> top0, slow (50 GBps).
+    link hostB.gpu0 top0 bandwidth=50[GBps] latency=700[ns];
+
+    // Host C uplinks: g0 -> top0, g3 -> top1, g5 -> top1 (100 GBps each; two land on top1).
+    link hostC.gpu0 top0 bandwidth=100[GBps] latency=700[ns];
+    link hostC.gpu3 top1 bandwidth=100[GBps] latency=700[ns];
+    link hostC.gpu5 top1 bandwidth=100[GBps] latency=700[ns];
+
+    // Top mesh.
+    link top0 top1 bandwidth=200[GBps] latency=700[ns];
+}
