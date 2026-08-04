@@ -8,7 +8,7 @@ with open("grammar.lark", "r") as f:
 
 parser = Lark(grammar_text, parser="lalr")
 
-with open("examples/rail_optimized_256gpu.topo", "r") as f:
+with open("examples/hetero_tapered_cluster.topo", "r") as f:
 	topo_text = f.read()
 
 tree = parser.parse(topo_text)
@@ -26,6 +26,6 @@ print(codegen.link_helpers)
 
 print("Code emission started")
 
-writer = NS3Writer("examples/output/rail_optimized_256gpu.cc", codegen)
+writer = NS3Writer("examples/output/hetero_cluster.cc", codegen)
 writer.write()
 print("Done")

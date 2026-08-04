@@ -54,8 +54,10 @@ static void OnSwitchPfc(FILE* out, uint32_t swId, uint32_t port, uint32_t type) 
     fprintf(out, "%ld,%u,%u,,,%s\n", Simulator::Now().GetNanoSeconds(), swId, port, type == 1 ? "pause" : "resume");
 }
 
+using namespace ns3;
+
 int main(int argc, char *argv[]) {
-    NS_LOG_COMPONENT_DEFINE("INCAST_POD_TEST");
+    NS_LOG_COMPONENT_DEFINE("HETERO_CLUSTER");
     LogComponentEnable("CollectivesApplication", LOG_INFO);
 //	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     uint32_t inputBytes = (1 << 20);
@@ -66,67 +68,83 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("label", "Suffix for the congestion-monitor output CSVs", label);
     cmd.Parse(argc, argv);
 
+
     NodeContainer gpunodes;
     NodeContainer regswtches;
     NodeContainer nvswtches;
-
+    
     // PFC backpressure (CheckAndSendPfc) runs unconditionally in SwitchNode, but only
     // has an effect once QcnEnabled lets a stalled NIC's queue resume; ECN marking is
     // separately gated per-switch by the EcnEnabled attribute set below.
     Config::SetDefault("ns3::QbbNetDevice::QcnEnabled", BooleanValue(true));
-
-    for (uint32_t i = 0; i < 4; ++i) { gpunodes.Add(CreateObject<GPU>()); }
-    for (uint32_t i = 0; i < 3; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
+    
+    for (uint32_t i = 0; i < 14; ++i) { gpunodes.Add(CreateObject<GPU>()); }
+    for (uint32_t i = 0; i < 2; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
+    for (uint32_t i = 0; i < 3; ++i) { nvswtches.Add(CreateObject<NVSwitchNode>()); }
     QbbHelper link_helper0;
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(4096));
-    link_helper0.SetChannelAttribute("Delay", StringValue("700ns"));
-    link_helper0.SetDeviceAttribute("DataRate", StringValue("400Gbps"));
-
-    // single-spine pod: two edge switches (0, 1) each host two GPUs; spine switch (2)
-    // interconnects the two edges. Matches the routing in
-    // fat_tree_pod_single_spine_alltoall_more_epochs_switch.json (switches 0, 1, 2).
-    NetDeviceContainer devs0_0 = link_helper0.Install(regswtches.Get(0), gpunodes.Get(0));
-    NetDeviceContainer devs0_1 = link_helper0.Install(regswtches.Get(0), gpunodes.Get(1));
-    NetDeviceContainer devs0_2 = link_helper0.Install(regswtches.Get(1), gpunodes.Get(2));
-    NetDeviceContainer devs0_3 = link_helper0.Install(regswtches.Get(1), gpunodes.Get(3));
-    NetDeviceContainer devs0_4 = link_helper0.Install(regswtches.Get(0), regswtches.Get(2));
-    NetDeviceContainer devs0_5 = link_helper0.Install(regswtches.Get(1), regswtches.Get(2));
-
+    link_helper0.SetChannelAttribute("Delay", StringValue("100ns"));
+    link_helper0.SetDeviceAttribute("DataRate", StringValue("1800GBps"));
+    
+    QbbHelper link_helper1;
+    link_helper1.SetDeviceAttribute("Mtu", UintegerValue(4096));
+    link_helper1.SetChannelAttribute("Delay", StringValue("700ns"));
+    link_helper1.SetDeviceAttribute("DataRate", StringValue("100GBps"));
+    
+    QbbHelper link_helper2;
+    link_helper2.SetDeviceAttribute("Mtu", UintegerValue(4096));
+    link_helper2.SetChannelAttribute("Delay", StringValue("700ns"));
+    link_helper2.SetDeviceAttribute("DataRate", StringValue("50GBps"));
+    
+    QbbHelper link_helper3;
+    link_helper3.SetDeviceAttribute("Mtu", UintegerValue(4096));
+    link_helper3.SetChannelAttribute("Delay", StringValue("700ns"));
+    link_helper3.SetDeviceAttribute("DataRate", StringValue("200GBps"));
+    
+    NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), nvswtches.Get(0));
+    NetDeviceContainer devs0_1 = link_helper0.Install(gpunodes.Get(1), nvswtches.Get(0));
+    NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), nvswtches.Get(0));
+    NetDeviceContainer devs0_3 = link_helper0.Install(gpunodes.Get(3), nvswtches.Get(0));
+    NetDeviceContainer devs0_4 = link_helper0.Install(gpunodes.Get(4), nvswtches.Get(1));
+    NetDeviceContainer devs0_5 = link_helper0.Install(gpunodes.Get(5), nvswtches.Get(1));
+    NetDeviceContainer devs0_6 = link_helper0.Install(gpunodes.Get(6), nvswtches.Get(1));
+    NetDeviceContainer devs0_7 = link_helper0.Install(gpunodes.Get(7), nvswtches.Get(1));
+    NetDeviceContainer devs0_8 = link_helper0.Install(gpunodes.Get(8), nvswtches.Get(2));
+    NetDeviceContainer devs0_9 = link_helper0.Install(gpunodes.Get(9), nvswtches.Get(2));
+    NetDeviceContainer devs0_10 = link_helper0.Install(gpunodes.Get(10), nvswtches.Get(2));
+    NetDeviceContainer devs0_11 = link_helper0.Install(gpunodes.Get(11), nvswtches.Get(2));
+    NetDeviceContainer devs0_12 = link_helper0.Install(gpunodes.Get(12), nvswtches.Get(2));
+    NetDeviceContainer devs0_13 = link_helper0.Install(gpunodes.Get(13), nvswtches.Get(2));
+    NetDeviceContainer devs1_14 = link_helper1.Install(gpunodes.Get(0), regswtches.Get(0));
+    NetDeviceContainer devs1_15 = link_helper1.Install(gpunodes.Get(1), regswtches.Get(1));
+    NetDeviceContainer devs2_16 = link_helper2.Install(gpunodes.Get(4), regswtches.Get(0));
+    NetDeviceContainer devs1_17 = link_helper1.Install(gpunodes.Get(8), regswtches.Get(0));
+    NetDeviceContainer devs1_18 = link_helper1.Install(gpunodes.Get(11), regswtches.Get(1));
+    NetDeviceContainer devs1_19 = link_helper1.Install(gpunodes.Get(13), regswtches.Get(1));
+    NetDeviceContainer devs3_20 = link_helper3.Install(regswtches.Get(0), regswtches.Get(1));
     Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
-    // Make the per-flow XML "rate" a true target (accumulating token-bucket shaper) rather than
-    // just an upper bound, so a higher-rate flow actually runs faster instead of sharing equally.
-    Config::SetDefault("ns3::RdmaHw::RateTargeting", BooleanValue(true));
-    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(1));
+    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
-
+    
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     RdmaFabricHelper rdmaFabric;
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
+    
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/hetero_cluster_milp_no_copy.xml");
 
-    /*
-        esw0 -> gpu0: devs0_0
-        esw0 -> gpu1: devs0_1
-        esw1 -> gpu2: devs0_2
-        esw1 -> gpu3: devs0_3
-        esw0 -> spine (sw2): devs0_4
-        esw1 -> spine (sw2): devs0_5
-    */
-
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/fat_tree_pod_single_spine_alltoall.xml");
-
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/fat_tree_pod_single_spine_alltoall_switch.json");
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/hetero_cluster_milp_no_copy_switch.json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
     const std::string LOG_DIR = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/logs");
     ns3::SystemPath::MakeDirectories(LOG_DIR); // no-op if it already exists
 
-    const std::string LOG_FILE = ns3::SystemPath::Append(LOG_DIR, "Alltoall_DSL_test.txt");
+    const std::string LOG_FILE = ns3::SystemPath::Append(LOG_DIR, "Allgather_DSL_test.txt");
 
     constexpr DataType::Type dtype = DataType::INT32;
     const uint32_t INPUT_BYTES = inputBytes;
-    bool CORRECTNESS_CHECK = false;
+    bool CORRECTNESS_CHECK = true;
     bool FLOW_ID = true;
 
     AlgoTopology topo(gpunodes, regswtches);
@@ -166,7 +184,7 @@ int main(int argc, char *argv[]) {
 
     CollectiveTester tester(apps, true, logtxt);
     if (CORRECTNESS_CHECK) {
-        tester.SetupAlltoall(topo, CHUNK_SIZE * N_CHUNKS);
+        tester.SetupAllgather(topo, CHUNK_SIZE * N_CHUNKS);
     }
     else{
         NS_LOG_UNCOND("Skipping correctness check.");
@@ -226,16 +244,13 @@ int main(int argc, char *argv[]) {
     std::cout << "Total simulated time: "
         << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
 
-    // alltoall algorithm bandwidth: total data moved per rank / time
-    std::cout << "Alltoall algorithm bandwidth: "
+    // algorithm bandwidth: total data moved per rank / time
+    std::cout << "Allgather algorithm bandwidth: "
         << (double) INPUT_BYTES * N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;
-    // alltoall bus bandwidth: each rank exchanges INPUT_BYTES*(P-1)/P with the others
-    std::cout << "Alltoall bus bandwidth: "
-        << (double) INPUT_BYTES * (N_NODES - 1) / N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;
     if (CORRECTNESS_CHECK) {
-        CollectiveTestResult alltoall_res = tester.VerifyAlltoall(topo, CHUNK_SIZE * N_CHUNKS);
-        if (alltoall_res == CollectiveTestResult::TEST_OK) std::cout << "Alltoall verified." << std::endl;
-        else std::cout << "Alltoall incorrect." << std::endl;
+        CollectiveTestResult allgather_res = tester.VerifyAllgather(topo, CHUNK_SIZE * N_CHUNKS);
+        if (allgather_res == CollectiveTestResult::TEST_OK) std::cout << "Allgather verified." << std::endl;
+        else std::cout << "Allgather incorrect." << std::endl;
     }
 
     Simulator::Destroy();
