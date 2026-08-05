@@ -131,9 +131,9 @@ int main(int argc, char *argv[]) {
     RdmaFabricHelper rdmaFabric;
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
     
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/hetero_cluster_milp_no_copy.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/hetero_allgather.xml");
 
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/hetero_cluster_milp_no_copy_switch.json");
+    std::string SWITCH_JSON;// = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/hetero_cluster_milp_no_copy_switch.json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
@@ -145,7 +145,7 @@ int main(int argc, char *argv[]) {
     constexpr DataType::Type dtype = DataType::INT32;
     const uint32_t INPUT_BYTES = inputBytes;
     bool CORRECTNESS_CHECK = true;
-    bool FLOW_ID = true;
+    bool FLOW_ID = false;
 
     AlgoTopology topo(gpunodes, regswtches);
     AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
