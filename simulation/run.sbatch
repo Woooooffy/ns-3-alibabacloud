@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=ns3
-#SBATCH --output=logs/ns3-%j.out
-#SBATCH --error=logs/ns3-%j.err
+#SBATCH --output=/dev/null
+#SBATCH --error=/dev/null
 #SBATCH --time=05:00:00
 #SBATCH --nodes=1 --ntasks=1 --cpus-per-task=16 --mem=64G
 #SBATCH --account=commit
@@ -25,18 +25,20 @@ fi
 TARGET=$1
 shift
 
-# Slurm resolved the --output/--error paths before this script ran, so tag the run
-# with a readable alias alongside the raw ns3-<jobid> files.
+# The #SBATCH --output/--error paths are resolved before this script runs, so they
+# can't contain the target name -- they point at /dev/null and we redirect to the
+# real, named files here instead. One pair of files per job, named after the run.
 LABEL=""
 for arg in "$@"; do
     case "$arg" in
         --label=*) LABEL="-${arg#--label=}" ;;
     esac
 done
-ln -sf "ns3-${SLURM_JOB_ID}.out" "logs/${TARGET}${LABEL}-${SLURM_JOB_ID}.out"
-ln -sf "ns3-${SLURM_JOB_ID}.err" "logs/${TARGET}${LABEL}-${SLURM_JOB_ID}.err"
+RUN="logs/${TARGET}${LABEL}-${SLURM_JOB_ID}"
+exec > "${RUN}.out" 2> "${RUN}.err"
 
 source /data/commit/graphit/wangyj05/workspace/setup.sh
+conda activate new_ns3
 
 echo "=== ./ns3 run \"$TARGET $*\" ==="
 srun ./ns3 run "$TARGET $*"
