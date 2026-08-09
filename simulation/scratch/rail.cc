@@ -58,7 +58,7 @@ using namespace ns3;
 
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("HETERO_CLUSTER");
-    LogComponentEnable("CollectivesApplication", LOG_INFO);
+//    LogComponentEnable("CollectivesApplication", LOG_INFO);
 //	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     uint32_t inputBytes = (1 << 20);
     // label distinguishes output files between runs, e.g. --label=with_rate vs --label=no_rate

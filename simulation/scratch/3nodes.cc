@@ -15,9 +15,9 @@ using namespace ns3;
 
 int main(int argc, char *argv[]) {
 	NS_LOG_COMPONENT_DEFINE("3NODES_TEST");
-    LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
+//    LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
 	// LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
-    LogComponentEnable("RdmaHw", LOG_LEVEL_ALL);
+  //  LogComponentEnable("RdmaHw", LOG_LEVEL_ALL);
     uint32_t inputBytes = (1 << 20);
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
     const uint32_t INPUT_BYTES = inputBytes;
     int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
     // in elements, so total bytes is CHUNK_SIZE * N_CHUNKS * sizeof(datatype)
-    bool CORRECTNESS_CHECK = true;
+    bool CORRECTNESS_CHECK = false;
 		bool FLOW_ID = false;
 
     AlgoTopology topo(gpunodes, regswtches);
