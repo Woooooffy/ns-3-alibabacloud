@@ -131,7 +131,7 @@ int main(int argc, char *argv[]) {
     RdmaFabricHelper rdmaFabric;
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
     
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/hetero_allgather.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/hetero_cluster_milp_no_copy.xml");
 
     std::string SWITCH_JSON;// = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/hetero_cluster_milp_no_copy_switch.json");
 
