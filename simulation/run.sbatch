@@ -41,4 +41,7 @@ source /data/commit/graphit/wangyj05/workspace/setup.sh
 conda activate new_ns3
 
 echo "=== ./ns3 run \"$TARGET $*\" ==="
-srun ./ns3 run "$TARGET $*"
+# stdout/stderr are files now, so the simulator's streams would be block-buffered and
+# the logs would stay empty until the job ends. stdbuf's LD_PRELOAD is inherited by
+# ./ns3's child process, so line buffering reaches the actual ns-3 binary.
+srun --unbuffered stdbuf -oL -eL ./ns3 run "$TARGET $*"
