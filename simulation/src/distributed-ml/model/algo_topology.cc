@@ -235,7 +235,7 @@ namespace ns3
 
 				sTB->recvpeer = recvpeer;
 				sTB->sendpeer = sendpeer;
-				if (channelId < 0 || channelId > MAXCHANNELS){
+				if (channelId < 0 || channelId >= MAXCHANNELS){
 					NS_LOG_WARN("MSCCL: threadblock (" << bid << ") on GPU (" << gpuId << ") has an invalid channel (" << channelId << ").");
 					return INVALID_USE_ERROR;
 				}

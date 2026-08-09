@@ -667,7 +667,9 @@ int main(int argc, char *argv[]) {
 
     AlgoTopology topo(gpunodes, regswtches);
     AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
-    if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
+    // Fatal, not a log line: a failed parse leaves the topology empty and the failure would
+    // otherwise surface far downstream (zero input chunks) with NS_LOG_ERROR off by default.
+    if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_FATAL_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
     if (FLOW_ID){
         AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str());
         if (switchResult != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing switch JSON, error code " << switchResult);

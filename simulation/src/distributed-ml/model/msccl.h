@@ -8,7 +8,11 @@
 namespace ns3 {
 // TODO: double check predefined params for topology specificity
 #define MSCCL_MAX_NUM_STEPS 256
-#define MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL 32
+// A rail-optimized 256-GPU allgather puts up to 76 threadblocks (one per peer it talks
+// to) on a single channel, so this is 128 rather than the upstream 32. MAXCHANNELS is
+// traded down to keep MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL — the size of
+// mscclAlgorithm::mscclTBs, the dominant per-GPU allocation — unchanged at 1024.
+#define MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL 128
 #define MSCCL_MAX_NUM_THREAD_BLOCKS (108*2) // set this to 108 which is the number of SMs on A100
 #define MSCCL_MAX_NUM_ALGOS 4
 #define MSCCL_MAX_COUNT 72 // make sure this does not overflow wrt the size of mscclWorkElem::mscclMaxAllowCount
@@ -17,7 +21,8 @@ namespace ns3 {
 #define MSCCL_SLICESTEPS (NCCL_STEPS/4)
 #define MSCCL_CHUNKSTEPS (NCCL_STEPS/2)
 
-#define MAXCHANNELS 32
+// No XML under scratch/xml_input declares more than 2 channels; 8 keeps ample headroom.
+#define MAXCHANNELS 8
 
 static_assert(MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL >= MSCCL_MAX_NUM_THREAD_BLOCKS);
 static_assert(MSCCL_MAX_NUM_STEPS <= 256, "MSCCL interpreter doesn't allow for more than nthreads dependences");
