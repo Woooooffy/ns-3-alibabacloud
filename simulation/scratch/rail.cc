@@ -59,7 +59,7 @@ using namespace ns3;
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("HETERO_CLUSTER");
 //    LogComponentEnable("CollectivesApplication", LOG_INFO);
-		LogComponentEnable("SwitchNode", LOG_LEVEL_INFO);
+		// LogComponentEnable("SwitchNode", LOG_LEVEL_INFO);
     uint32_t inputBytes = (1 << 20);
     // label distinguishes output files between runs, e.g. --label=with_rate vs --label=no_rate
     std::string label = "rail";
@@ -656,21 +656,16 @@ int main(int argc, char *argv[]) {
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
 
 
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/rail_hierarchical_allgather.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/rail_hierarchical_alltoall.xml");
 
-    // Switch ids in this JSON index the regswtches container passed to AlgoTopology below
-    // (leaf0..leaf7 -> 0..7, spine0..spine3 -> 8..11), NOT a global switch numbering that
-    // also counts nvswitches. rail_allgather.json uses the latter (nvswitches 0..31, leaves
-    // 32..39) and so resolves to the wrong nodes; this file is the regswtches-indexed form,
-    // with the intra-node nvswitch rules dropped (NVSwitchNode has no flow-forwarding table).
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/rail_allgather_switch.json");
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/rail_alltoall.json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
     const std::string LOG_DIR = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/logs");
     ns3::SystemPath::MakeDirectories(LOG_DIR); // no-op if it already exists
 
-    const std::string LOG_FILE = ns3::SystemPath::Append(LOG_DIR, "Allgather_DSL_test.txt");
+    const std::string LOG_FILE = ns3::SystemPath::Append(LOG_DIR, "Alltoall_DSL_test.txt");
 
     constexpr DataType::Type dtype = DataType::INT32;
     const uint32_t INPUT_BYTES = inputBytes;
@@ -725,7 +720,7 @@ int main(int argc, char *argv[]) {
     tester.SetLogMode(logMode);
     tester.SetMaxMismatches(maxMismatches);
     if (CORRECTNESS_CHECK) {
-        tester.SetupAllgather(topo, CHUNK_SIZE * N_CHUNKS);
+        tester.SetupAlltoall(topo, CHUNK_SIZE * N_CHUNKS);
     }
     else{
         NS_LOG_UNCOND("Skipping correctness check.");
@@ -786,12 +781,12 @@ int main(int argc, char *argv[]) {
         << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
 
     // algorithm bandwidth: total data moved per rank / time
-    std::cout << "Allgather algorithm bandwidth: "
+    std::cout << "Alltoall algorithm bandwidth: "
         << (double) INPUT_BYTES * N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;
     if (CORRECTNESS_CHECK) {
-        CollectiveTestResult allgather_res = tester.VerifyAllgather(topo, CHUNK_SIZE * N_CHUNKS);
-        if (allgather_res == CollectiveTestResult::TEST_OK) std::cout << "Allgather verified." << std::endl;
-        else std::cout << "Allgather incorrect." << std::endl;
+        CollectiveTestResult alltoall_res = tester.VerifyAlltoall(topo, CHUNK_SIZE * N_CHUNKS);
+        if (alltoall_res == CollectiveTestResult::TEST_OK) std::cout << "Alltoall verified." << std::endl;
+        else std::cout << "Alltoall incorrect." << std::endl;
     }
 
     Simulator::Destroy();
