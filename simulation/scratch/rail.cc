@@ -59,7 +59,7 @@ using namespace ns3;
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("HETERO_CLUSTER");
 //    LogComponentEnable("CollectivesApplication", LOG_INFO);
-//	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
+		LogComponentEnable("SwitchNode", LOG_LEVEL_INFO);
     uint32_t inputBytes = (1 << 20);
     // label distinguishes output files between runs, e.g. --label=with_rate vs --label=no_rate
     std::string label = "rail";
@@ -656,9 +656,9 @@ int main(int argc, char *argv[]) {
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
 
 
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/rail_hierarchical.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/rail_hierarchical_allgather.xml");
 
-    std::string SWITCH_JSON;// = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/hetero_cluster_milp_no_copy_switch.json");
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/rail_allgather.json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
@@ -670,7 +670,7 @@ int main(int argc, char *argv[]) {
     constexpr DataType::Type dtype = DataType::INT32;
     const uint32_t INPUT_BYTES = inputBytes;
     bool CORRECTNESS_CHECK = true;
-    bool FLOW_ID = false;
+    bool FLOW_ID = true;
 
     AlgoTopology topo(gpunodes, regswtches);
     AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());

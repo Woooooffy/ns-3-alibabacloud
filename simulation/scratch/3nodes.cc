@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
     // transmission delay in RdmaFabricHelper's BDP/RTT calculation.
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(1500));
     link_helper0.SetChannelAttribute("Delay", StringValue("1us"));
-    link_helper0.SetDeviceAttribute("DataRate", StringValue("71Gbps"));
+    link_helper0.SetDeviceAttribute("DataRate", StringValue("65Gbps"));
 
     NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), regswtches.Get(0));
 
@@ -84,7 +84,7 @@ int main(int argc, char *argv[]) {
     const uint32_t INPUT_BYTES = inputBytes;
     int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
     // in elements, so total bytes is CHUNK_SIZE * N_CHUNKS * sizeof(datatype)
-    bool CORRECTNESS_CHECK = false;
+    bool CORRECTNESS_CHECK = true;
 		bool FLOW_ID = false;
 
     AlgoTopology topo(gpunodes, regswtches);
