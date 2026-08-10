@@ -658,7 +658,12 @@ int main(int argc, char *argv[]) {
 
     std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/rail_hierarchical_allgather.xml");
 
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/rail_allgather.json");
+    // Switch ids in this JSON index the regswtches container passed to AlgoTopology below
+    // (leaf0..leaf7 -> 0..7, spine0..spine3 -> 8..11), NOT a global switch numbering that
+    // also counts nvswitches. rail_allgather.json uses the latter (nvswitches 0..31, leaves
+    // 32..39) and so resolves to the wrong nodes; this file is the regswtches-indexed form,
+    // with the intra-node nvswitch rules dropped (NVSwitchNode has no flow-forwarding table).
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/rail_allgather_switch.json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
@@ -679,7 +684,10 @@ int main(int argc, char *argv[]) {
     if (result != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_FATAL_ERROR("Encountered issue in parsing XML algorithm, error code " << result);
     if (FLOW_ID){
         AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str());
-        if (switchResult != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_LOG_ERROR("Encountered issue in parsing switch JSON, error code " << switchResult);
+        // Fatal for the same reason the XML parse above is: ParseSwitchJson returns on the
+        // first bad entry, leaving flow forwarding half-installed (CustomFlowForwarding on,
+        // table mostly empty), and the run then silently falls back to ECMP everywhere.
+        if (switchResult != AlgoParseResult::ALGO_PARSE_SUCCESS) NS_FATAL_ERROR("Encountered issue in parsing switch JSON, error code " << switchResult);
     }
 
     static std::ofstream logtxt;
