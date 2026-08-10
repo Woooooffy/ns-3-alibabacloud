@@ -14,6 +14,22 @@ namespace ns3{
 		TEST_FAILED
 	};
 
+	// How much a tester writes to its log stream.
+	//
+	// VERBOSE dumps every source/destination buffer and one line per mismatching element.
+	// At large scale (many participants x large per-rank buffers) that is gigabytes of text:
+	// it dominates runtime and can exhaust memory in the stream/file layer, so it is only
+	// usable for small debug topologies.
+	//
+	// MINIMAL dumps no buffers and prints at most maxMismatches mismatch lines, then stops
+	// scanning (the verdict is already decided) -- enough to see where the first divergence is.
+	// SILENT prints nothing but the final one-line verdict.
+	enum class CollectiveLogMode{
+		SILENT,
+		MINIMAL,
+		VERBOSE
+	};
+
 	// Drives correctness setup/verification for a collective running on top of an
 	// ApplicationContainer of CollectivesApplications.
 	//
@@ -33,6 +49,8 @@ namespace ns3{
 	//   identical to the whole-topology case.
 	class CollectiveTester {
 		public:
+			// verbose=true maps to CollectiveLogMode::VERBOSE, false to SILENT; use SetLogMode
+			// for MINIMAL (or to change the mode later).
 			CollectiveTester(ApplicationContainer& apps, bool verbose=false, std::ostream& log=std::cout,
 			                 const std::vector<int>& passiveGpus = {});
 			~CollectiveTester();
@@ -40,6 +58,11 @@ namespace ns3{
 			// Redefine which app indices are passive (idle) for subsequent Setup/Verify calls,
 			// letting one tester object sweep several subsets over the same topology.
 			void SetPassiveGpus(const std::vector<int>& passiveGpus);
+
+			void SetLogMode(CollectiveLogMode mode){ m_mode = mode; }
+			CollectiveLogMode GetLogMode() const { return m_mode; }
+			// Mismatch lines printed in MINIMAL mode before verification gives up and returns.
+			void SetMaxMismatches(size_t n){ m_maxMismatches = n; }
 
 			void SetupAllgather(size_t input_elts, int n_chunks);
 			CollectiveTestResult VerifyAllgather(size_t input_elts, int n_chunks);
@@ -68,8 +91,17 @@ namespace ns3{
 			// (re)builds m_participants / m_nParticipants from m_passive; called by ctor and setter
 			void ComputeParticipants();
 
+			// Records one mismatching element, logging it if the current mode still wants output.
+			// Returns false when the scan should stop early: the run is already known to be
+			// incorrect, so outside VERBOSE there is nothing to gain from checking the rest.
+			bool NoteMismatch(int node, size_t index, int32_t expected, int32_t got);
+			// Dumps a buffer only in VERBOSE mode (a full dump is what makes large runs unusable).
+			void DumpIfVerbose(Ptr<CollectivesApplication> app, DataBuffer* buf);
+
 			ApplicationContainer& m_apps;
-			bool m_verbose;
+			CollectiveLogMode m_mode;
+			size_t m_maxMismatches = 10;
+			size_t m_mismatchesLogged = 0;       // reset at the start of each Verify* call
 			int m_n_apps;
 			std::ostream& m_log;
 			std::set<int> m_passive;             // app indices sitting idle this run

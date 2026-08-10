@@ -62,21 +62,28 @@ int main(int argc, char *argv[]) {
 //	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     uint32_t inputBytes = (1 << 20);
     // label distinguishes output files between runs, e.g. --label=with_rate vs --label=no_rate
-    std::string label = "run";
+    std::string label = "rail";
+    // Verification logging. This topology has 256 GPUs, so a full per-buffer dump is hundreds of
+    // GB of text and will hang or OOM the run; minimal mode prints only the first few mismatches
+    // (and then stops scanning) -- enough to localize a bug. "verbose" is for small debug topologies.
+    std::string checkLog = "minimal"; // silent | minimal | verbose
+    uint32_t maxMismatches = 10;
     CommandLine cmd;
     cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
     cmd.AddValue("label", "Suffix for the congestion-monitor output CSVs", label);
+    cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
+    cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
     cmd.Parse(argc, argv);
 
     NodeContainer gpunodes;
     NodeContainer regswtches;
     NodeContainer nvswtches;
-    
+
     // PFC backpressure (CheckAndSendPfc) runs unconditionally in SwitchNode, but only
     // has an effect once QcnEnabled lets a stalled NIC's queue resume; ECN marking is
     // separately gated per-switch by the EcnEnabled attribute set below.
     Config::SetDefault("ns3::QbbNetDevice::QcnEnabled", BooleanValue(true));
-    
+
     for (uint32_t i = 0; i < 256; ++i) { gpunodes.Add(CreateObject<GPU>()); }
     for (uint32_t i = 0; i < 12; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
     for (uint32_t i = 0; i < 32; ++i) { nvswtches.Add(CreateObject<NVSwitchNode>()); }
@@ -84,17 +91,17 @@ int main(int argc, char *argv[]) {
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper0.SetChannelAttribute("Delay", StringValue("100ns"));
     link_helper0.SetDeviceAttribute("DataRate", StringValue("1800GBps"));
-    
+
     QbbHelper link_helper1;
     link_helper1.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper1.SetChannelAttribute("Delay", StringValue("700ns"));
     link_helper1.SetDeviceAttribute("DataRate", StringValue("400Gbps"));
-    
+
     QbbHelper link_helper2;
     link_helper2.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper2.SetChannelAttribute("Delay", StringValue("700ns"));
     link_helper2.SetDeviceAttribute("DataRate", StringValue("3200Gbps"));
-    
+
     NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), nvswtches.Get(0));
     NetDeviceContainer devs0_1 = link_helper0.Install(gpunodes.Get(1), nvswtches.Get(0));
     NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), nvswtches.Get(0));
@@ -643,12 +650,12 @@ int main(int argc, char *argv[]) {
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
-    
+
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     RdmaFabricHelper rdmaFabric;
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
-    
-    
+
+
     std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/rail_hierarchical.xml");
 
     std::string SWITCH_JSON;// = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/hetero_cluster_milp_no_copy_switch.json");
@@ -702,7 +709,13 @@ int main(int argc, char *argv[]) {
 
     NS_LOG_INFO("Finished installing collective apps.");
 
-    CollectiveTester tester(apps, true, logtxt);
+    CollectiveTester tester(apps, false, logtxt);
+    CollectiveLogMode logMode = CollectiveLogMode::MINIMAL;
+    if (checkLog == "silent") logMode = CollectiveLogMode::SILENT;
+    else if (checkLog == "verbose") logMode = CollectiveLogMode::VERBOSE;
+    else if (checkLog != "minimal") NS_FATAL_ERROR("Unknown --checkLog value '" << checkLog << "' (expected silent|minimal|verbose).");
+    tester.SetLogMode(logMode);
+    tester.SetMaxMismatches(maxMismatches);
     if (CORRECTNESS_CHECK) {
         tester.SetupAllgather(topo, CHUNK_SIZE * N_CHUNKS);
     }

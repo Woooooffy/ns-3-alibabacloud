@@ -4,11 +4,32 @@ namespace ns3{
 
 	CollectiveTester::CollectiveTester(ApplicationContainer& apps, bool verbose, std::ostream& log,
 	                                   const std::vector<int>& passiveGpus)
-		: m_apps(apps), m_verbose(verbose), m_n_apps(apps.GetN()), m_log(log){
+		: m_apps(apps), m_mode(verbose ? CollectiveLogMode::VERBOSE : CollectiveLogMode::SILENT),
+		  m_n_apps(apps.GetN()), m_log(log){
 		SetPassiveGpus(passiveGpus);
 	}
 
 	CollectiveTester::~CollectiveTester(){}
+
+	bool CollectiveTester::NoteMismatch(int node, size_t index, int32_t expected, int32_t got){
+		if (m_mode == CollectiveLogMode::VERBOSE ||
+		    (m_mode == CollectiveLogMode::MINIMAL && m_mismatchesLogged < m_maxMismatches)){
+			m_log << "Incorrect result on node " << node << " at output " << index
+			      << ": expected " << expected << ", got " << got << std::endl;
+		}
+		++m_mismatchesLogged;
+		if (m_mode == CollectiveLogMode::VERBOSE) return true;
+		if (m_mode == CollectiveLogMode::MINIMAL && m_mismatchesLogged >= m_maxMismatches){
+			m_log << "Stopping verification after " << m_maxMismatches
+			      << " mismatches (minimal log mode)." << std::endl;
+		}
+		// SILENT stops on the first mismatch; MINIMAL once its quota is used up.
+		return m_mode == CollectiveLogMode::MINIMAL && m_mismatchesLogged < m_maxMismatches;
+	}
+
+	void CollectiveTester::DumpIfVerbose(Ptr<CollectivesApplication> app, DataBuffer* buf){
+		if (m_mode == CollectiveLogMode::VERBOSE) app->DumpBuffer(buf, m_log);
+	}
 
 	void CollectiveTester::SetPassiveGpus(const std::vector<int>& passiveGpus){
 		m_passive.clear();
@@ -53,7 +74,7 @@ namespace ns3{
 					outptr[r * n_chunks * n_per_chunk + chunk + j] = val + j;
 				}
 			}
-			if (m_verbose) app->DumpBuffer(app->GetSrcBuffer(), m_log);
+			DumpIfVerbose(app, app->GetSrcBuffer());
 		}
 	}
 
@@ -63,33 +84,38 @@ namespace ns3{
 		int P = m_nParticipants;
 
 		bool correct = true;
+		bool keepScanning = true;
+		m_mismatchesLogged = 0;
 
-		for (int r = 0; r < P; ++r){
+		for (int r = 0; r < P && keepScanning; ++r){
 			Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(m_apps.Get(m_participants[r]));
 			DataBuffer* buf = app->GetDstBuffer();
 			// correctness check
 			int32_t* ptr = (int32_t*) buf->dataBuffer;
 			if (buf->len != 1ULL * n_per_chunk * n_chunks * P){
 				correct = false;
-				if (m_verbose) m_log << "Incorrect result on node " << m_participants[r] << ": expected output length " << n_per_chunk * n_chunks * P << ", got " << buf->len << std::endl;
+				if (m_mode != CollectiveLogMode::SILENT) m_log << "Incorrect result on node " << m_participants[r] << ": expected output length " << n_per_chunk * n_chunks * P << ", got " << buf->len << std::endl;
 			}
 			else{
-				for (int n = 0; n < P; ++n){
+				for (int n = 0; n < P && keepScanning; ++n){
 					int node = n * n_chunks * n_per_chunk;
 					int node_base = n * 16 * 16 * 16 * 16;
-					for (int c = 0; c < n_chunks; ++c){
+					for (int c = 0; c < n_chunks && keepScanning; ++c){
 							int chunk = node + c * n_per_chunk;
 							int chunk_base = node_base + c * 16 * 16 * 16;
 						for (int j = 0; j < n_per_chunk; ++j){
 							if (ptr[chunk + j] != chunk_base + j){
-								if (m_verbose) m_log << "Incorrect result on node " << m_participants[r] << " at output " << chunk + j << ": expected " << chunk_base + j << ", got " << ptr[chunk + j] << std::endl;
 								correct = false;
+								if (!NoteMismatch(m_participants[r], chunk + j, chunk_base + j, ptr[chunk + j])){
+									keepScanning = false;
+									break;
+								}
 							}
 						}
 					}
 				}
 			}
-			if (m_verbose) app->DumpBuffer(buf, m_log);
+			DumpIfVerbose(app, buf);
 		}
 		// Unconditional logging
 		if (correct){
@@ -143,7 +169,7 @@ namespace ns3{
 					}
 				}
 			}
-			if (m_verbose) app->DumpBuffer(app->GetSrcBuffer(), m_log);
+			DumpIfVerbose(app, app->GetSrcBuffer());
 		}
 	}
 
@@ -156,34 +182,39 @@ namespace ns3{
 		int partition_size = chunks_per_dest * n_per_chunk;
 
 		bool correct = true;
+		bool keepScanning = true;
+		m_mismatchesLogged = 0;
 
 		// dst is the participant rank of the receiver being checked. Its output partition s must
 		// hold what rank s placed in ITS partition d==dst, i.e. value keyed (src=s, dest=dst, ...).
-		for (int dst = 0; dst < P; ++dst){
+		for (int dst = 0; dst < P && keepScanning; ++dst){
 			Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(m_apps.Get(m_participants[dst]));
 			DataBuffer* buf = app->GetDstBuffer();
 			int32_t* ptr = (int32_t*) buf->dataBuffer;
 			if (buf->len != 1ULL * input_elts){
 				correct = false;
-				if (m_verbose) m_log << "Incorrect result on node " << m_participants[dst] << ": expected output length " << input_elts << ", got " << buf->len << std::endl;
+				if (m_mode != CollectiveLogMode::SILENT) m_log << "Incorrect result on node " << m_participants[dst] << ": expected output length " << input_elts << ", got " << buf->len << std::endl;
 			}
 			else{
-				for (int s = 0; s < P; ++s){
+				for (int s = 0; s < P && keepScanning; ++s){
 					int part = s * partition_size;
 					int part_base = s * 16 * 16 * 16 * 16 + dst * 16 * 16 * 16;
-					for (int c = 0; c < chunks_per_dest; ++c){
+					for (int c = 0; c < chunks_per_dest && keepScanning; ++c){
 						int chunk = part + c * n_per_chunk;
 						int chunk_base = part_base + c * 16 * 16;
 						for (int j = 0; j < n_per_chunk; ++j){
 							if (ptr[chunk + j] != chunk_base + j){
-								if (m_verbose) m_log << "Incorrect result on node " << m_participants[dst] << " at output " << chunk + j << ": expected " << chunk_base + j << ", got " << ptr[chunk + j] << std::endl;
 								correct = false;
+								if (!NoteMismatch(m_participants[dst], chunk + j, chunk_base + j, ptr[chunk + j])){
+									keepScanning = false;
+									break;
+								}
 							}
 						}
 					}
 				}
 			}
-			if (m_verbose) app->DumpBuffer(buf, m_log);
+			DumpIfVerbose(app, buf);
 		}
 		// Unconditional logging
 		if (correct){
