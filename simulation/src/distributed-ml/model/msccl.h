@@ -7,7 +7,7 @@
 #include <cstring>
 namespace ns3 {
 // TODO: double check predefined params for topology specificity
-#define MSCCL_MAX_NUM_STEPS 256
+#define MSCCL_MAX_NUM_STEPS 1024
 // A rail-optimized 256-GPU allgather puts up to 76 threadblocks (one per peer it talks
 // to) on a single channel, so this is 128 rather than the upstream 32. MAXCHANNELS is
 // traded down to keep MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL — the size of
