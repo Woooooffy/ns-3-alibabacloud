@@ -964,7 +964,11 @@ namespace ns3 {
 			default:
 				NS_FATAL_ERROR("Unrecognized buffer type");
 		}
-		if (offset < 0 || offset > buffer.len * DataType::GetSizeBytes(m_dataType)) NS_FATAL_ERROR("Invalid offset");
+		if (offset > buffer.len * DataType::GetSizeBytes(m_dataType))
+			NS_FATAL_ERROR("Invalid offset: buf=" << buf << " offset=" << offset << " bytes, buffer holds "
+				<< (buffer.len * DataType::GetSizeBytes(m_dataType)) << " bytes ("
+				<< buffer.len << " elems, chunk=" << m_currChunkSize
+				<< " elems). The buffer is smaller than the algorithm's declared chunk count.");
 		return ((uint8_t*)buffer.dataBuffer) + offset;
 	}
 

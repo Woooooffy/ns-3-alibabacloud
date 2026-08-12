@@ -64,7 +64,10 @@ namespace ns3{
 			// Mismatch lines printed in MINIMAL mode before verification gives up and returns.
 			void SetMaxMismatches(size_t n){ m_maxMismatches = n; }
 
-			void SetupAllgather(size_t input_elts, int n_chunks);
+			// scratch_chunks is the algorithm's declared per-rank s_chunks; <= 0 keeps the legacy
+			// behaviour of sizing scratch like the output buffer. Pass it whenever it is known:
+			// relay-heavy schedules stage into scratch offsets far beyond the output size.
+			void SetupAllgather(size_t input_elts, int n_chunks, int scratch_chunks = 0);
 			CollectiveTestResult VerifyAllgather(size_t input_elts, int n_chunks);
 
 			// Topology-driven overloads: n_chunks is read straight from the parsed algorithm
@@ -79,7 +82,8 @@ namespace ns3{
 			// partition s holds the data rank s sent to this rank. input_elts is the per-rank input
 			// size and equals the per-rank output size. Requires n_chunks % P == 0 so the chunks
 			// divide evenly among the P destination partitions.
-			void SetupAlltoall(size_t input_elts, int n_chunks);
+			// scratch_chunks as in SetupAllgather above.
+			void SetupAlltoall(size_t input_elts, int n_chunks, int scratch_chunks = 0);
 			CollectiveTestResult VerifyAlltoall(size_t input_elts, int n_chunks);
 
 			// Topology-driven overloads; see the allgather pair above. For alltoall the parsed

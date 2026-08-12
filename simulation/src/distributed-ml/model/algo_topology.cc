@@ -134,6 +134,7 @@ namespace ns3
 		m_nChannels = nChannels;
 		m_nChunksPerLoop = nChunksPerLoop;
 		m_nInputChunks = 0;
+		m_nScratchChunks = 0;
 		m_activeGpuIds.clear();
 		const char*  collectiveType;
 		CollectiveType collType;
@@ -536,6 +537,10 @@ namespace ns3
 						<< "); topo-driven tester setup assumes a uniform per-rank input size.");
 				}
 				m_nInputChunks = iChunks;
+				// Scratch, unlike i_chunks, legitimately varies per rank (a rank that relays more
+				// traffic stages more chunks), so take the maximum: the tester allocates one
+				// uniform scratch buffer and it must cover the hungriest rank's offsets.
+				if (sChunks > m_nScratchChunks) m_nScratchChunks = sChunks;
 			}
     } // gpu
 		std::sort(m_activeGpuIds.begin(), m_activeGpuIds.end());

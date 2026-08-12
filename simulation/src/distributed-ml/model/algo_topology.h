@@ -46,6 +46,10 @@ namespace ns3
 		// not (there nchunksperloop == ngpus * i_chunks), so use this rather than
 		// GetNChunksPerLoop() to drive the tester.
 		int GetNInputChunks() const { return m_nInputChunks; }
+		// Largest per-GPU s_chunks over the active GPUs. The scratch buffer the tester allocates
+		// must hold this many chunks, otherwise steps staging into high scratch offsets trip the
+		// bounds check in CollectivesApplication::GetBufferPtrRawBytes.
+		int GetNScratchChunks() const { return m_nScratchChunks; }
 		int GetNChunksPerLoop() const { return m_nChunksPerLoop; }
 		int GetNChannels() const { return m_nChannels; }
 		// GPU ids carrying a non-empty algorithm (>=1 threadblock), ascending. These are the
@@ -60,6 +64,7 @@ namespace ns3
 		NodeContainer m_gpuNodes;
 		NodeContainer m_switchNodes;
 		int m_nInputChunks = 0;              // per-GPU input chunk count (i_chunks); tester n_chunks
+		int m_nScratchChunks = 0;            // max per-GPU scratch chunk count (s_chunks) over active GPUs
 		int m_nChunksPerLoop = 0;            // nchunksperloop from the <algo> root
 		int m_nChannels = 0;                 // nchannels from the <algo> root
 		std::vector<int> m_activeGpuIds;     // gpu ids with a non-empty algorithm, ascending

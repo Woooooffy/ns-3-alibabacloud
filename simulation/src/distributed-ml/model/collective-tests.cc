@@ -1,5 +1,6 @@
 #include "collective-tests.h"
 #include "algo_topology.h"
+#include <algorithm>
 namespace ns3{
 
 	CollectiveTester::CollectiveTester(ApplicationContainer& apps, bool verbose, std::ostream& log,
@@ -48,12 +49,14 @@ namespace ns3{
 		m_nParticipants = (int) m_participants.size();
 	}
 
-	void CollectiveTester::SetupAllgather(size_t input_elts, int n_chunks){
+	void CollectiveTester::SetupAllgather(size_t input_elts, int n_chunks, int scratch_chunks){
 		NS_ASSERT_MSG((input_elts % n_chunks) == 0, "Input element count not multiple of number of chunks.");
 		int n_per_chunk = input_elts / n_chunks;
 		int P = m_nParticipants;
 		size_t output_elts = input_elts * P;
+		// see the note in SetupAlltoall: s_chunks, when known, is the authority on scratch size
 		size_t scratch_elts = output_elts;
+		if (scratch_chunks > 0) scratch_elts = std::max(scratch_elts, (size_t) scratch_chunks * n_per_chunk);
 		// r is the participant rank (0..P-1); the raw app index is m_participants[r].
 		// Data is keyed by rank so it lands in the algorithm's rank-indexed output slice.
 		for (int r = 0; r < P; ++r){
@@ -127,14 +130,14 @@ namespace ns3{
 	}
 
 	void CollectiveTester::SetupAllgather(AlgoTopology& topo, size_t input_elts){
-		SetupAllgather(input_elts, topo.GetNInputChunks());
+		SetupAllgather(input_elts, topo.GetNInputChunks(), topo.GetNScratchChunks());
 	}
 
 	CollectiveTestResult CollectiveTester::VerifyAllgather(AlgoTopology& topo, size_t input_elts){
 		return VerifyAllgather(input_elts, topo.GetNInputChunks());
 	}
 
-	void CollectiveTester::SetupAlltoall(size_t input_elts, int n_chunks){
+	void CollectiveTester::SetupAlltoall(size_t input_elts, int n_chunks, int scratch_chunks){
 		int P = m_nParticipants;
 		NS_ASSERT_MSG((input_elts % n_chunks) == 0, "Input element count not multiple of number of chunks.");
 		NS_ASSERT_MSG((n_chunks % P) == 0, "Chunk count not multiple of number of participants; cannot split evenly per destination.");
@@ -143,7 +146,12 @@ namespace ns3{
 		int partition_size = chunks_per_dest * n_per_chunk; // == input_elts / P
 		// input == output size for alltoall
 		size_t output_elts = input_elts;
+		// Scratch is sized from the algorithm's declared s_chunks when the caller supplies it
+		// (topo-driven path). Algorithms that relay through scratch — a ring alltoall, say —
+		// declare far more scratch chunks than a rank's input holds, and the old input-sized
+		// default made those steps write past the end of the buffer.
 		size_t scratch_elts = input_elts;
+		if (scratch_chunks > 0) scratch_elts = std::max(scratch_elts, (size_t) scratch_chunks * n_per_chunk);
 		// src = participant rank of the sender. Its input is split into P partitions; partition
 		// d holds the data destined for rank d, encoded (src, d, chunk, elem) so the receiver can
 		// verify both who sent it and which partition it belongs to.
@@ -226,7 +234,7 @@ namespace ns3{
 	}
 
 	void CollectiveTester::SetupAlltoall(AlgoTopology& topo, size_t input_elts){
-		SetupAlltoall(input_elts, topo.GetNInputChunks());
+		SetupAlltoall(input_elts, topo.GetNInputChunks(), topo.GetNScratchChunks());
 	}
 
 	CollectiveTestResult CollectiveTester::VerifyAlltoall(AlgoTopology& topo, size_t input_elts){
