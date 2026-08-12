@@ -60,6 +60,7 @@ int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("HETERO_CLUSTER");
 //    LogComponentEnable("CollectivesApplication", LOG_INFO);
 		// LogComponentEnable("SwitchNode", LOG_LEVEL_INFO);
+		LogComponentEnable("AlgoTopo", LOG_LEVEL_WARN);
     uint32_t inputBytes = (1 << 20);
     // label distinguishes output files between runs, e.g. --label=with_rate vs --label=no_rate
     std::string label = "rail";
@@ -656,9 +657,9 @@ int main(int argc, char *argv[]) {
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
 
 
-    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/rail_hierarchical_alltoall.xml");
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/xml_input/rail_alltoall_ring.xml");
 
-    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/rail_alltoall.json");
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/json_input/rail_alltoall_ring.json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
