@@ -190,11 +190,11 @@ int main(int argc, char *argv[]) {
     // Algorithm + per-flow forwarding table. The switch JSON's switch_id_map (0..5 -> TE-CCL
     // 24..29) matches the leaf-then-spine order the containers are built in above; there is one
     // JSON per collective, shared by the rate and _no_rate XMLs since routing is identical.
-    const std::string XML_NAME = "two_pod_hostbound_" + coll + (rate ? "" : "_no_rate") + ".xml";
+    const std::string XML_NAME = "two_pod_hostbound_" + coll + (rate ? "" : "_no_rate") + "_fast_epoch.xml";
     std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
                                                   "../../scratch/xml_input/" + XML_NAME);
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
-                                                      "../../scratch/json_input/two_pod_hostbound_" + coll + ".json");
+                                                      "../../scratch/json_input/two_pod_hostbound_" + coll + "_fast_epoch.json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
