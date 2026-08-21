@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <ostream>
 #include <cstring>
+#include <limits>
+#include <type_traits>
 namespace ns3 {
 // TODO: double check predefined params for topology specificity
 #define MSCCL_MAX_NUM_STEPS 1024
@@ -14,6 +16,13 @@ namespace ns3 {
 // mscclAlgorithm::mscclTBs, the dominant per-GPU allocation — unchanged at 1024.
 #define MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL 128
 #define MSCCL_MAX_NUM_THREAD_BLOCKS (108*2) // set this to 108 which is the number of SMs on A100
+// Threadblock ids are STORED as int8_t -- in mscclThreadBlock::dependentBid, and in the bid /
+// depbid locals threaded through collectives.cc -- so an id above INT8_MAX wraps negative and
+// silently retargets a dependency at an adjacent threadblock instead of erroring. That ceiling is
+// lower than MSCCL_MAX_NUM_THREAD_BLOCKS (216, an SM count, which only bounds the array), so the
+// legal ID RANGE has to be checked separately from the array bound. One threadblock per connection
+// means the count grows with peers x channels: rail_allgather.xml is already at 76 per GPU.
+#define MSCCL_MAX_THREAD_BLOCK_ID INT8_MAX
 #define MSCCL_MAX_NUM_ALGOS 4
 #define MSCCL_MAX_COUNT 72 // make sure this does not overflow wrt the size of mscclWorkElem::mscclMaxAllowCount
 #define MSCCL_MAX_REDUCE_FUSION 16
@@ -87,7 +96,22 @@ struct mscclTransfer {
   // Ignored for gpu<->gpu p2p (socket) transfers; for RDMA transfers it caps the
   // rate at which this step's fragments are paced onto the wire.
   double rate;
+  // Network gates (XML "netgate"/"netwait"). A gate is a node-local one-shot latch that
+  // expresses *wire* ordering, as opposed to depid/deps which express *buffer readiness*.
+  // netGate names the gate this op opens when its RDMA message completes on the qp (the
+  // CQE an RC verb actually gives you); netWait names the gate this op blocks on -- it is
+  // not posted until that gate is open. Both are -1 when unused, and both are only valid
+  // on RDMA send-bearing ops. Gates never close; a gate has exactly one owner.
+  int16_t netGate;
+  int16_t netWait;
 };
+
+// Sentinel for netGate/netWait: this op neither opens nor waits on a gate.
+#define MSCCL_GATE_NONE ((int16_t)-1)
+// Largest gate id a schedule may use. Not a capacity the runtime preallocates -- gate state is
+// sized per node from the highest id actually seen -- just a bound that keeps a typo'd id from
+// allocating a large gate vector on every node. Six gates per GPU is the measured need.
+#define MSCCL_MAX_GATE_ID 4095
 
 // print method
 inline std::ostream& operator<<(std::ostream& os, const mscclTransfer& t) {
@@ -120,6 +144,13 @@ inline std::ostream& operator<<(std::ostream& os, const mscclTransfer& t) {
     os << ", mscclFlowId=" << t.mscclFlowId;
   }
 
+  if (t.netGate != MSCCL_GATE_NONE) {
+    os << ", netGate=" << t.netGate;
+  }
+  if (t.netWait != MSCCL_GATE_NONE) {
+    os << ", netWait=" << t.netWait;
+  }
+
   os << " }";
 
   return os;
@@ -137,6 +168,13 @@ struct mscclThreadBlock {
   struct mscclTransfer transfers[MSCCL_MAX_NUM_STEPS];
   int64_t pad;
 };
+
+// Keeps MSCCL_MAX_THREAD_BLOCK_ID honest if dependentBid is ever widened or narrowed: the parse
+// guard must reject exactly the ids this field cannot hold, no more and no less.
+static_assert(MSCCL_MAX_THREAD_BLOCK_ID <=
+                  std::numeric_limits<
+                      std::remove_extent<decltype(mscclThreadBlock::dependentBid)>::type>::max(),
+              "MSCCL_MAX_THREAD_BLOCK_ID exceeds the type threadblock ids are stored in");
 
 // print method
 inline std::ostream& operator<<(std::ostream& os, const mscclThreadBlock& tb) {
@@ -257,6 +295,10 @@ struct mscclAlgorithm {
   // number of scratch chunks that MSCCL will use
   int nScratchChunks;
   int8_t needsProxy;
+  // highest gate id any of this GPU's transfers declares via netGate/netWait, or -1 if the
+  // schedule uses no gates. The runtime sizes its gate vectors from this, so there is no
+  // compile-time maximum to keep in sync with the emitter.
+  int16_t maxNetGate;
 };
 
 // print

@@ -1,5 +1,6 @@
 #include "collectives.h"
 
+#include <sstream>
 #include <iomanip>
 #include <functional>
 
@@ -457,21 +458,28 @@ namespace ns3 {
 
 		// The send step completes as soon as the message is handed to the RDMA engine, not
 		// when the data physically finishes transmitting: from the host algorithm's view its
-		// job (posting the send) is done here. OnRdmaSendComplete still fires later, but only
-		// for logging now -- it no longer drives step completion.
+		// job (posting the send) is done here. OnRdmaSendComplete still fires later; it does
+		// not drive step completion, but it is where this step's network gate (if any) opens
+		// -- that is the whole point of gates, since a *send* step's completion here says
+		// nothing about the wire (see mscclTransfer::netGate/netWait).
 		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
 
 	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
 		uint16_t dstoffU = static_cast<uint16_t>(dstoff);
-		// Logging only: the send step already completed in SendRdma when the message was
-		// handed to the RDMA engine. This fires later, when the data physically finishes
-		// transmitting, and no longer drives step completion.
+		// The send step itself already completed in SendRdma, when the message was handed to
+		// the RDMA engine; this fires later, on message completion (snd_una >= startSeq+size),
+		// and does not drive step completion. It does open this step's network gate: message
+		// completion is the only signal a real proxy thread can reap, so it is what a gate is
+		// defined on.
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
 			<< ": RDMA send to " << sendpeer << " physically drained (sender side)"
 			<< " bid=" << (int)bid << " sid=" << sid
 			<< " dstInfo=(" << dstbuf << "," << dstoffU << ")"
 			<< " at t=" << Simulator::Now().GetNanoSeconds());
+		// The finishCb bind list is already full, so the gate id is looked up from the transfer
+		// here rather than bound as a ninth argument -- bid and sid identify it uniquely.
+		m_app->OpenGateForStep(bid, sid);
 	}
 
 	void MscclChannel::Recv(int8_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
@@ -734,6 +742,28 @@ namespace ns3 {
 		}
 	}
 
+	void CollectivesApplication::OpenGate(int16_t gate){
+		if (m_gateOpen[gate]) return; // idempotent; gates never close
+		NS_LOG_DEBUG("GPU " << GetNode()->GetId() << " opening gate " << gate
+			<< " (" << m_gateWaiters[gate].size() << " waiter(s))"
+			<< " t=" << Simulator::Now().GetNanoSeconds());
+		m_gateOpen[gate] = 1;
+		// Waking a busy threadblock is safe to drop: TryScheduleNextStep is a no-op while a step
+		// is in flight, but m_gateOpen is an absorbing latch re-read on every entry, and
+		// StepCompletionCallback unconditionally re-calls TryScheduleNextStep when it clears
+		// busy. That level-triggered property is why a gate must never be cleared mid-run.
+		for (int8_t bid : m_gateWaiters[gate]){
+			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
+		}
+		m_gateWaiters[gate].clear();
+	}
+
+	void CollectivesApplication::OpenGateForStep(int8_t bid, int16_t sid){
+		int16_t gate = m_algo->mscclTBs[bid].transfers[sid].netGate;
+		if (gate == MSCCL_GATE_NONE) return;
+		OpenGate(gate);
+	}
+
 	void CollectivesApplication::TryScheduleNextStep(int8_t bid){
 		mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
 		TBState* tbState = &m_TBStates[bid];
@@ -749,6 +779,17 @@ namespace ns3 {
 		if (sid == tb->nsteps) return; // no more steps
 		//TransferState* tState = GetTransferState(bid, sid);
 		mscclTransfer* tran = &tb->transfers[sid];
+		// Network gate check. This must come BEFORE the data-dependency block below, which
+		// mutates state on its success path (`tbState->global_step += nDeps - 1`): a gate check
+		// placed after it that returns would leave global_step bumped, and the retry would bump
+		// it again, silently corrupting every downstream flag comparison on this threadblock.
+		if (tran->netWait != MSCCL_GATE_NONE && !m_gateOpen[tran->netWait]){
+			NS_LOG_DEBUG("GPU " << nodeId << " TB=" << (int)bid << " sid=" << sid
+				<< " BLOCKED on gate " << tran->netWait
+				<< " t=" << Simulator::Now().GetNanoSeconds());
+			m_gateWaiters[tran->netWait].insert(bid);
+			return;
+		}
 		// int16_t nDeps = tState->nPendingDeps;
 		int16_t nDeps = tran->numDependences;
 		// int16_t firstDepId = tState->firstPendingDep;
@@ -811,6 +852,34 @@ namespace ns3 {
 			NS_FATAL_ERROR("No valid algorithm found.");
 		}
 		Bootstrap();
+
+		// Network gates (see mscclTransfer::netGate/netWait). Size the gate state from the
+		// highest gate id the parser saw on this GPU -- maxNetGate is -1 when the schedule uses
+		// no gates, which leaves both vectors empty and the gate check in TryScheduleNextStep
+		// unreachable.
+		m_gateOpen.assign(m_algo->maxNetGate + 1, 0);
+		m_gateWaiters.assign(m_algo->maxNetGate + 1, std::unordered_set<int8_t>());
+		// Gates are opened only on the RDMA path (MscclChannel::OnRdmaSendComplete), so a gate
+		// on a socket-path op would never open and would hang the run. Peer classification is
+		// already known here -- RdmaFabricHelper populates the peer ip table at topology-build
+		// time -- so this fails at app start, before any simulation time passes. Every peer is
+		// RDMA in the current topologies; this exists to make the constraint explicit.
+		if (m_algo->maxNetGate != MSCCL_GATE_NONE){
+			for (int8_t bid = 0; bid < m_algo->nBlocks; ++bid){
+				mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
+				for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+					mscclTransfer* tran = &tb->transfers[sid];
+					if (tran->netGate == MSCCL_GATE_NONE && tran->netWait == MSCCL_GATE_NONE) continue;
+					if (tb->sendpeer < 0 || !IsRdmaPeer(tb->sendpeer)){
+						NS_FATAL_ERROR("Node " << GetNode()->GetId() << " TB " << (int)bid << " step " << sid
+							<< " carries a network gate (netGate=" << tran->netGate << ", netWait=" << tran->netWait
+							<< ") but its sendpeer (" << tb->sendpeer << ") is not an RDMA peer. Gates are only"
+							<< " opened on the RDMA path, so this schedule would hang.");
+					}
+				}
+			}
+		}
+
 		for (int8_t bid = 0; bid < m_algo->nBlocks; ++bid){
 			// mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
 			m_TBStates.emplace(bid, TBState(bid)); // built TBStates
@@ -1066,7 +1135,16 @@ namespace ns3 {
 		for (auto& pair : m_TBStates){
 			mscclThreadBlock* tb = &m_algo->mscclTBs[pair.first];
 			if (pair.second.busy || pair.second.local_step < tb->nsteps){
-				NS_FATAL_ERROR("BUG: TB " << pair.first << " on node " << GetNode()->GetId() << " not finished at application close. Has " << tb->nsteps << " steps, at step " << pair.second.local_step);
+				// Name the gate too when the tb is parked on one: a gate that never opens drains
+				// the event queue and returns a plausible-looking wrong answer otherwise.
+				std::ostringstream gateInfo;
+				if (pair.second.local_step < tb->nsteps){
+					int16_t netWait = tb->transfers[pair.second.local_step].netWait;
+					if (netWait != MSCCL_GATE_NONE){
+						gateInfo << " Parked on gate " << netWait << " (open=" << (int)m_gateOpen[netWait] << ").";
+					}
+				}
+				NS_FATAL_ERROR("BUG: TB " << pair.first << " on node " << GetNode()->GetId() << " not finished at application close. Has " << tb->nsteps << " steps, at step " << pair.second.local_step << "." << gateInfo.str());
 			}
 		}
 	}

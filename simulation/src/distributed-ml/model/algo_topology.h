@@ -68,11 +68,17 @@ namespace ns3
 		int m_nChunksPerLoop = 0;            // nchunksperloop from the <algo> root
 		int m_nChannels = 0;                 // nchannels from the <algo> root
 		std::vector<int> m_activeGpuIds;     // gpu ids with a non-empty algorithm, ascending
-		// switch node id -> (neighbor node id -> outgoing ifIndex), built lazily
-		// the first time a given switch is touched by ParseSwitchJson
-		std::map<uint32_t, std::map<uint32_t, uint32_t>> m_switchPortCache;
+		// switch node id -> (neighbor node id -> every outgoing ifIndex reaching that
+		// neighbor), built lazily the first time a given switch is touched by
+		// ParseSwitchJson. The value is a vector, not a single port, because a realistic
+		// fat tree runs several parallel links between the same switch pair (e.g. each
+		// leaf's multiple uplinks to one spine) -- keying one port per neighbor would let
+		// the last-installed device silently overwrite its siblings.
+		std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> m_switchPortCache;
 
-		bool ResolveOutPort(Ptr<SwitchNode> sw, Ptr<Node> target, uint32_t& outIfIndex);
+		std::map<uint32_t, std::vector<uint32_t>>& SwitchPortCache(Ptr<SwitchNode> sw);
+		bool ResolveOutPorts(Ptr<SwitchNode> sw, Ptr<Node> target, std::vector<uint32_t>& outIfIndices);
+		bool ResolvePortNeighbor(Ptr<SwitchNode> sw, uint32_t ifIndex, uint32_t& neighborNodeId);
 	};
 
 	AlgoParseResult mscclGetBufferType(const char* str, uint8_t* output);

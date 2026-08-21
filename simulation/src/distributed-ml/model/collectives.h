@@ -203,6 +203,11 @@ namespace ns3 {
 			DataType::Type GetDataType();
 		  TypeId GetSocketTypeId();
 			void StepCompletionCallback(int8_t bid, int16_t sid);
+			// Opens the network gate declared by transfer (bid, sid), if it declares one. Called
+			// from MscclChannel::OnRdmaSendComplete, i.e. when that step's RDMA message actually
+			// completes on the qp -- the CQE a proxy thread could really reap. No-op for a step
+			// with netGate == MSCCL_GATE_NONE.
+			void OpenGateForStep(int8_t bid, int16_t sid);
 			DataBuffer* GetSrcBuffer();
 			DataBuffer* GetDstBuffer();
 			DataBuffer* GetScratchBuffer();
@@ -244,6 +249,8 @@ namespace ns3 {
 			void NonTransferHandler(int8_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op); // add some fixed delay
 			void RunStep(int8_t bid, int16_t sid);
 			void TryScheduleNextStep(int8_t bid);
+			// Marks `gate` open (idempotently) and re-runs every threadblock parked on it.
+			void OpenGate(int16_t gate);
 			void InterpretAlgo();
 			void Bootstrap();
 			// establishes every channel's persistent RDMA send-peer connections. Deferred one
@@ -278,6 +285,16 @@ namespace ns3 {
 			DataBuffer m_dstBuf;
 			DataBuffer m_scratchBuf;
 			uint16_t m_rdmaSportCounter = 0; // node-global; see AllocateRdmaSport
+			// Network gate state (see mscclTransfer::netGate/netWait). Both vectors are sized at
+			// InterpretAlgo from mscclAlgorithm::maxNetGate, so there is no MSCCL_MAX_GATES to tune.
+			//
+			// Gates are one-shot and never reset. This is sound only because the simulator runs a
+			// single work item / single iteration: m_currWorkId and m_currIter are initialized to 0
+			// and never advanced, and nLoops is effectively 1. If multi-loop pipelining is ever
+			// modeled, both vectors must be cleared per iteration -- otherwise iteration 2 finds
+			// every gate already open and runs unpaced.
+			std::vector<uint8_t> m_gateOpen;                       // gate id -> open?
+			std::vector<std::unordered_set<int8_t>> m_gateWaiters; // gate id -> tbs parked on it
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			#endif

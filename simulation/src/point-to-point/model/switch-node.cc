@@ -67,6 +67,28 @@ SwitchNode::SwitchNode(){
 		m_lastPktSize[i] = m_lastPktTs[i] = 0;
 	for (uint32_t i = 0; i < pCnt; i++)
 		m_u[i] = 0;
+	// Zeroed for the same reason NVSwitchNode's constructor zeroes them: the monitors below
+	// early-out by comparing the live counter against these, so reading them uninitialized
+	// makes the first sample of every port either spuriously printed or spuriously skipped.
+	for (uint32_t i = 0; i < pCnt; i++)
+		last_txBytes[i] = last_port_qlen[i] = 0;
+}
+
+uint32_t SwitchNode::FlowHash(const CustomHeader &ch) const {
+	union {
+		uint8_t u8[4+4+2+2];
+		uint32_t u32[3];
+	} buf;
+	buf.u32[0] = ch.sip;
+	buf.u32[1] = ch.dip;
+	if (ch.l3Prot == 0x6)
+		buf.u32[2] = ch.tcp.sport | ((uint32_t)ch.tcp.dport << 16);
+	else if (ch.l3Prot == 0x11)
+		buf.u32[2] = ch.udp.sport | ((uint32_t)ch.udp.dport << 16);
+	else if (ch.l3Prot == 0xFC || ch.l3Prot == 0xFD)
+		buf.u32[2] = ch.ack.sport | ((uint32_t)ch.ack.dport << 16);
+
+	return EcmpHash(buf.u8, 12, m_ecmpSeed);
 }
 
 int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){
@@ -81,20 +103,7 @@ int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){
 	auto &nexthops = entry->second;
 
 	// pick one next hop based on hash
-	union {
-		uint8_t u8[4+4+2+2];
-		uint32_t u32[3];
-	} buf;
-	buf.u32[0] = ch.sip;
-	buf.u32[1] = ch.dip;
-	if (ch.l3Prot == 0x6)
-		buf.u32[2] = ch.tcp.sport | ((uint32_t)ch.tcp.dport << 16);
-	else if (ch.l3Prot == 0x11)
-		buf.u32[2] = ch.udp.sport | ((uint32_t)ch.udp.dport << 16);
-	else if (ch.l3Prot == 0xFC || ch.l3Prot == 0xFD)
-		buf.u32[2] = ch.ack.sport | ((uint32_t)ch.ack.dport << 16);
-
-	uint32_t idx = EcmpHash(buf.u8, 12, m_ecmpSeed) % nexthops.size();
+	uint32_t idx = FlowHash(ch) % nexthops.size();
 	return nexthops[idx];
 }
 
@@ -117,9 +126,13 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 	int idx = -1;
 	if (m_customFlowForwarding && ch.l3Prot == 0x11 && ch.udp.mscclFlowId != MscclFlowIdHeader::NO_FLOW_ID){ // UDP data packet: try custom flow match before falling back to ECMP
 		auto search = m_flowForwardingTable.find(ch.udp.mscclFlowId);
-		if (search != m_flowForwardingTable.end()){
-			idx = static_cast<int>(search->second);
-			NS_LOG_INFO("Switch " << m_id << " msccl flow-forwarding rule matched for flow " << ch.udp.mscclFlowId << ", sending out port " << idx);
+		if (search != m_flowForwardingTable.end() && !search->second.empty()){
+			// The rule pins this flow to a next-hop *neighbor*; when several parallel ports reach
+			// that neighbor, any of them keeps the dictated path, so hash within the candidate set
+			// rather than always taking one port and leaving the other uplinks idle.
+			const std::vector<uint32_t>& ports = search->second;
+			idx = static_cast<int>(ports[ports.size() == 1 ? 0 : FlowHash(ch) % ports.size()]);
+			NS_LOG_INFO("Switch " << m_id << " msccl flow-forwarding rule matched for flow " << ch.udp.mscclFlowId << ", sending out port " << idx << " (of " << ports.size() << " port(s) toward the rule's next hop)");
 			if (idx != GetOutDev(p, ch)){
 				NS_LOG_DEBUG("Switch " << m_id << " flow-forwarding rule for flow " << ch.udp.mscclFlowId << " sends out port " << idx << "; ECMP lookup would have sent to port " << GetOutDev(p, ch));
 			}
@@ -213,8 +226,8 @@ void SwitchNode::ClearTable(){
 	m_rtTable.clear();
 }
 
-void SwitchNode::AddFlowForwardingRule(uint32_t flowId, uint32_t port){
-	m_flowForwardingTable[flowId] = port;
+void SwitchNode::AddFlowForwardingRule(uint32_t flowId, const std::vector<uint32_t>& ports){
+	m_flowForwardingTable[flowId] = ports;
 }
 
 // This function can only be called in switch mode
@@ -363,7 +376,9 @@ int SwitchNode::log2apprx(int x, int b, int m, int l){
 */
 void SwitchNode::PrintSwitchQlen(FILE* qlen_output){
 	uint32_t n_dev = this->GetNDevices();
-	for(uint32_t i = 1; i < n_dev; ++i){
+	// From port 0, not 1: switches get no InternetStackHelper and therefore no loopback
+	// device, so device 0 is the first real link and skipping it dropped a port from the log.
+	for(uint32_t i = 0; i < n_dev; ++i){
 		uint64_t port_len = 0;
 		for(uint32_t j=0; j < qCnt; ++j){
 			port_len += m_mmu->egress_bytes[i][j];
@@ -385,7 +400,8 @@ void SwitchNode::PrintSwitchQlen(FILE* qlen_output){
 */
 void SwitchNode::PrintSwitchBw(FILE* bw_output, uint32_t bw_mon_interval){
 	uint32_t n_dev = this->GetNDevices();
-	for(uint32_t i = 1; i < n_dev; ++i){
+	// From port 0 -- see PrintSwitchQlen above.
+	for(uint32_t i = 0; i < n_dev; ++i){
 		if(last_txBytes[i] == m_txBytes[i]){
 			continue;
 		}

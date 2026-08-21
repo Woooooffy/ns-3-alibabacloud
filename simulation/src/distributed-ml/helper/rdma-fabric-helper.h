@@ -22,7 +22,7 @@ class QbbNetDevice;
  * Unlike a typical ns-3 Helper, this does not install any devices itself --
  * it discovers the qbb link graph from NetDevices/Channels already installed
  * on `gpus`/`switches`/`nvswitches` (the same live-graph-walk idiom as
- * AlgoTopology::ResolveOutPort), so the caller only needs to have built the
+ * AlgoTopology::ResolveOutPorts), so the caller only needs to have built the
  * topology (nodes + qbb links) before calling Build(). This keeps Build()'s
  * cost proportional to topology size at ns-3 runtime, rather than requiring
  * the caller to hand it a precomputed routing table.

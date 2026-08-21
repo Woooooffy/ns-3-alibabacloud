@@ -190,7 +190,9 @@ void NVSwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pa
 */
 void NVSwitchNode::PrintSwitchQlen(FILE* qlen_output){
 	uint32_t n_dev = this->GetNDevices();
-	for(uint32_t i = 1; i < n_dev; ++i){
+	// From port 0, not 1: nvswitches get no InternetStackHelper and therefore no loopback
+	// device, so device 0 is the first real link and skipping it dropped a port from the log.
+	for(uint32_t i = 0; i < n_dev; ++i){
 		uint64_t port_len = 0;
 		for(uint32_t j=0; j < qCnt; ++j){
 			port_len += m_mmu->egress_bytes[i][j];
@@ -212,7 +214,8 @@ void NVSwitchNode::PrintSwitchQlen(FILE* qlen_output){
 */
 void NVSwitchNode::PrintSwitchBw(FILE* bw_output, uint32_t bw_mon_interval){
 	uint32_t n_dev = this->GetNDevices();
-	for(uint32_t i = 1; i < n_dev; ++i){
+	// From port 0 -- see PrintSwitchQlen above.
+	for(uint32_t i = 0; i < n_dev; ++i){
 		if(last_txBytes[i] == m_txBytes[i]){
 			continue;
 		}
