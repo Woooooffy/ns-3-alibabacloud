@@ -84,6 +84,7 @@ int main(int argc, char *argv[]) {
     // just an upper bound, so a flow paced below line rate actually runs at its assigned rate.
     bool rateTargeting = true;
     bool flowId = true;              // install the per-flow switch forwarding table from the JSON
+		bool gate = true;
     std::string checkLog = "minimal"; // silent | minimal | verbose
     uint32_t maxMismatches = 10;
 
@@ -94,6 +95,7 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("rate", "Use the rate-annotated XML (false = the _no_rate ablation)", rate);
     cmd.AddValue("rateTargeting", "Treat per-flow XML rates as targets, not just caps", rateTargeting);
     cmd.AddValue("flowId", "Install per-flow switch forwarding from the switch JSON", flowId);
+		cmd.AddValue("gate", "Gate later epoch sends with network send dependency", gate);
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
     cmd.Parse(argc, argv);
@@ -190,7 +192,7 @@ int main(int argc, char *argv[]) {
     // Algorithm + per-flow forwarding table. The switch JSON's switch_id_map (0..5 -> TE-CCL
     // 24..29) matches the leaf-then-spine order the containers are built in above; there is one
     // JSON per collective, shared by the rate and _no_rate XMLs since routing is identical.
-    const std::string XML_NAME = "two_pod_hostbound_" + coll + (rate ? "" : "_no_rate") + "_fast_epoch.xml";
+    const std::string XML_NAME = "two_pod_hostbound_" + coll + (rate ? "" : "_no_rate") + "_fast_epoch" + (gate ? "_gated" : "") + ".xml";
     std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
                                                   "../../scratch/xml_input/" + XML_NAME);
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
