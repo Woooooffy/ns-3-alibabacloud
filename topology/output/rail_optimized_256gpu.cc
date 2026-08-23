@@ -23,7 +23,7 @@ int main(int argc, char *argv[]) {
     for (uint32_t i = 0; i < 32; ++i) { nvswtches.Add(CreateObject<NVSwitchNode>()); }
     QbbHelper link_helper0;
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(4096));
-    link_helper0.SetChannelAttribute("Delay", StringValue("100ns"));
+    link_helper0.SetChannelAttribute("Delay", StringValue("700ns"));
     link_helper0.SetDeviceAttribute("DataRate", StringValue("1800GBps"));
     
     QbbHelper link_helper1;

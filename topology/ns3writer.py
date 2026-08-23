@@ -1,14 +1,33 @@
-from ns3codegen import *
+from codegen import MakeGPUs, MakeSwitches, MakeNVSwitches, LinkClass, InstallLink
+from ns3codegen import NS3BuildRdmaFabric
 
-from typing import List
+# One entry per node type the IR knows about: the NodeContainer the generated scenario declares
+# for it, and the ns-3 class its nodes are instances of. Container names appear in the emitted
+# C++ in several places (declaration, Install, RdmaFabricHelper::Build); they are spelled once
+# here so those uses cannot drift apart.
+NODE_KINDS = {
+	"gpu":      ("gpunodes",   "GPU"),
+	"switch":   ("regswtches", "SwitchNode"),
+	"nvswitch": ("nvswtches",  "NVSwitchNode"),
+}
+
+# The ns-3 link helper realizing each IR link class.
+LINK_HELPERS = {
+	"p2p": "PointToPoint",  # a direct gpu<->gpu link
+	"qbb": "Qbb",           # anything crossing the switched fabric
+}
 
 class NS3Writer:
 	def __init__(self, filename, codegen):
 		self.filename = filename
-		self.gpus = codegen.gpus		   # dict[str, int]
-		self.switches = codegen.switches  # dict[str, int] -- SwitchNode
-		self.nvswitches = codegen.nvswitches # dict[str, int] -- NVSwitchNode
-		self.link_helpers = codegen.link_helpers # dict[tuple, int]
+		self.gpus = codegen.gpus             # dict[str, int] -- name -> index within its type
+		# same, keyed by the IR's node type so lookups walk NODE_KINDS rather than three
+		# hand-written branches
+		self.nodes_by_kind = {
+			"gpu": codegen.gpus,
+			"switch": codegen.switches,
+			"nvswitch": codegen.nvswitches,
+		}
 		self.insns = codegen.insns
 
 		self.lines = []
@@ -52,9 +71,8 @@ class NS3Writer:
 		self.emit("int main(int argc, char *argv[]) {")
 		self.indent += 1
 
-		self.emit("NodeContainer gpunodes;")
-		self.emit("NodeContainer regswtches;")
-		self.emit("NodeContainer nvswtches;")
+		for container, _ in NODE_KINDS.values():
+			self.emit(f"NodeContainer {container};")
 		self.emit("")
 		self.emit("// PFC backpressure (CheckAndSendPfc) runs unconditionally in SwitchNode, but only")
 		self.emit("// has an effect once QcnEnabled lets a stalled NIC's queue resume; ECN marking is")
@@ -75,32 +93,39 @@ class NS3Writer:
 	# --------------------------------------------------
 
 	def _handle_insn(self, insn):
-		if insn.__class__.__name__ == "NS3MakeGPUs":
-			self._emit_make_typed_nodes("gpunodes", "GPU", insn.n_gpus)
+		# Dispatch on the CLASS, never on its __name__. The IR classes are named neutrally
+		# (MakeGPUs, LinkClass, ...) and ns3codegen's NS3* spellings are aliases BINDING THE
+		# SAME class objects -- an alias does not give a class a second __name__, so a string
+		# comparison quietly matches nothing the moment the IR is renamed. Class patterns match
+		# through any spelling and fail loudly if a class disappears.
+		match insn:
+			case MakeGPUs():
+				self._emit_make_typed_nodes("gpu", insn.n_gpus)
 
-		elif insn.__class__.__name__ == "NS3MakeRegSwitches":
-			self._emit_make_typed_nodes("regswtches", "SwitchNode", insn.n_switches)
+			case MakeSwitches():
+				self._emit_make_typed_nodes("switch", insn.n_switches)
 
-		elif insn.__class__.__name__ == "NS3MakeNVSwitches":
-			self._emit_make_typed_nodes("nvswtches", "NVSwitchNode", insn.n_nvswitches)
+			case MakeNVSwitches():
+				self._emit_make_typed_nodes("nvswitch", insn.n_nvswitches)
 
-		elif insn.__class__.__name__ == "NS3MakeLinkHelper":
-			self._emit_link_helper(insn)
+			case LinkClass():
+				self._emit_link_helper(insn)
 
-		elif insn.__class__.__name__ == "NS3InstallLink":
-			self._emit_link_install(insn)
+			case InstallLink():
+				self._emit_link_install(insn)
 
-		elif insn.__class__.__name__ == "NS3BuildRdmaFabric":
-			self._emit_build_rdma_fabric(insn)
+			case NS3BuildRdmaFabric():
+				self._emit_build_rdma_fabric(insn)
 
-		else:
-			raise ValueError(f"Unknown instruction {insn}")
+			case _:
+				raise ValueError(f"Unknown instruction {insn!r} ({type(insn).__name__})")
 
-	def _emit_make_typed_nodes(self, container_name, cpp_type, n):
+	def _emit_make_typed_nodes(self, kind, n):
 		# NodeContainer has no templated Create<T>(); build n nodes of the given
 		# subclass directly and append them
 		if n <= 0:
 			return
+		container_name, cpp_type = NODE_KINDS[kind]
 		self.emit(f"for (uint32_t i = 0; i < {n}; ++i) {{ {container_name}.Add(CreateObject<{cpp_type}>()); }}")
 
 	# --------------------------------------------------
@@ -109,16 +134,12 @@ class NS3Writer:
 
 	def _emit_link_helper(self, insn):
 		hid = insn.id
-		delay_val, delay_unit = insn.delay
-		bw_val, bw_unit = insn.data_rate
+		delay_val, delay_unit = insn.latency
+		bw_val, bw_unit = insn.bandwidth
 
-		match insn.type:
-			case "p2p":
-				helper_name = "PointToPoint"
-			case "qbb":
-				helper_name = "Qbb"
-			case _:
-				raise RuntimeError(f"Unrecognized link type {insn.type}.")
+		if insn.type not in LINK_HELPERS:
+			raise RuntimeError(f"Unrecognized link type {insn.type}.")
+		helper_name = LINK_HELPERS[insn.type]
 
 		self.emit(f"{helper_name}Helper link_helper{hid};")
 		self.emit(f"link_helper{hid}.SetDeviceAttribute(\"Mtu\", UintegerValue({insn.mtu}));")
@@ -133,22 +154,19 @@ class NS3Writer:
 	# --------------------------------------------------
 
 	def _resolve_node(self, name):
-		if name in self.gpus:
-			return f"gpunodes.Get({self.gpus[name]})", "gpu"
-		elif name in self.switches:
-			return f"regswtches.Get({self.switches[name]})", "switch"
-		elif name in self.nvswitches:
-			return f"nvswtches.Get({self.nvswitches[name]})", "nvswitch"
-		else:
-			raise ValueError(f"Unknown node {name}")
+		for kind, (container, _) in NODE_KINDS.items():
+			index = self.nodes_by_kind[kind].get(name)
+			if index is not None:
+				return f"{container}.Get({index})", kind
+		raise ValueError(f"Unknown node {name}")
 
 	def _emit_link_install(self, insn):
 		src_expr, src_type = self._resolve_node(insn.src)
 		dst_expr, dst_type = self._resolve_node(insn.dst)
 
-		hid = insn.link_helper
-		# must match the naming the codegen's routing pass already assumed
-		# (NS3CodeGenerator.GenNewLink)
+		hid = insn.link_class
+		# must match the naming the IR's link_id assignment already assumed
+		# (TopologyIR.GenNewLink)
 		container_expr = f"devs{hid}_{insn.link_id}"
 
 		self.emit(
@@ -201,7 +219,8 @@ class NS3Writer:
 
 		self.emit("// ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----")
 		self.emit("RdmaFabricHelper rdmaFabric;")
-		self.emit("rdmaFabric.Build(gpunodes, regswtches, nvswtches);")
+		containers = ", ".join(container for container, _ in NODE_KINDS.values())
+		self.emit(f"rdmaFabric.Build({containers});")
 		self.emit("")
 
 	# --------------------------------------------------
