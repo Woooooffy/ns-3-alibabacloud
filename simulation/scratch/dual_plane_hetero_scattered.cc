@@ -1,23 +1,113 @@
+// DualPlaneHetero, SCATTERED leaf assignment: 96 GPUs (12 nodes x 8 rails) behind 8
+// NVSwitches, fanning out to 10 regular switches (leaves/spines of the "dual plane" fabric).
+// GPU->leaf assignment is SCATTERED: leaves 0/1/2 round-robin across every group of 3
+// consecutive GPUs (gpu i -> regswtches[i % 3]), instead of clustered's contiguous 32-GPU
+// blocks -- see dual_plane_hetero.cc for that variant. The harness around the topology
+// (algorithm parse, correctness check, congestion monitoring) follows two_pod_rail_hostbound.cc.
+//
+// Inputs follow the "dual_plane_scattered_<coll>[_no_rate].xml" / "dual_plane_scattered_<coll>.json"
+// naming; the switch JSON's switch_id_map (0..9 -> TE-CCL ids) matches the regswtches
+// declaration order above.
+
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/distributed-ml-module.h"
 
+#include <sys/stat.h>
+#include <cstdio>
+#include <cstdint>
+#include <fstream>
+#include <iostream>
+#include <string>
 #include <vector>
+#include <array>
+#include <map>
+#include <tuple>
 
 using namespace ns3;
 
+// ---- event-driven congestion monitoring ----------------------------------------------
+// These are TracedCallbacks fired synchronously from inside existing packet events on the
+// switch egress ports (QbbNetDevice's QbbEnqueue/QbbDequeue/QbbDrop/QbbPfc trace sources).
+// Because they run as a side effect of events already in the queue, they schedule NOTHING
+// of their own -- the simulator's event list, its natural termination, and Simulator::Now()
+// (hence the reported algorithm latency/bandwidth) are all completely unaffected.
+
+// running per-(switch id, port ifIndex, priority queue) egress occupancy in bytes,
+// reconstructed from enqueue/dequeue deltas so each row carries the exact post-event depth.
+static std::map<std::tuple<uint32_t, uint32_t, uint32_t>, int64_t> g_qBytes;
+
+// QbbEnqueue: fires just before a packet is pushed onto egress queue `qIndex`.
+static void OnSwitchEnqueue(FILE* out, uint32_t swId, uint32_t port, Ptr<const Packet> p, uint32_t qIndex) {
+    int64_t& depth = g_qBytes[std::make_tuple(swId, port, qIndex)];
+    depth += p->GetSize();
+    fprintf(out, "%ld,%u,%u,%u,%ld,enq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
+}
+
+// QbbDequeue: fires as a packet leaves egress queue `qIndex` onto the wire.
+static void OnSwitchDequeue(FILE* out, uint32_t swId, uint32_t port, Ptr<const Packet> p, uint32_t qIndex) {
+    int64_t& depth = g_qBytes[std::make_tuple(swId, port, qIndex)];
+    depth -= p->GetSize();
+    if (depth < 0) depth = 0; // guard against control pkts (e.g. PFC) not counted on enqueue
+    fprintf(out, "%ld,%u,%u,%u,%ld,deq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
+}
+
+// QbbDrop: fires when admission control / buffer overflow discards a packet.
+static void OnSwitchDrop(FILE* out, uint32_t swId, uint32_t port, Ptr<const Packet> p, uint32_t qIndex) {
+    fprintf(out, "%ld,%u,%u,%u,%u,drop\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, p->GetSize());
+}
+
+// QbbPfc: type 1 = PAUSE sent upstream (this port's ingress is congested), 0 = RESUME.
+// q_id and bytes columns are left blank so PFC rows share the drop event schema.
+static void OnSwitchPfc(FILE* out, uint32_t swId, uint32_t port, uint32_t type) {
+    fprintf(out, "%ld,%u,%u,,,%s\n", Simulator::Now().GetNanoSeconds(), swId, port, type == 1 ? "pause" : "resume");
+}
+
 int main(int argc, char *argv[]) {
+    NS_LOG_COMPONENT_DEFINE("DUAL_PLANE_HETERO_SCATTERED");
+//    LogComponentEnable("CollectivesApplication", LOG_INFO);
+//    LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
+    LogComponentEnable("AlgoTopo", LOG_LEVEL_WARN);
+
+    uint32_t inputBytes = (1 << 20);
+    // label distinguishes output files between runs, e.g. --label=with_rate vs --label=no_rate
+    std::string label = "dual_plane_scattered";
+    // Which dual_plane_clustered_<coll> XML to run. `rate` picks the rate-annotated schedule
+    // vs the _no_rate ablation.
+    std::string coll = "alltoall";  // allgather | alltoall
+    bool rate = true;
+    // Make the per-flow XML "rate" a true target (accumulating token-bucket shaper) rather than
+    // just an upper bound, so a flow paced below line rate actually runs at its assigned rate.
+    bool rateTargeting = true;
+    bool flowId = true;              // install the per-flow switch forwarding table from the JSON
+    std::string checkLog = "minimal"; // silent | minimal | verbose
+    uint32_t maxMismatches = 10;
+
+    CommandLine cmd;
+    cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
+    cmd.AddValue("label", "Suffix for the congestion-monitor output CSVs", label);
+    cmd.AddValue("coll", "Collective to run: allgather | alltoall", coll);
+    cmd.AddValue("rate", "Use the rate-annotated XML (false = the _no_rate ablation)", rate);
+    cmd.AddValue("rateTargeting", "Treat per-flow XML rates as targets, not just caps", rateTargeting);
+    cmd.AddValue("flowId", "Install per-flow switch forwarding from the switch JSON", flowId);
+    cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
+    cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
+    cmd.Parse(argc, argv);
+
+    if (coll != "allgather" && coll != "alltoall")
+        NS_FATAL_ERROR("Unknown --coll value '" << coll << "' (expected allgather|alltoall).");
+
     NodeContainer gpunodes;
     NodeContainer regswtches;
     NodeContainer nvswtches;
-    
+
     // PFC backpressure (CheckAndSendPfc) runs unconditionally in SwitchNode, but only
     // has an effect once QcnEnabled lets a stalled NIC's queue resume; ECN marking is
     // separately gated per-switch by the EcnEnabled attribute set below.
     Config::SetDefault("ns3::QbbNetDevice::QcnEnabled", BooleanValue(true));
-    
+
     for (uint32_t i = 0; i < 96; ++i) { gpunodes.Add(CreateObject<GPU>()); }
     for (uint32_t i = 0; i < 10; ++i) { regswtches.Add(CreateObject<SwitchNode>()); }
     for (uint32_t i = 0; i < 8; ++i) { nvswtches.Add(CreateObject<NVSwitchNode>()); }
@@ -25,12 +115,12 @@ int main(int argc, char *argv[]) {
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper0.SetChannelAttribute("Delay", StringValue("350ns"));
     link_helper0.SetDeviceAttribute("DataRate", StringValue("1800GBps"));
-    
+
     QbbHelper link_helper1;
     link_helper1.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper1.SetChannelAttribute("Delay", StringValue("700ns"));
     link_helper1.SetDeviceAttribute("DataRate", StringValue("400Gbps"));
-    
+
     NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), nvswtches.Get(0));
     NetDeviceContainer devs0_1 = link_helper0.Install(gpunodes.Get(1), nvswtches.Get(0));
     NetDeviceContainer devs0_2 = link_helper0.Install(gpunodes.Get(2), nvswtches.Get(0));
@@ -320,100 +410,100 @@ int main(int argc, char *argv[]) {
     NetDeviceContainer devs1_286 = link_helper1.Install(regswtches.Get(2), regswtches.Get(7));
     NetDeviceContainer devs1_287 = link_helper1.Install(regswtches.Get(2), regswtches.Get(7));
     NetDeviceContainer devs1_288 = link_helper1.Install(gpunodes.Get(0), regswtches.Get(3));
-    NetDeviceContainer devs1_289 = link_helper1.Install(gpunodes.Get(1), regswtches.Get(4));
-    NetDeviceContainer devs1_290 = link_helper1.Install(gpunodes.Get(2), regswtches.Get(5));
+    NetDeviceContainer devs1_289 = link_helper1.Install(gpunodes.Get(1), regswtches.Get(3));
+    NetDeviceContainer devs1_290 = link_helper1.Install(gpunodes.Get(2), regswtches.Get(3));
     NetDeviceContainer devs1_291 = link_helper1.Install(gpunodes.Get(3), regswtches.Get(3));
-    NetDeviceContainer devs1_292 = link_helper1.Install(gpunodes.Get(4), regswtches.Get(4));
-    NetDeviceContainer devs1_293 = link_helper1.Install(gpunodes.Get(5), regswtches.Get(5));
+    NetDeviceContainer devs1_292 = link_helper1.Install(gpunodes.Get(4), regswtches.Get(3));
+    NetDeviceContainer devs1_293 = link_helper1.Install(gpunodes.Get(5), regswtches.Get(3));
     NetDeviceContainer devs1_294 = link_helper1.Install(gpunodes.Get(6), regswtches.Get(3));
-    NetDeviceContainer devs1_295 = link_helper1.Install(gpunodes.Get(7), regswtches.Get(4));
-    NetDeviceContainer devs1_296 = link_helper1.Install(gpunodes.Get(8), regswtches.Get(5));
+    NetDeviceContainer devs1_295 = link_helper1.Install(gpunodes.Get(7), regswtches.Get(3));
+    NetDeviceContainer devs1_296 = link_helper1.Install(gpunodes.Get(8), regswtches.Get(3));
     NetDeviceContainer devs1_297 = link_helper1.Install(gpunodes.Get(9), regswtches.Get(3));
-    NetDeviceContainer devs1_298 = link_helper1.Install(gpunodes.Get(10), regswtches.Get(4));
-    NetDeviceContainer devs1_299 = link_helper1.Install(gpunodes.Get(11), regswtches.Get(5));
+    NetDeviceContainer devs1_298 = link_helper1.Install(gpunodes.Get(10), regswtches.Get(3));
+    NetDeviceContainer devs1_299 = link_helper1.Install(gpunodes.Get(11), regswtches.Get(3));
     NetDeviceContainer devs1_300 = link_helper1.Install(gpunodes.Get(12), regswtches.Get(3));
-    NetDeviceContainer devs1_301 = link_helper1.Install(gpunodes.Get(13), regswtches.Get(4));
-    NetDeviceContainer devs1_302 = link_helper1.Install(gpunodes.Get(14), regswtches.Get(5));
+    NetDeviceContainer devs1_301 = link_helper1.Install(gpunodes.Get(13), regswtches.Get(3));
+    NetDeviceContainer devs1_302 = link_helper1.Install(gpunodes.Get(14), regswtches.Get(3));
     NetDeviceContainer devs1_303 = link_helper1.Install(gpunodes.Get(15), regswtches.Get(3));
-    NetDeviceContainer devs1_304 = link_helper1.Install(gpunodes.Get(16), regswtches.Get(4));
-    NetDeviceContainer devs1_305 = link_helper1.Install(gpunodes.Get(17), regswtches.Get(5));
+    NetDeviceContainer devs1_304 = link_helper1.Install(gpunodes.Get(16), regswtches.Get(3));
+    NetDeviceContainer devs1_305 = link_helper1.Install(gpunodes.Get(17), regswtches.Get(3));
     NetDeviceContainer devs1_306 = link_helper1.Install(gpunodes.Get(18), regswtches.Get(3));
-    NetDeviceContainer devs1_307 = link_helper1.Install(gpunodes.Get(19), regswtches.Get(4));
-    NetDeviceContainer devs1_308 = link_helper1.Install(gpunodes.Get(20), regswtches.Get(5));
+    NetDeviceContainer devs1_307 = link_helper1.Install(gpunodes.Get(19), regswtches.Get(3));
+    NetDeviceContainer devs1_308 = link_helper1.Install(gpunodes.Get(20), regswtches.Get(3));
     NetDeviceContainer devs1_309 = link_helper1.Install(gpunodes.Get(21), regswtches.Get(3));
-    NetDeviceContainer devs1_310 = link_helper1.Install(gpunodes.Get(22), regswtches.Get(4));
-    NetDeviceContainer devs1_311 = link_helper1.Install(gpunodes.Get(23), regswtches.Get(5));
+    NetDeviceContainer devs1_310 = link_helper1.Install(gpunodes.Get(22), regswtches.Get(3));
+    NetDeviceContainer devs1_311 = link_helper1.Install(gpunodes.Get(23), regswtches.Get(3));
     NetDeviceContainer devs1_312 = link_helper1.Install(gpunodes.Get(24), regswtches.Get(3));
-    NetDeviceContainer devs1_313 = link_helper1.Install(gpunodes.Get(25), regswtches.Get(4));
-    NetDeviceContainer devs1_314 = link_helper1.Install(gpunodes.Get(26), regswtches.Get(5));
+    NetDeviceContainer devs1_313 = link_helper1.Install(gpunodes.Get(25), regswtches.Get(3));
+    NetDeviceContainer devs1_314 = link_helper1.Install(gpunodes.Get(26), regswtches.Get(3));
     NetDeviceContainer devs1_315 = link_helper1.Install(gpunodes.Get(27), regswtches.Get(3));
-    NetDeviceContainer devs1_316 = link_helper1.Install(gpunodes.Get(28), regswtches.Get(4));
-    NetDeviceContainer devs1_317 = link_helper1.Install(gpunodes.Get(29), regswtches.Get(5));
+    NetDeviceContainer devs1_316 = link_helper1.Install(gpunodes.Get(28), regswtches.Get(3));
+    NetDeviceContainer devs1_317 = link_helper1.Install(gpunodes.Get(29), regswtches.Get(3));
     NetDeviceContainer devs1_318 = link_helper1.Install(gpunodes.Get(30), regswtches.Get(3));
-    NetDeviceContainer devs1_319 = link_helper1.Install(gpunodes.Get(31), regswtches.Get(4));
-    NetDeviceContainer devs1_320 = link_helper1.Install(gpunodes.Get(32), regswtches.Get(5));
-    NetDeviceContainer devs1_321 = link_helper1.Install(gpunodes.Get(33), regswtches.Get(3));
+    NetDeviceContainer devs1_319 = link_helper1.Install(gpunodes.Get(31), regswtches.Get(3));
+    NetDeviceContainer devs1_320 = link_helper1.Install(gpunodes.Get(32), regswtches.Get(4));
+    NetDeviceContainer devs1_321 = link_helper1.Install(gpunodes.Get(33), regswtches.Get(4));
     NetDeviceContainer devs1_322 = link_helper1.Install(gpunodes.Get(34), regswtches.Get(4));
-    NetDeviceContainer devs1_323 = link_helper1.Install(gpunodes.Get(35), regswtches.Get(5));
-    NetDeviceContainer devs1_324 = link_helper1.Install(gpunodes.Get(36), regswtches.Get(3));
+    NetDeviceContainer devs1_323 = link_helper1.Install(gpunodes.Get(35), regswtches.Get(4));
+    NetDeviceContainer devs1_324 = link_helper1.Install(gpunodes.Get(36), regswtches.Get(4));
     NetDeviceContainer devs1_325 = link_helper1.Install(gpunodes.Get(37), regswtches.Get(4));
-    NetDeviceContainer devs1_326 = link_helper1.Install(gpunodes.Get(38), regswtches.Get(5));
-    NetDeviceContainer devs1_327 = link_helper1.Install(gpunodes.Get(39), regswtches.Get(3));
+    NetDeviceContainer devs1_326 = link_helper1.Install(gpunodes.Get(38), regswtches.Get(4));
+    NetDeviceContainer devs1_327 = link_helper1.Install(gpunodes.Get(39), regswtches.Get(4));
     NetDeviceContainer devs1_328 = link_helper1.Install(gpunodes.Get(40), regswtches.Get(4));
-    NetDeviceContainer devs1_329 = link_helper1.Install(gpunodes.Get(41), regswtches.Get(5));
-    NetDeviceContainer devs1_330 = link_helper1.Install(gpunodes.Get(42), regswtches.Get(3));
+    NetDeviceContainer devs1_329 = link_helper1.Install(gpunodes.Get(41), regswtches.Get(4));
+    NetDeviceContainer devs1_330 = link_helper1.Install(gpunodes.Get(42), regswtches.Get(4));
     NetDeviceContainer devs1_331 = link_helper1.Install(gpunodes.Get(43), regswtches.Get(4));
-    NetDeviceContainer devs1_332 = link_helper1.Install(gpunodes.Get(44), regswtches.Get(5));
-    NetDeviceContainer devs1_333 = link_helper1.Install(gpunodes.Get(45), regswtches.Get(3));
+    NetDeviceContainer devs1_332 = link_helper1.Install(gpunodes.Get(44), regswtches.Get(4));
+    NetDeviceContainer devs1_333 = link_helper1.Install(gpunodes.Get(45), regswtches.Get(4));
     NetDeviceContainer devs1_334 = link_helper1.Install(gpunodes.Get(46), regswtches.Get(4));
-    NetDeviceContainer devs1_335 = link_helper1.Install(gpunodes.Get(47), regswtches.Get(5));
-    NetDeviceContainer devs1_336 = link_helper1.Install(gpunodes.Get(48), regswtches.Get(3));
+    NetDeviceContainer devs1_335 = link_helper1.Install(gpunodes.Get(47), regswtches.Get(4));
+    NetDeviceContainer devs1_336 = link_helper1.Install(gpunodes.Get(48), regswtches.Get(4));
     NetDeviceContainer devs1_337 = link_helper1.Install(gpunodes.Get(49), regswtches.Get(4));
-    NetDeviceContainer devs1_338 = link_helper1.Install(gpunodes.Get(50), regswtches.Get(5));
-    NetDeviceContainer devs1_339 = link_helper1.Install(gpunodes.Get(51), regswtches.Get(3));
+    NetDeviceContainer devs1_338 = link_helper1.Install(gpunodes.Get(50), regswtches.Get(4));
+    NetDeviceContainer devs1_339 = link_helper1.Install(gpunodes.Get(51), regswtches.Get(4));
     NetDeviceContainer devs1_340 = link_helper1.Install(gpunodes.Get(52), regswtches.Get(4));
-    NetDeviceContainer devs1_341 = link_helper1.Install(gpunodes.Get(53), regswtches.Get(5));
-    NetDeviceContainer devs1_342 = link_helper1.Install(gpunodes.Get(54), regswtches.Get(3));
+    NetDeviceContainer devs1_341 = link_helper1.Install(gpunodes.Get(53), regswtches.Get(4));
+    NetDeviceContainer devs1_342 = link_helper1.Install(gpunodes.Get(54), regswtches.Get(4));
     NetDeviceContainer devs1_343 = link_helper1.Install(gpunodes.Get(55), regswtches.Get(4));
-    NetDeviceContainer devs1_344 = link_helper1.Install(gpunodes.Get(56), regswtches.Get(5));
-    NetDeviceContainer devs1_345 = link_helper1.Install(gpunodes.Get(57), regswtches.Get(3));
+    NetDeviceContainer devs1_344 = link_helper1.Install(gpunodes.Get(56), regswtches.Get(4));
+    NetDeviceContainer devs1_345 = link_helper1.Install(gpunodes.Get(57), regswtches.Get(4));
     NetDeviceContainer devs1_346 = link_helper1.Install(gpunodes.Get(58), regswtches.Get(4));
-    NetDeviceContainer devs1_347 = link_helper1.Install(gpunodes.Get(59), regswtches.Get(5));
-    NetDeviceContainer devs1_348 = link_helper1.Install(gpunodes.Get(60), regswtches.Get(3));
+    NetDeviceContainer devs1_347 = link_helper1.Install(gpunodes.Get(59), regswtches.Get(4));
+    NetDeviceContainer devs1_348 = link_helper1.Install(gpunodes.Get(60), regswtches.Get(4));
     NetDeviceContainer devs1_349 = link_helper1.Install(gpunodes.Get(61), regswtches.Get(4));
-    NetDeviceContainer devs1_350 = link_helper1.Install(gpunodes.Get(62), regswtches.Get(5));
-    NetDeviceContainer devs1_351 = link_helper1.Install(gpunodes.Get(63), regswtches.Get(3));
-    NetDeviceContainer devs1_352 = link_helper1.Install(gpunodes.Get(64), regswtches.Get(4));
+    NetDeviceContainer devs1_350 = link_helper1.Install(gpunodes.Get(62), regswtches.Get(4));
+    NetDeviceContainer devs1_351 = link_helper1.Install(gpunodes.Get(63), regswtches.Get(4));
+    NetDeviceContainer devs1_352 = link_helper1.Install(gpunodes.Get(64), regswtches.Get(5));
     NetDeviceContainer devs1_353 = link_helper1.Install(gpunodes.Get(65), regswtches.Get(5));
-    NetDeviceContainer devs1_354 = link_helper1.Install(gpunodes.Get(66), regswtches.Get(3));
-    NetDeviceContainer devs1_355 = link_helper1.Install(gpunodes.Get(67), regswtches.Get(4));
+    NetDeviceContainer devs1_354 = link_helper1.Install(gpunodes.Get(66), regswtches.Get(5));
+    NetDeviceContainer devs1_355 = link_helper1.Install(gpunodes.Get(67), regswtches.Get(5));
     NetDeviceContainer devs1_356 = link_helper1.Install(gpunodes.Get(68), regswtches.Get(5));
-    NetDeviceContainer devs1_357 = link_helper1.Install(gpunodes.Get(69), regswtches.Get(3));
-    NetDeviceContainer devs1_358 = link_helper1.Install(gpunodes.Get(70), regswtches.Get(4));
+    NetDeviceContainer devs1_357 = link_helper1.Install(gpunodes.Get(69), regswtches.Get(5));
+    NetDeviceContainer devs1_358 = link_helper1.Install(gpunodes.Get(70), regswtches.Get(5));
     NetDeviceContainer devs1_359 = link_helper1.Install(gpunodes.Get(71), regswtches.Get(5));
-    NetDeviceContainer devs1_360 = link_helper1.Install(gpunodes.Get(72), regswtches.Get(3));
-    NetDeviceContainer devs1_361 = link_helper1.Install(gpunodes.Get(73), regswtches.Get(4));
+    NetDeviceContainer devs1_360 = link_helper1.Install(gpunodes.Get(72), regswtches.Get(5));
+    NetDeviceContainer devs1_361 = link_helper1.Install(gpunodes.Get(73), regswtches.Get(5));
     NetDeviceContainer devs1_362 = link_helper1.Install(gpunodes.Get(74), regswtches.Get(5));
-    NetDeviceContainer devs1_363 = link_helper1.Install(gpunodes.Get(75), regswtches.Get(3));
-    NetDeviceContainer devs1_364 = link_helper1.Install(gpunodes.Get(76), regswtches.Get(4));
+    NetDeviceContainer devs1_363 = link_helper1.Install(gpunodes.Get(75), regswtches.Get(5));
+    NetDeviceContainer devs1_364 = link_helper1.Install(gpunodes.Get(76), regswtches.Get(5));
     NetDeviceContainer devs1_365 = link_helper1.Install(gpunodes.Get(77), regswtches.Get(5));
-    NetDeviceContainer devs1_366 = link_helper1.Install(gpunodes.Get(78), regswtches.Get(3));
-    NetDeviceContainer devs1_367 = link_helper1.Install(gpunodes.Get(79), regswtches.Get(4));
+    NetDeviceContainer devs1_366 = link_helper1.Install(gpunodes.Get(78), regswtches.Get(5));
+    NetDeviceContainer devs1_367 = link_helper1.Install(gpunodes.Get(79), regswtches.Get(5));
     NetDeviceContainer devs1_368 = link_helper1.Install(gpunodes.Get(80), regswtches.Get(5));
-    NetDeviceContainer devs1_369 = link_helper1.Install(gpunodes.Get(81), regswtches.Get(3));
-    NetDeviceContainer devs1_370 = link_helper1.Install(gpunodes.Get(82), regswtches.Get(4));
+    NetDeviceContainer devs1_369 = link_helper1.Install(gpunodes.Get(81), regswtches.Get(5));
+    NetDeviceContainer devs1_370 = link_helper1.Install(gpunodes.Get(82), regswtches.Get(5));
     NetDeviceContainer devs1_371 = link_helper1.Install(gpunodes.Get(83), regswtches.Get(5));
-    NetDeviceContainer devs1_372 = link_helper1.Install(gpunodes.Get(84), regswtches.Get(3));
-    NetDeviceContainer devs1_373 = link_helper1.Install(gpunodes.Get(85), regswtches.Get(4));
+    NetDeviceContainer devs1_372 = link_helper1.Install(gpunodes.Get(84), regswtches.Get(5));
+    NetDeviceContainer devs1_373 = link_helper1.Install(gpunodes.Get(85), regswtches.Get(5));
     NetDeviceContainer devs1_374 = link_helper1.Install(gpunodes.Get(86), regswtches.Get(5));
-    NetDeviceContainer devs1_375 = link_helper1.Install(gpunodes.Get(87), regswtches.Get(3));
-    NetDeviceContainer devs1_376 = link_helper1.Install(gpunodes.Get(88), regswtches.Get(4));
+    NetDeviceContainer devs1_375 = link_helper1.Install(gpunodes.Get(87), regswtches.Get(5));
+    NetDeviceContainer devs1_376 = link_helper1.Install(gpunodes.Get(88), regswtches.Get(5));
     NetDeviceContainer devs1_377 = link_helper1.Install(gpunodes.Get(89), regswtches.Get(5));
-    NetDeviceContainer devs1_378 = link_helper1.Install(gpunodes.Get(90), regswtches.Get(3));
-    NetDeviceContainer devs1_379 = link_helper1.Install(gpunodes.Get(91), regswtches.Get(4));
+    NetDeviceContainer devs1_378 = link_helper1.Install(gpunodes.Get(90), regswtches.Get(5));
+    NetDeviceContainer devs1_379 = link_helper1.Install(gpunodes.Get(91), regswtches.Get(5));
     NetDeviceContainer devs1_380 = link_helper1.Install(gpunodes.Get(92), regswtches.Get(5));
-    NetDeviceContainer devs1_381 = link_helper1.Install(gpunodes.Get(93), regswtches.Get(3));
-    NetDeviceContainer devs1_382 = link_helper1.Install(gpunodes.Get(94), regswtches.Get(4));
+    NetDeviceContainer devs1_381 = link_helper1.Install(gpunodes.Get(93), regswtches.Get(5));
+    NetDeviceContainer devs1_382 = link_helper1.Install(gpunodes.Get(94), regswtches.Get(5));
     NetDeviceContainer devs1_383 = link_helper1.Install(gpunodes.Get(95), regswtches.Get(5));
     NetDeviceContainer devs1_384 = link_helper1.Install(regswtches.Get(3), regswtches.Get(8));
     NetDeviceContainer devs1_385 = link_helper1.Install(regswtches.Get(3), regswtches.Get(8));
@@ -512,16 +602,159 @@ int main(int argc, char *argv[]) {
     NetDeviceContainer devs1_478 = link_helper1.Install(regswtches.Get(5), regswtches.Get(9));
     NetDeviceContainer devs1_479 = link_helper1.Install(regswtches.Get(5), regswtches.Get(9));
     Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
+    Config::SetDefault("ns3::RdmaHw::RateTargeting", BooleanValue(rateTargeting));
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
-    
+
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     RdmaFabricHelper rdmaFabric;
     rdmaFabric.Build(gpunodes, regswtches, nvswtches);
-    
-    
+
+    // Algorithm + per-flow forwarding table. The switch JSON's switch_id_map (0..9 -> TE-CCL
+    // ids) matches the regswtches declaration order above; there is one JSON per collective,
+    // shared by the rate and _no_rate XMLs since routing is identical.
+    const std::string XML_NAME = "dual_plane_scattered_" + coll + (rate ? "" : "_no_rate") + ".xml";
+    std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
+                                                  "../../scratch/xml_input/" + XML_NAME);
+    std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
+                                                      "../../scratch/json_input/dual_plane_scattered_" + coll + ".json");
+
+    // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
+    // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
+    const std::string LOG_DIR = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(), "../../scratch/logs");
+    ns3::SystemPath::MakeDirectories(LOG_DIR); // no-op if it already exists
+
+    const std::string LOG_FILE = ns3::SystemPath::Append(LOG_DIR, label + ".txt");
+
+    constexpr DataType::Type dtype = DataType::INT32;
+    const uint32_t INPUT_BYTES = inputBytes;
+    bool CORRECTNESS_CHECK = true;
+
+    AlgoTopology topo(gpunodes, regswtches);
+    AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
+    // Fatal, not a log line: a failed parse leaves the topology empty and the failure would
+    // otherwise surface far downstream (zero input chunks) with NS_LOG_ERROR off by default.
+    if (result != AlgoParseResult::ALGO_PARSE_SUCCESS)
+        NS_FATAL_ERROR("Encountered issue in parsing XML algorithm " << XML_ALGO << ", error code " << result);
+    if (flowId) {
+        AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str());
+        // Fatal for the same reason the XML parse above is: ParseSwitchJson returns on the
+        // first bad entry, leaving flow forwarding half-installed (CustomFlowForwarding on,
+        // table mostly empty), and the run then silently falls back to ECMP everywhere.
+        if (switchResult != AlgoParseResult::ALGO_PARSE_SUCCESS)
+            NS_FATAL_ERROR("Encountered issue in parsing switch JSON " << SWITCH_JSON << ", error code " << switchResult);
+    }
+
+    static std::ofstream logtxt;
+
+    // log file
+    logtxt.open(LOG_FILE);
+    if (!logtxt.is_open()){
+        NS_FATAL_ERROR("Failed to log file");
+    }
+    chmod(LOG_FILE.c_str(), 0666);
+
+    // Chunk count and participant set come straight from the parsed algorithm, so ChunkSize
+    // and the tester can never drift from the XML, and swapping XMLs needs no source edit here.
+    const int N_CHUNKS = topo.GetNInputChunks();
+    const int N_NODES = (int) topo.GetActiveGpuIds().size();
+    NS_ASSERT_MSG(N_CHUNKS > 0, "Parsed algorithm reports zero input chunks; check the XML.");
+    const int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
+
+    // install apps
+    CollectivesApplicationHelper app_helper;
+    app_helper.SetAttribute("DataType", EnumValue(dtype));
+    app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
+    app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
+    ApplicationContainer apps = app_helper.Install<GPU>(topo);
+
+    NS_LOG_INFO("Finished installing collective apps.");
+
+    // The ctor's `verbose` flag only seeds the log mode; SetLogMode below is what governs.
+    CollectiveTester tester(apps, false, logtxt);
+    CollectiveLogMode logMode = CollectiveLogMode::MINIMAL;
+    if (checkLog == "silent") logMode = CollectiveLogMode::SILENT;
+    else if (checkLog == "verbose") logMode = CollectiveLogMode::VERBOSE;
+    else if (checkLog != "minimal") NS_FATAL_ERROR("Unknown --checkLog value '" << checkLog << "' (expected silent|minimal|verbose).");
+    tester.SetLogMode(logMode);
+    tester.SetMaxMismatches(maxMismatches);
+    if (CORRECTNESS_CHECK) {
+        if (coll == "allgather") tester.SetupAllgather(topo, CHUNK_SIZE * N_CHUNKS);
+        else                     tester.SetupAlltoall(topo, CHUNK_SIZE * N_CHUNKS);
+    }
+    else{
+        NS_LOG_UNCOND("Skipping correctness check.");
+    }
+
+    // ---- congestion monitoring: event-driven switch egress queue / drop / PFC traces ----
+    // Connect to the QbbNetDevice trace sources on every switch egress port. These fire
+    // synchronously from within packet events, so they add no simulator events and leave the
+    // reported latency/bandwidth (Simulator::Now()) untouched. Each qlen row is emitted on an
+    // actual enqueue/dequeue, giving an exact, unsampled occupancy trace.
+    std::string qlenPath = ns3::SystemPath::Append(LOG_DIR, "switch_qlen_" + label + ".csv");
+    std::string eventPath = ns3::SystemPath::Append(LOG_DIR, "switch_events_" + label + ".csv");
+    FILE* qlenOut = fopen(qlenPath.c_str(), "w");
+    FILE* eventOut = fopen(eventPath.c_str(), "w");
+    if (!qlenOut || !eventOut) NS_FATAL_ERROR("Failed to open congestion-monitor output files.");
+    fprintf(qlenOut, "time_ns,sw_id,port_id,q_id,qlen_bytes,op\n");
+    // node_id: GPUs are the first 96 ids, then the 10 regswtches (leaves/spines); drops carry a
+    // size, PFC pause/resume leave bytes/q_id blank.
+    fprintf(eventOut, "time_ns,node_id,port_id,q_id,bytes,op\n");
+
+    for (uint32_t s = 0; s < regswtches.GetN(); ++s) {
+        Ptr<Node> sw = regswtches.Get(s);
+        uint32_t swId = sw->GetId();
+        for (uint32_t d = 0; d < sw->GetNDevices(); ++d) {
+            Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(sw->GetDevice(d));
+            if (!dev) continue; // skip any non-Qbb (e.g. loopback) device
+            uint32_t port = dev->GetIfIndex();
+            dev->TraceConnectWithoutContext("QbbEnqueue", MakeBoundCallback(&OnSwitchEnqueue, qlenOut, swId, port));
+            dev->TraceConnectWithoutContext("QbbDequeue", MakeBoundCallback(&OnSwitchDequeue, qlenOut, swId, port));
+            dev->TraceConnectWithoutContext("QbbDrop",    MakeBoundCallback(&OnSwitchDrop, eventOut, swId, port));
+            dev->TraceConnectWithoutContext("QbbPfc",     MakeBoundCallback(&OnSwitchPfc, eventOut, swId, port));
+        }
+    }
+
+    // The QbbPfc trace fires on the device that RECEIVES a PAUSE, and a switch backpressures a
+    // congested ingress link by pausing the sender on the far end -- which for leaf <-> GPU links
+    // is a host NIC, not a switch. Connect the drop/PFC traces on the GPU NICs too. Queue-occupancy
+    // (enqueue/dequeue) stays switch-only, since host egress is just the GPU injecting and isn't
+    // the congestion of interest.
+    for (uint32_t g = 0; g < gpunodes.GetN(); ++g) {
+        Ptr<Node> gpu = gpunodes.Get(g);
+        uint32_t gpuId = gpu->GetId();
+        for (uint32_t d = 0; d < gpu->GetNDevices(); ++d) {
+            Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(gpu->GetDevice(d));
+            if (!dev) continue;
+            uint32_t port = dev->GetIfIndex();
+            dev->TraceConnectWithoutContext("QbbDrop", MakeBoundCallback(&OnSwitchDrop, eventOut, gpuId, port));
+            dev->TraceConnectWithoutContext("QbbPfc",  MakeBoundCallback(&OnSwitchPfc, eventOut, gpuId, port));
+        }
+    }
+
     Simulator::Run();
+    fclose(qlenOut);
+    fclose(eventOut);
+    std::cout << "Algorithm XML: " << XML_ALGO << std::endl;
+    std::cout << "Switch queue trace: " << qlenPath << std::endl;
+    std::cout << "Switch drop/PFC trace: " << eventPath << std::endl;
+    Time simTime = Simulator::Now();
+    std::cout << "Total simulated time: "
+        << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
+
+    // algorithm bandwidth: total data moved per rank / time
+    std::cout << coll << " algorithm bandwidth: "
+        << (double) INPUT_BYTES * N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;
+    if (CORRECTNESS_CHECK) {
+        CollectiveTestResult res = (coll == "allgather")
+            ? tester.VerifyAllgather(topo, CHUNK_SIZE * N_CHUNKS)
+            : tester.VerifyAlltoall(topo, CHUNK_SIZE * N_CHUNKS);
+        if (res == CollectiveTestResult::TEST_OK) std::cout << coll << " verified." << std::endl;
+        else std::cout << coll << " incorrect." << std::endl;
+    }
+
     Simulator::Destroy();
+    NS_LOG_UNCOND("Done simulation");
     return 0;
 }
