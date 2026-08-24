@@ -260,22 +260,31 @@ void RdmaHw::Setup(QpCompleteCallback cb,SendCompleteCallback send_cb){
 }
 uint32_t ip_to_node_id(Ipv4Address ip) { return (ip.Get() >> 8) & 0xffff; }
 uint32_t RdmaHw::GetNicIdxOfQp(Ptr<RdmaQueuePair> qp){
-	uint32_t src = qp->m_src;
-	uint32_t dst = qp->m_dest;
-	if(src / m_gpus_per_server == dst / m_gpus_per_server || m_rtTable_nxthop_nvswitch.count(qp->dip.Get()) != 0){ // src and dst are in the same server, communicate through nvswitch
-		auto &v = m_rtTable_nxthop_nvswitch[qp->dip.Get()];
+	// Same fix as GetNicIdxOfRxQp below: which table holds this destination is decided by
+	// actual membership, not by a src/m_gpus_per_server == dst/m_gpus_per_server guess.
+	// That guess assumes every NVSwitch has the same GPU fan-out, which a heterogeneous
+	// fabric (e.g. dual_plane_hetero's 16-GPU and 8-GPU NVSwitch groups) violates: a pair
+	// the guess calls "same server" can still have its BFS-computed route sitting in
+	// m_rtTable (network path) rather than m_rtTable_nxthop_nvswitch, and querying the
+	// wrong table hits an empty vector and asserts. rdma-fabric-helper.cc's Build() already
+	// documents GPUsPerServer as a perf hint, not a routing-correctness input.
+	uint32_t dip = qp->dip.Get();
+	if(m_rtTable.count(dip) != 0){
+		auto &v = m_rtTable[dip];
 		if (v.size() > 0){
 			return v[qp->GetHash() % v.size()];
 		}else{
 			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 		}
-	}else{ // src and dst don't in the same server, communicate through swicth
-		auto &v = m_rtTable[qp->dip.Get()];
+	}else if(m_rtTable_nxthop_nvswitch.count(dip) != 0){
+		auto &v = m_rtTable_nxthop_nvswitch[dip];
 		if (v.size() > 0){
 			return v[qp->GetHash() % v.size()];
 		}else{
 			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 		}
+	}else{
+		NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 	}
 }
 uint64_t RdmaHw::GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg){
