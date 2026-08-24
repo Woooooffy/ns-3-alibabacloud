@@ -258,7 +258,7 @@ namespace ns3 {
 	// shared body of Recv()/RecvRedCp(): claims bytes already sitting in m_unclaimedBytes
 	// for `recvPeer` if any (a full or partial claim, in FIFO byte order), else registers a
 	// new pending recv to be matched by a future arrival.
-	void MscclChannel::ClaimOrRegisterPendingRecv(int8_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op){
+	void MscclChannel::ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op){
 		if (dstoff < 0) NS_FATAL_ERROR("Invalid offset");
 		uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
 		UnclaimedBytes& unclaimed = m_unclaimedBytes[recvPeer];
@@ -312,7 +312,7 @@ namespace ns3 {
 		m_pendingSends[sock].push(send);
 	}
 
-	void MscclChannel::Send(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
+	void MscclChannel::Send(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
 		if (sendpeer < 0){
 			NS_FATAL_ERROR("Send peer is negative in Send");
 		}
@@ -417,7 +417,7 @@ namespace ns3 {
 		m_rdmaQpByPeer[peer] = qp;
 	}
 
-	void MscclChannel::SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
+	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 
 		auto it = m_rdmaQpByPeer.find(sendpeer);
@@ -465,7 +465,7 @@ namespace ns3 {
 		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
 
-	void MscclChannel::OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
+	void MscclChannel::OnRdmaSendComplete(int16_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
 		uint16_t dstoffU = static_cast<uint16_t>(dstoff);
 		// The send step itself already completed in SendRdma, when the message was handed to
 		// the RDMA engine; this fires later, on message completion (snd_una >= startSeq+size),
@@ -482,23 +482,23 @@ namespace ns3 {
 		m_app->OpenGateForStep(bid, sid);
 	}
 
-	void MscclChannel::Recv(int8_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
+	void MscclChannel::Recv(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
 		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV);
 	}
 
-	void MscclChannel::RecvCpSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
+	void MscclChannel::RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
 	NS_FATAL_ERROR("RecvCpSend not yet implemented");
 	}
 
-	void MscclChannel::RecvRedSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
+	void MscclChannel::RecvRedSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
 	NS_FATAL_ERROR("RecvRedSend not yet implemented");
 	}
 
-	void MscclChannel::RecvRedCp(int8_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
+	void MscclChannel::RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
 		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV_REDUCE_COPY);
 	}
 
-	void MscclChannel::RecvRedCpSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
+	void MscclChannel::RecvRedCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
 	NS_FATAL_ERROR("RecvRedCpSend not yet implemented");
 	}
 
@@ -655,7 +655,7 @@ namespace ns3 {
 		return m_socket_tid;
 	}
 
-/*	inline TransferState* CollectivesApplication::GetTransferState(int8_t bid, int16_t sid){
+/*	inline TransferState* CollectivesApplication::GetTransferState(int16_t bid, int16_t sid){
 		return &m_transferStates[std::make_pair(bid, sid)];
 	}*/
 
@@ -682,7 +682,7 @@ namespace ns3 {
 		return MilliSeconds(0);
 	}
 
-	void CollectivesApplication::NonTransferHandler(int8_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op){
+	void CollectivesApplication::NonTransferHandler(int16_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op){
 		uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
 		switch (op){
 			case MSCCL_LOCAL_COPY:
@@ -696,7 +696,7 @@ namespace ns3 {
 		Simulator::Schedule(GetLocalOpDelay(op), &CollectivesApplication::StepCompletionCallback, this, bid, sid);
 	}
 
-	void CollectivesApplication::RunStep(int8_t bid, int16_t sid){
+	void CollectivesApplication::RunStep(int16_t bid, int16_t sid){
 		// TODO: add realistic packet size modeling
 		// Count rounds loop logic based on msccl scheduling? skipped for now
 		mscclThreadBlock* tb = &(m_algo->mscclTBs[bid]);
@@ -752,19 +752,19 @@ namespace ns3 {
 		// is in flight, but m_gateOpen is an absorbing latch re-read on every entry, and
 		// StepCompletionCallback unconditionally re-calls TryScheduleNextStep when it clears
 		// busy. That level-triggered property is why a gate must never be cleared mid-run.
-		for (int8_t bid : m_gateWaiters[gate]){
+		for (int16_t bid : m_gateWaiters[gate]){
 			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
 		}
 		m_gateWaiters[gate].clear();
 	}
 
-	void CollectivesApplication::OpenGateForStep(int8_t bid, int16_t sid){
+	void CollectivesApplication::OpenGateForStep(int16_t bid, int16_t sid){
 		int16_t gate = m_algo->mscclTBs[bid].transfers[sid].netGate;
 		if (gate == MSCCL_GATE_NONE) return;
 		OpenGate(gate);
 	}
 
-	void CollectivesApplication::TryScheduleNextStep(int8_t bid){
+	void CollectivesApplication::TryScheduleNextStep(int16_t bid){
 		mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
 		TBState* tbState = &m_TBStates[bid];
 		uint32_t nodeId = GetNode()->GetId();
@@ -831,7 +831,7 @@ namespace ns3 {
 		m_TBStates[bid].busy = true; // set flag to prevent multiple schedulings
 	}
 
-	void CollectivesApplication::StepCompletionCallback(int8_t bid, int16_t sid){
+	void CollectivesApplication::StepCompletionCallback(int16_t bid, int16_t sid){
 		// TransferState* tState = GetTransferState(bid, sid);
 		// mscclTransfer* trans = &m_algo->mscclTBs[bid].transfers[sid];
 		// update TBState
@@ -841,7 +841,7 @@ namespace ns3 {
 		tbState->flag = (uint64_t) COMPUTE_FLAG(m_currWorkId, m_currIter, tbState->global_step); // flag update
 		tbState->global_step++;
 		Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
-		for (int8_t depTB : tbState->tryReschedule){
+		for (int16_t depTB : tbState->tryReschedule){
 			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, depTB);
 		}
 		tbState->tryReschedule.clear();
@@ -858,14 +858,14 @@ namespace ns3 {
 		// no gates, which leaves both vectors empty and the gate check in TryScheduleNextStep
 		// unreachable.
 		m_gateOpen.assign(m_algo->maxNetGate + 1, 0);
-		m_gateWaiters.assign(m_algo->maxNetGate + 1, std::unordered_set<int8_t>());
+		m_gateWaiters.assign(m_algo->maxNetGate + 1, std::unordered_set<int16_t>());
 		// Gates are opened only on the RDMA path (MscclChannel::OnRdmaSendComplete), so a gate
 		// on a socket-path op would never open and would hang the run. Peer classification is
 		// already known here -- RdmaFabricHelper populates the peer ip table at topology-build
 		// time -- so this fails at app start, before any simulation time passes. Every peer is
 		// RDMA in the current topologies; this exists to make the constraint explicit.
 		if (m_algo->maxNetGate != MSCCL_GATE_NONE){
-			for (int8_t bid = 0; bid < m_algo->nBlocks; ++bid){
+			for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
 				mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
 				for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
 					mscclTransfer* tran = &tb->transfers[sid];
@@ -880,7 +880,7 @@ namespace ns3 {
 			}
 		}
 
-		for (int8_t bid = 0; bid < m_algo->nBlocks; ++bid){
+		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
 			// mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
 			m_TBStates.emplace(bid, TBState(bid)); // built TBStates
 			/* for (int16_t local_step = 0; local_step < tb->nsteps; ++local_step){
@@ -891,7 +891,7 @@ namespace ns3 {
 				tState->nPendingDeps = nDeps;
 				if (nDeps > 0) {
 					for (int dep = trans->depencePointer; dep < trans->depencePointer + nDeps; ++dep){
-						int8_t depbid = tb->dependentBid[dep];
+						int16_t depbid = tb->dependentBid[dep];
 						int16_t depsid = tb->dependentStep[dep]; // depsid is global step
 						tState->dependentTBs.insert(depbid);
 					}

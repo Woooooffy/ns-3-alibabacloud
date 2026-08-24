@@ -15,14 +15,17 @@ namespace ns3 {
 // traded down to keep MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL — the size of
 // mscclAlgorithm::mscclTBs, the dominant per-GPU allocation — unchanged at 1024.
 #define MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL 128
-#define MSCCL_MAX_NUM_THREAD_BLOCKS (108*2) // set this to 108 which is the number of SMs on A100
-// Threadblock ids are STORED as int8_t -- in mscclThreadBlock::dependentBid, and in the bid /
-// depbid locals threaded through collectives.cc -- so an id above INT8_MAX wraps negative and
-// silently retargets a dependency at an adjacent threadblock instead of erroring. That ceiling is
-// lower than MSCCL_MAX_NUM_THREAD_BLOCKS (216, an SM count, which only bounds the array), so the
-// legal ID RANGE has to be checked separately from the array bound. One threadblock per connection
-// means the count grows with peers x channels: rail_allgather.xml is already at 76 per GPU.
-#define MSCCL_MAX_THREAD_BLOCK_ID INT8_MAX
+// Matches MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL (the mscclTBs storage capacity)
+// rather than an SM count: the real runtime also caps at 1024 thread blocks per GPU, and stores
+// the id in a plain int, so there is no narrower hardware ceiling to mirror here. One threadblock
+// per connection means the count grows with peers x channels -- large all-to-all schedules on
+// wide topologies (e.g. a 96-GPU alltoall) can need several hundred per GPU.
+#define MSCCL_MAX_NUM_THREAD_BLOCKS 1024
+// Threadblock ids are STORED as int16_t -- in mscclThreadBlock::dependentBid, and in the bid /
+// depbid locals threaded through collectives.cc -- which comfortably covers the 0..1023 range
+// MSCCL_MAX_NUM_THREAD_BLOCKS allows; the static_assert below keeps that honest if either bound
+// ever changes.
+#define MSCCL_MAX_THREAD_BLOCK_ID (MSCCL_MAX_NUM_THREAD_BLOCKS - 1)
 #define MSCCL_MAX_NUM_ALGOS 4
 #define MSCCL_MAX_COUNT 72 // make sure this does not overflow wrt the size of mscclWorkElem::mscclMaxAllowCount
 #define MSCCL_MAX_REDUCE_FUSION 16
@@ -162,7 +165,7 @@ struct mscclThreadBlock {
   uint16_t nsteps;
   int8_t channelId; // associated channel. -1 indicates a threadblock with only local copies
   // step is used to index into this array. transfers[step] is the addr to transfer.
-  int8_t dependentBid[MSCCL_MAX_NUM_STEPS]; // -1 if not dependent on any threadblock
+  int16_t dependentBid[MSCCL_MAX_NUM_STEPS]; // -1 if not dependent on any threadblock
   int16_t dependentStep[MSCCL_MAX_NUM_STEPS];
   int16_t reductionSrcOffsets[MSCCL_MAX_NUM_STEPS]; // in case there are multiple reductions with the same dstwewqwqew
   struct mscclTransfer transfers[MSCCL_MAX_NUM_STEPS];

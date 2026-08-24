@@ -297,9 +297,9 @@ namespace ns3
 					NS_LOG_WARN("MSCCL: too many thread blocks are requested. Max thread blocks: " << MSCCL_MAX_NUM_THREAD_BLOCKS);
 					return AlgoParseResult::INVALID_USE_ERROR;
 				}
-				// Separate from the bound above: ids are stored as int8_t, so anything past
-				// MSCCL_MAX_THREAD_BLOCK_ID would wrap negative and quietly point dependencies at the
-				// wrong threadblock rather than fail. See msccl.h.
+				// MSCCL_MAX_THREAD_BLOCK_ID is MSCCL_MAX_NUM_THREAD_BLOCKS - 1 (see msccl.h), so this
+				// is currently redundant with the bound above; kept as a separate check since the two
+				// aren't guaranteed to stay numerically identical if either is retuned independently.
 				if (bid > MSCCL_MAX_THREAD_BLOCK_ID){
 					NS_LOG_WARN("MSCCL: thread block id (" << bid << ") on GPU (" << gpuId << ") exceeds the largest representable id (" << MSCCL_MAX_THREAD_BLOCK_ID << ").");
 					return AlgoParseResult::INVALID_USE_ERROR;
@@ -498,7 +498,7 @@ namespace ns3
 					}
 
 					if (depend_bid >= 0) {
-						// Same int8_t ceiling as the tb id itself -- this is the field it is stored in.
+						// Same ceiling as the tb id itself -- this is the field it is stored in.
 						if (depend_bid > MSCCL_MAX_THREAD_BLOCK_ID){
 							NS_LOG_WARN("MSCCL: depid (" << depend_bid << ") at step " << s << " of threadblock (" << bid << ") on GPU (" << gpuId << ") exceeds the largest representable thread block id (" << MSCCL_MAX_THREAD_BLOCK_ID << ").");
 							return AlgoParseResult::INVALID_USE_ERROR;

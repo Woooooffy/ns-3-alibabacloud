@@ -37,14 +37,14 @@ namespace ns3 {
 	class CollectivesApplication; // forward decl
 
 	struct TBState {
-		int8_t bid;
+		int16_t bid;
 		int64_t global_step;
 		int16_t local_step;
 		int64_t flag;
 		bool busy;
-		std::unordered_set<int8_t> tryReschedule; // TBs that should try rescheduling when this TB reaches flag
+		std::unordered_set<int16_t> tryReschedule; // TBs that should try rescheduling when this TB reaches flag
 		TBState(): bid(-1), global_step(0), local_step(0), flag(-1), busy(false){}
-		TBState(int8_t id): bid(id), global_step(0), local_step(0),
+		TBState(int16_t id): bid(id), global_step(0), local_step(0),
       flag(-1), busy(false){}
 	};
 
@@ -57,7 +57,7 @@ namespace ns3 {
 	}; */
 
 	struct PendingTransfer{
-		int8_t bid;
+		int16_t bid;
 		int16_t sid; //local sid
 		uint32_t receivedBytes;
 		uint32_t pendingBytes;
@@ -74,7 +74,7 @@ namespace ns3 {
 		// path's Send() fragmentation is.
 		uint8_t* scratchBuf;
 		PendingTransfer(): bid(-1), sid(-1), receivedBytes(0), pendingBytes(0), op(-1), srcBuf(3), srcOffset(-1), dstBuf(3), dstOffset(-1), scratchBuf(nullptr){}
-		PendingTransfer(int8_t bId, int16_t sId, uint32_t bytes, int8_t Op, uint16_t srcbuf, uint16_t srcoff, uint16_t dstbuf, int16_t dstoff): bid(bId), sid(sId),
+		PendingTransfer(int16_t bId, int16_t sId, uint32_t bytes, int8_t Op, uint16_t srcbuf, uint16_t srcoff, uint16_t dstbuf, int16_t dstoff): bid(bId), sid(sId),
 										receivedBytes(0), pendingBytes(bytes), op(Op), srcBuf(srcbuf), srcOffset(srcoff), dstBuf(dstbuf), dstOffset(dstoff), scratchBuf(nullptr){}
 	};
 
@@ -118,12 +118,12 @@ namespace ns3 {
 			void RecvCallback(Ptr<Socket> sock);
 
 			inline void PushPendingSend(Ptr<Socket> sendpeer, PendingTransfer send);
-			void Send(int8_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE, double rateGBps = 0.0);
-			void Recv(int8_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
-			void RecvCpSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
-			void RecvRedSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
-			void RecvRedCp(int8_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
-			void RecvRedCpSend(int8_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
+			void Send(int16_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE, double rateGBps = 0.0);
+			void Recv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
+			void RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
+			void RecvRedSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
+			void RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
+			void RecvRedCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
 			#ifdef FLOW_ID_TEST
 			uint32_t GetFlowId(int src, int dst);
 			void SetFlowIdTable(std::map<std::pair<int, int>, uint32_t>* table);
@@ -131,7 +131,7 @@ namespace ns3 {
 
 			// RDMA-fabric transport (gpu<->switch/nvswitch peers), as opposed to the
 			// p2p PacketSocket path above (gpu<->gpu direct peers)
-			void SendRdma(int8_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps);
+			void SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps);
 			// eagerly establishes this channel's persistent RDMA connection to `peer` --
 			// called once per (channel,peer) from CollectivesApplication::SetupRdmaPeers,
 			// deferred one tick past Bootstrap() so every node's m_channels already exists
@@ -142,7 +142,7 @@ namespace ns3 {
 			// (see OnBytesArrivedFromPeer's comment).
 			void SetupRdmaSendPeer(int16_t peer);
 			// bound as the RdmaDriver::AddQueuePair completion callback
-			void OnRdmaSendComplete(int8_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems);
+			void OnRdmaSendComplete(int16_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems);
 
 			void Close();
 		private:
@@ -160,7 +160,7 @@ namespace ns3 {
 			// m_unclaimedBytes for `recvPeer` if any (a full or partial claim, in FIFO byte
 			// order), else registers a new pending recv (m_pendingRecvQueue) to be matched by
 			// a future arrival.
-			void ClaimOrRegisterPendingRecv(int8_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op);
+			void ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op);
 
 			int8_t m_id;
 			DataType::Type m_dataType;
@@ -202,12 +202,12 @@ namespace ns3 {
 			int GetPort();
 			DataType::Type GetDataType();
 		  TypeId GetSocketTypeId();
-			void StepCompletionCallback(int8_t bid, int16_t sid);
+			void StepCompletionCallback(int16_t bid, int16_t sid);
 			// Opens the network gate declared by transfer (bid, sid), if it declares one. Called
 			// from MscclChannel::OnRdmaSendComplete, i.e. when that step's RDMA message actually
 			// completes on the qp -- the CQE a proxy thread could really reap. No-op for a step
 			// with netGate == MSCCL_GATE_NONE.
-			void OpenGateForStep(int8_t bid, int16_t sid);
+			void OpenGateForStep(int16_t bid, int16_t sid);
 			DataBuffer* GetSrcBuffer();
 			DataBuffer* GetDstBuffer();
 			DataBuffer* GetScratchBuffer();
@@ -244,11 +244,11 @@ namespace ns3 {
 		protected:
   		void StartApplication() override;
   		void StopApplication() override;
-			// inline TransferState* GetTransferState(int8_t bid, int16_t sid);
+			// inline TransferState* GetTransferState(int16_t bid, int16_t sid);
 			Time GetLocalOpDelay(int8_t op);
-			void NonTransferHandler(int8_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op); // add some fixed delay
-			void RunStep(int8_t bid, int16_t sid);
-			void TryScheduleNextStep(int8_t bid);
+			void NonTransferHandler(int16_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op); // add some fixed delay
+			void RunStep(int16_t bid, int16_t sid);
+			void TryScheduleNextStep(int16_t bid);
 			// Marks `gate` open (idempotently) and re-runs every threadblock parked on it.
 			void OpenGate(int16_t gate);
 			void InterpretAlgo();
@@ -265,7 +265,7 @@ namespace ns3 {
 			DataType::Type m_dataType;
 			mscclAlgorithm* m_algo;
 			TypeId m_socket_tid;
-			std::map<int8_t, TBState> m_TBStates; // maps tbId to last completed step
+			std::map<int16_t, TBState> m_TBStates; // maps tbId to last completed step
 			// std::map<std::pair<int8_t, int16_t>, TransferState> m_transferStates; // transfer (tbId, sId) -> pending dependences info
 			uint32_t m_currChunkSize;
 			uint32_t m_currWorkId = 0;
@@ -294,7 +294,7 @@ namespace ns3 {
 			// modeled, both vectors must be cleared per iteration -- otherwise iteration 2 finds
 			// every gate already open and runs unpaced.
 			std::vector<uint8_t> m_gateOpen;                       // gate id -> open?
-			std::vector<std::unordered_set<int8_t>> m_gateWaiters; // gate id -> tbs parked on it
+			std::vector<std::unordered_set<int16_t>> m_gateWaiters; // gate id -> tbs parked on it
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			#endif
