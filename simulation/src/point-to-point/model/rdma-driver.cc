@@ -67,8 +67,8 @@ void RdmaDriver::SetRdmaHw(Ptr<RdmaHw> rdma){
 	m_rdma = rdma;
 }
 
-Ptr<RdmaQueuePair> RdmaDriver::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose){
-	return m_rdma->AddQueuePair(src, dest, tag, size, pg, sip, dip, sport, dport, win, baseRtt, mscclFlowId, notifyAppFinish, notifyAppSent, srcDataPtr, autoClose);
+Ptr<RdmaQueuePair> RdmaDriver::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose, uint32_t pinnedNic){
+	return m_rdma->AddQueuePair(src, dest, tag, size, pg, sip, dip, sport, dport, win, baseRtt, mscclFlowId, notifyAppFinish, notifyAppSent, srcDataPtr, autoClose, pinnedNic);
 }
 
 void RdmaDriver::CloseQueuePair(Ptr<RdmaQueuePair> qp){

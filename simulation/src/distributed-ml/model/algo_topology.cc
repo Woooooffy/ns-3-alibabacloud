@@ -200,6 +200,9 @@ namespace ns3
 	AlgoParseResult AlgoTopology::ParseAlgoXml(const char* file_path){
 		// NOTE: entire method makes use of libxml2-dev being installed
 		#ifdef HAVE_LIBXML2
+		// A re-parse replaces the algorithm wholesale, so stale endpoints from a previous XML
+		// must not survive to be joined against the next switch JSON.
+		m_flowEndpoints.clear();
 		int nRanks = GetNGpuNodes();
 		xmlDocPtr doc = xmlReadFile(file_path, NULL, 0);
 	  if (!doc) return AlgoParseResult::FILE_READ_ERROR;
@@ -562,6 +565,13 @@ namespace ns3
 								NS_LOG_WARN("MSCCL: there is a send in threadblock (" << bid << ") on GPU (" << gpuId << ") without a sendpeer.");
 								return AlgoParseResult::INVALID_USE_ERROR;
 							}
+							// Record the flow's endpoints for ParseSwitchJson's benefit. Only the send
+							// side is recorded: the peer's matching recv step repeats this same flow
+							// id, and taking it from there would name the receiver as the sender.
+							if (mscclFlowId != MSCCL_FLOW_ID_NONE){
+								m_flowEndpoints[mscclFlowId] = FlowEndpoints{
+									(uint32_t) gpuId, (int16_t) sendpeer, channelId};
+							}
 							if (mscclChannel->nSendPeers >= MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL){
 								NS_LOG_WARN("MSCCL: too many sends per channel. Max allowed " << MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL);
 								return AlgoParseResult::INVALID_USE_ERROR;
@@ -716,15 +726,17 @@ namespace ns3
 	// this switch has no link to at all. Multiple ports toward one neighbor is not an error but
 	// the normal fat-tree case (parallel leaf uplinks to the same spine); all of them are handed
 	// back and SwitchNode picks per flow, since any of them realizes the dictated path.
-	// Lazily maps out every qbb port of `sw` by the neighbor it reaches, on first touch.
-	std::map<uint32_t, std::vector<uint32_t>>& AlgoTopology::SwitchPortCache(Ptr<SwitchNode> sw){
-		uint32_t swId = sw->GetId();
+	// Lazily maps out every qbb port of `node` by the neighbor it reaches, on first touch.
+	// Called for switches (to validate/resolve a rule's out port) and for GPUs (to find which
+	// of a multi-homed sender's NICs faces a given leaf) -- the walk is identical for both.
+	std::map<uint32_t, std::vector<uint32_t>>& AlgoTopology::SwitchPortCache(Ptr<Node> node){
+		uint32_t swId = node->GetId();
 		auto cached = m_switchPortCache.find(swId);
 		if (cached != m_switchPortCache.end()) return cached->second;
 
 		std::map<uint32_t, std::vector<uint32_t>>& neighbors = m_switchPortCache[swId];
-		for (uint32_t i = 0; i < sw->GetNDevices(); ++i){
-			Ptr<NetDevice> dev = sw->GetDevice(i);
+		for (uint32_t i = 0; i < node->GetNDevices(); ++i){
+			Ptr<NetDevice> dev = node->GetDevice(i);
 			Ptr<QbbChannel> channel = DynamicCast<QbbChannel>(dev->GetChannel());
 			if (!channel) continue;
 			Ptr<NetDevice> other = (channel->GetDevice(0) == dev) ? channel->GetDevice(1) : channel->GetDevice(0);
@@ -754,9 +766,66 @@ namespace ns3
 		return false;
 	}
 
+	// The switch JSON pins each flow to a path but says nothing about which NIC the *sender*
+	// should inject on, and on a multi-homed fabric (e.g. dual-plane, one NIC per plane) that
+	// choice decides the whole path: inject on the wrong plane and every switch along it misses
+	// the flow's rules entirely and falls back to ECMP, so the schedule is silently ignored.
+	// The intended NIC is recoverable, though -- it is the sender's port facing this flow's
+	// *ingress* switch, i.e. whichever switch in the flow's rule set neighbors the sender. This
+	// runs per rule and simply notices when `sw` is that switch.
+	void AlgoTopology::ResolveScheduledNics(Ptr<SwitchNode> sw, uint32_t flowId){
+		auto ep = m_flowEndpoints.find(flowId);
+		if (ep == m_flowEndpoints.end()) return; // rule for a flow the XML never sends
+
+		Ptr<Node> srcGpu = GetGpuNode((int) ep->second.srcGpu);
+		if (!srcGpu) return;
+		std::map<uint32_t, std::vector<uint32_t>>& gpuPorts = SwitchPortCache(srcGpu);
+		auto facing = gpuPorts.find(sw->GetId());
+		if (facing == gpuPorts.end() || facing->second.empty()) return; // not the ingress hop
+
+		// Multiple NICs from one GPU to one leaf would make "the" scheduled NIC ambiguous; no
+		// topology built so far does that, and taking the first keeps the flow on the dictated
+		// path either way (both ports reach the same switch).
+		uint32_t nic = facing->second.front();
+		ConnectionKey key{ep->second.srcGpu, ep->second.peer, ep->second.chan};
+		auto [it, inserted] = m_scheduledNic.emplace(key, nic);
+		if (!inserted && it->second != nic && m_scheduledNicConflicts.insert(key).second){
+			// RdmaHw binds a qp to one NIC for its lifetime, and MSCCL opens exactly one qp per
+			// (peer, channel), so a schedule that spreads one connection's flows across NICs
+			// cannot be realized. Report it and leave the connection unpinned (see
+			// PublishScheduledNics) rather than honoring whichever flow happened to parse first.
+			NS_LOG_WARN("Switch JSON: gpu " << ep->second.srcGpu << " -> peer " << ep->second.peer
+				<< " on channel " << ep->second.chan << " has flows entering the fabric on two "
+				<< "different NICs (ifIndex " << it->second << " and " << nic << "). One RDMA "
+				<< "connection can only use one NIC, so this connection will keep RdmaHw's ECMP "
+				<< "hashing instead. Re-solve with the plane held constant per (src, dst, channel).");
+		}
+	}
+
+	void AlgoTopology::PublishScheduledNics(){
+		uint32_t pinned = 0;
+		for (const auto& [key, nic] : m_scheduledNic){
+			if (m_scheduledNicConflicts.count(key)) continue;
+			Ptr<GPU> gpu = DynamicCast<GPU, Node>(GetGpuNode((int) key.srcGpu));
+			if (!gpu) continue;
+			gpu->PushPeerNic(key.peer, key.chan, nic);
+			++pinned;
+		}
+		// Unconditional (not NS_LOG_INFO): silently pinning nothing -- the failure mode when the
+		// XML and JSON disagree about flow ids -- is indistinguishable from a working run except
+		// by the performance it quietly fails to deliver.
+		NS_LOG_UNCOND("Switch JSON: pinned the scheduled egress NIC on " << pinned
+			<< " RDMA connection(s); " << m_scheduledNicConflicts.size()
+			<< " left unpinned due to conflicting plane assignments.");
+	}
+
 	AlgoParseResult AlgoTopology::ParseSwitchJson(const char* file_path){
 		std::ifstream in(file_path);
 		if (!in.is_open()) return AlgoParseResult::FILE_READ_ERROR;
+
+		// As in ParseAlgoXml, a re-parse replaces the routing wholesale.
+		m_scheduledNic.clear();
+		m_scheduledNicConflicts.clear();
 
 		nlohmann::json root;
 		try {
@@ -846,6 +915,7 @@ namespace ns3
 					}
 
 					sw->AddFlowForwardingRule(flowId, outIfIndices);
+					ResolveScheduledNics(sw, flowId);
 					std::ostringstream portList;
 					for (size_t p = 0; p < outIfIndices.size(); ++p){
 						if (p) portList << ",";
@@ -859,6 +929,9 @@ namespace ns3
 			return AlgoParseResult::JSON_PARSE_ERROR;
 		}
 
+		// Only after every rule has been seen: a conflicting connection may not reveal itself
+		// until its second flow, so publishing incrementally could pin one that later conflicts.
+		PublishScheduledNics();
 		return AlgoParseResult::ALGO_PARSE_SUCCESS;
 	}
 

@@ -86,13 +86,16 @@ public:
 	static uint64_t GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg); // get the lookup key for m_qpMap
 	Ptr<RdmaQueuePair> GetQp(uint32_t dip, uint16_t sport, uint16_t pg); // get the qp
 	uint32_t GetNicIdxOfQp(Ptr<RdmaQueuePair> qp); // get the NIC index of the qp
+	// shared tail of GetNicIdxOfQp: honor a schedule-dictated NIC if it is one of `candidates`,
+	// otherwise fall back to hashing the qp's 5-tuple across them
+	uint32_t SelectNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates);
 	// creates a new qp and, if size != 0, pushes it as the qp's first message (size == 0 is
 	// used to eagerly establish a persistent MSCCL connection at bootstrap with no data
 	// queued yet -- see MscclChannel::SetupRdmaSendPeer). Returns the qp so callers that
 	// intend to reuse it (push further messages directly via qp->PushMessage(...), bypassing
 	// this method) can hold onto it; one-shot callers (e.g. RdmaClient) can simply ignore it,
 	// since autoClose defaults to true and behaves exactly as before.
-	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true);
+	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true, uint32_t pinnedNic = RdmaQueuePair::NIC_UNPINNED);
 	// explicit whole-qp teardown for reused/persistent qps (autoClose == false); thin
 	// wrapper over QpComplete that exists purely for call-site clarity.
 	void CloseQueuePair(Ptr<RdmaQueuePair> qp);

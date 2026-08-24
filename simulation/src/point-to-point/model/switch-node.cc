@@ -126,7 +126,10 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 	int idx = -1;
 	if (m_customFlowForwarding && ch.l3Prot == 0x11 && ch.udp.mscclFlowId != MscclFlowIdHeader::NO_FLOW_ID){ // UDP data packet: try custom flow match before falling back to ECMP
 		auto search = m_flowForwardingTable.find(ch.udp.mscclFlowId);
-		if (search != m_flowForwardingTable.end() && !search->second.empty()){
+		if (search == m_flowForwardingTable.end() || search->second.empty()){
+			++m_flowRuleMisses;
+		} else {
+			++m_flowRuleHits;
 			// The rule pins this flow to a next-hop *neighbor*; when several parallel ports reach
 			// that neighbor, any of them keeps the dictated path, so hash within the candidate set
 			// rather than always taking one port and leaving the other uplinks idle.

@@ -8,6 +8,7 @@
 #include "msccl.h"
 #include <ostream>
 #include <map>
+#include <utility>
 #include <vector>
 
 namespace ns3
@@ -45,6 +46,15 @@ namespace ns3
 		void PushPeerBaseRtt(int16_t peer, uint64_t rttNs);
 		uint64_t GetPeerBaseRtt(int16_t peer) const;
 
+		// The NIC (ifIndex) the parsed schedule routes this connection out of, set by
+		// AlgoTopology::ParseSwitchJson. Keyed by (peer, channel) because that is the identity
+		// of one persistent RDMA connection, and RdmaHw binds a qp to a single NIC for its
+		// lifetime. Absent (GetPeerNic returns false) means "unscheduled" -- RdmaHw then falls
+		// back to hashing across the equal-cost NICs, which is the behavior for every topology
+		// without a switch JSON.
+		void PushPeerNic(int16_t peer, int chan, uint32_t ifIndex);
+		bool GetPeerNic(int16_t peer, int chan, uint32_t& ifIndex) const;
+
 		private:
 		int m_maxNChannels;
 		struct mscclAlgorithm m_algo;
@@ -55,6 +65,7 @@ namespace ns3
 		std::map<int16_t, Ipv4Address> m_peerIpAddr;
 		std::map<int16_t, uint32_t> m_peerWin;
 		std::map<int16_t, uint64_t> m_peerBaseRtt;
+		std::map<std::pair<int16_t, int>, uint32_t> m_peerNic;
 	};
 }
 #endif 

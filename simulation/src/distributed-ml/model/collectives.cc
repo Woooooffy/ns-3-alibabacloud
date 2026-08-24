@@ -409,11 +409,19 @@ namespace ns3 {
 			<< ": established persistent rx qp (sport=" << sport << ") for peer " << peer
 			<< " at t=" << Simulator::Now().GetNanoSeconds());
 
+		// If a switch JSON was parsed, it dictates which NIC this connection injects on -- on a
+		// multi-homed fabric that choice picks the plane, and letting RdmaHw hash it would land
+		// roughly half the connections on a plane whose switches hold no rules for their flows,
+		// silently reverting them to ECMP. Absent a switch JSON this stays NIC_UNPINNED and the
+		// hash is used, exactly as before.
+		uint32_t pinnedNic = RdmaQueuePair::NIC_UNPINNED;
+		DynamicCast<GPU>(m_app->GetNode())->GetPeerNic(peer, m_id, pinnedNic);
+
 		Ptr<RdmaQueuePair> qp = m_app->GetRdmaDriver()->AddQueuePair(
 			m_app->GetNode()->GetId(), static_cast<uint32_t>(peer), /* tag */ 0, /* size */ 0, MSCCL_RDMA_PG,
 			m_app->GetMyIp(), m_app->GetPeerIp(peer), sport, MSCCL_RDMA_DPORT,
 			m_app->GetPeerWin(peer), m_app->GetPeerBaseRtt(peer), MSCCL_FLOW_ID_NONE, Callback<void>(), Callback<void>(),
-			nullptr, /* autoClose */ false);
+			nullptr, /* autoClose */ false, pinnedNic);
 		m_rdmaQpByPeer[peer] = qp;
 	}
 

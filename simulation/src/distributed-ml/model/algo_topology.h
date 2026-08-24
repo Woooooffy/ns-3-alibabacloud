@@ -4,6 +4,8 @@
 #include "gpu.h"
 #include "msccl.h"
 #include <map>
+#include <set>
+#include <tuple>
 #include <vector>
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
@@ -61,6 +63,30 @@ namespace ns3
 
 		private:
 
+		// One send step's endpoints, recorded by ParseAlgoXml and consumed by ParseSwitchJson.
+		// The XML knows flowId -> (sender, peer, channel) but not which link the flow takes;
+		// the switch JSON knows flowId -> (switch, out port) but names no channel. Joining the
+		// two on the flow id is the only way to recover which of a multi-homed GPU's NICs the
+		// schedule intended a given connection to leave by (see ResolveScheduledNics).
+		struct FlowEndpoints {
+			uint32_t srcGpu;
+			int16_t peer;
+			int chan;
+		};
+		// (sender gpu id, peer, channel) -- the identity of one persistent RDMA connection,
+		// which is the granularity at which a NIC can be pinned (RdmaHw binds a qp to one NIC
+		// for its lifetime). A schedule that sent one such connection's flows out different
+		// NICs could not be honored; ResolveScheduledNics detects and reports that rather than
+		// silently following whichever flow it saw first.
+		struct ConnectionKey {
+			uint32_t srcGpu;
+			int16_t peer;
+			int chan;
+			bool operator<(const ConnectionKey& o) const {
+				return std::tie(srcGpu, peer, chan) < std::tie(o.srcGpu, o.peer, o.chan);
+			}
+		};
+
 		NodeContainer m_gpuNodes;
 		NodeContainer m_switchNodes;
 		int m_nInputChunks = 0;              // per-GPU input chunk count (i_chunks); tester n_chunks
@@ -74,11 +100,29 @@ namespace ns3
 		// fat tree runs several parallel links between the same switch pair (e.g. each
 		// leaf's multiple uplinks to one spine) -- keying one port per neighbor would let
 		// the last-installed device silently overwrite its siblings.
+		// Despite the name this caches GPU ports too: resolving a flow's ingress hop needs the
+		// sending GPU's own port map (which of its NICs faces the leaf named by the rule), and
+		// the lookup is identical -- walk the node's qbb channels and group ports by neighbor.
 		std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> m_switchPortCache;
+		// flow id -> the send step's endpoints, filled by ParseAlgoXml. Only send-bearing steps
+		// carrying a real flow id are recorded; the matching recv step repeats the same id but
+		// would name the receiver as "src".
+		std::map<uint32_t, FlowEndpoints> m_flowEndpoints;
+		// connection -> the sending GPU's ifIndex the schedule routes it out of, derived by
+		// ResolveScheduledNics and published onto the GPU nodes at the end of ParseSwitchJson.
+		std::map<ConnectionKey, uint32_t> m_scheduledNic;
+		// connections whose flows disagreed about the egress NIC (see ConnectionKey); left
+		// unpinned so they keep RdmaHw's ECMP hashing rather than honoring half a schedule.
+		std::set<ConnectionKey> m_scheduledNicConflicts;
 
-		std::map<uint32_t, std::vector<uint32_t>>& SwitchPortCache(Ptr<SwitchNode> sw);
+		std::map<uint32_t, std::vector<uint32_t>>& SwitchPortCache(Ptr<Node> node);
 		bool ResolveOutPorts(Ptr<SwitchNode> sw, Ptr<Node> target, std::vector<uint32_t>& outIfIndices);
 		bool ResolvePortNeighbor(Ptr<SwitchNode> sw, uint32_t ifIndex, uint32_t& neighborNodeId);
+		// If `sw` is the ingress hop of `flowId` (i.e. it neighbors that flow's sending GPU),
+		// record the GPU-side NIC facing it as that connection's scheduled egress NIC.
+		void ResolveScheduledNics(Ptr<SwitchNode> sw, uint32_t flowId);
+		// Push m_scheduledNic onto the GPU nodes and log a one-line summary.
+		void PublishScheduledNics();
 	};
 
 	AlgoParseResult mscclGetBufferType(const char* str, uint8_t* output);

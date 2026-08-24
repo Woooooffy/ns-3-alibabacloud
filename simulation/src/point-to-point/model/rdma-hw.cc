@@ -1,4 +1,5 @@
 #include <ns3/simulator.h>
+#include <algorithm>
 #include <functional>
 #include <vector>
 #include <ns3/simple-seq-ts-header.h>
@@ -270,22 +271,34 @@ uint32_t RdmaHw::GetNicIdxOfQp(Ptr<RdmaQueuePair> qp){
 	// documents GPUsPerServer as a perf hint, not a routing-correctness input.
 	uint32_t dip = qp->dip.Get();
 	if(m_rtTable.count(dip) != 0){
-		auto &v = m_rtTable[dip];
-		if (v.size() > 0){
-			return v[qp->GetHash() % v.size()];
-		}else{
-			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-		}
+		return SelectNic(qp, m_rtTable[dip]);
 	}else if(m_rtTable_nxthop_nvswitch.count(dip) != 0){
-		auto &v = m_rtTable_nxthop_nvswitch[dip];
-		if (v.size() > 0){
-			return v[qp->GetHash() % v.size()];
-		}else{
-			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-		}
+		return SelectNic(qp, m_rtTable_nxthop_nvswitch[dip]);
 	}else{
 		NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
 	}
+	NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
+	return 0;
+}
+
+// Picks this qp's NIC out of the equal-cost set BFS computed toward its destination. A qp
+// whose NIC the schedule dictates (see RdmaQueuePair::m_pinnedNicIdx) takes it; everything
+// else keeps the 5-tuple hash. The pin is honored only if it is actually in `candidates`,
+// so a stale or wrong switch JSON degrades to hashing rather than parking the qp on a NIC
+// that does not reach the destination at all.
+uint32_t RdmaHw::SelectNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates){
+	NS_ASSERT_MSG(candidates.size() > 0, "We assume at least one NIC is alive");
+	if (qp->m_pinnedNicIdx != RdmaQueuePair::NIC_UNPINNED){
+		if (std::find(candidates.begin(), candidates.end(), (int) qp->m_pinnedNicIdx) != candidates.end())
+			return qp->m_pinnedNicIdx;
+		// Once per qp would need extra state; this fires per call but only on a broken pin,
+		// which is a configuration error worth being noisy about.
+		NS_LOG_WARN("RdmaHw on node " << m_node->GetId() << ": qp to " << qp->dip
+			<< " is pinned to NIC " << qp->m_pinnedNicIdx << ", which is not an equal-cost next "
+			<< "hop toward that destination; falling back to ECMP hashing. The switch JSON's "
+			<< "ingress port for this connection likely disagrees with the built topology.");
+	}
+	return candidates[qp->GetHash() % candidates.size()];
 }
 uint64_t RdmaHw::GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg){
 	return ((uint64_t)dip << 32) | ((uint64_t)sport << 16) | (uint64_t)pg;
@@ -297,9 +310,12 @@ Ptr<RdmaQueuePair> RdmaHw::GetQp(uint32_t dip, uint16_t sport, uint16_t pg){
 		return it->second;
 	return NULL;
 }
-Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose){
+Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose, uint32_t pinnedNic){
 	// create qp
 	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
+	// must be set before the GetNicIdxOfQp below: that call not only places the qp in a NIC's
+	// queue-pair group but also seeds m_rate/m_max_rate from the chosen device
+	qp->m_pinnedNicIdx = pinnedNic;
 	qp->SetSrc(src);
 	qp->SetDest(dest);
 	qp->SetTag(tag);

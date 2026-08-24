@@ -742,6 +742,25 @@ int main(int argc, char *argv[]) {
     std::cout << "Total simulated time: "
         << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
 
+    // How much of the traffic the switch JSON actually steered. A miss means a flow-id-carrying
+    // packet reached a switch holding no rule for it and fell back to ECMP, i.e. the schedule
+    // was not in force for that packet. With the sender's NIC pinned to the plane the schedule
+    // chose, this should be ~0; a large miss share means the injection side and the routing
+    // side disagree and the --flowId comparison is not measuring what it claims to.
+    if (flowId) {
+        uint64_t hits = 0, misses = 0;
+        for (uint32_t s = 0; s < regswtches.GetN(); ++s) {
+            Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(regswtches.Get(s));
+            if (!sw) continue;
+            hits += sw->GetFlowRuleHits();
+            misses += sw->GetFlowRuleMisses();
+        }
+        const uint64_t total = hits + misses;
+        std::cout << "Flow-forwarding rule coverage: " << hits << " hit / " << misses << " miss";
+        if (total) std::cout << " (" << (100.0 * hits / total) << "% of flow-id packets steered by the schedule)";
+        std::cout << std::endl;
+    }
+
     // algorithm bandwidth: total data moved per rank / time
     std::cout << coll << " algorithm bandwidth: "
         << (double) INPUT_BYTES * N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;

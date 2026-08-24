@@ -25,6 +25,14 @@ class SwitchNode : public Node{
 	// neighbor (e.g. a leaf's multiple uplinks to one spine) every one of them satisfies the
 	// rule; the port is picked per flow by FlowHash, exactly as ECMP picks among nexthops.
 	std::unordered_map<uint32_t, std::vector<uint32_t> > m_flowForwardingTable;
+	// Packets that arrived carrying a flow id while custom forwarding was on, split by whether
+	// a rule matched. A miss is not an error -- it just means this switch is not on the path the
+	// schedule chose for that flow, so the packet takes ECMP -- but a large miss count means the
+	// schedule is largely not in force, which is otherwise invisible from the outside. The usual
+	// cause is the sender injecting on a NIC/plane whose switches hold none of the flow's rules
+	// (see RdmaQueuePair::m_pinnedNicIdx).
+	uint64_t m_flowRuleHits = 0;
+	uint64_t m_flowRuleMisses = 0;
 
 	// monitor of PFC
 	uint32_t m_bytes[pCnt][pCnt][qCnt]; // m_bytes[inDev][outDev][qidx] is the bytes from inDev enqueued for outDev at qidx
@@ -58,6 +66,8 @@ public:
 	void AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx);
 	void ClearTable();
 	void AddFlowForwardingRule(uint32_t flowId, const std::vector<uint32_t>& ports);
+	uint64_t GetFlowRuleHits() const { return m_flowRuleHits; }
+	uint64_t GetFlowRuleMisses() const { return m_flowRuleMisses; }
 	bool SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch);
 	void SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Packet> p);
 

@@ -22,6 +22,15 @@ public:
 	uint16_t sport, dport;
 	uint64_t m_size, m_init_size, m_tag; // m_size/m_init_size are informational (monitoring/print only) since the message queue below drives GetBytesLeft/IsFinished
 	uint32_t m_mscclFlowId; // app-level msccl flow id, carried on the wire via MscclFlowIdHeader; MscclFlowIdHeader::NO_FLOW_ID if unset
+	// sentinel for m_pinnedNicIdx meaning "no NIC pinned; hash across the equal-cost NICs"
+	static constexpr uint32_t NIC_UNPINNED = 0xffffffff;
+	// The NIC (ifIndex, which is also the index into RdmaHw::m_nic) this qp must leave by,
+	// when the schedule dictates one -- on a multi-homed fabric the sender's NIC choice picks
+	// the plane, and hashing it would land half the connections on a plane whose switches hold
+	// no rules for their flows. Set once at creation and never changed: RdmaHw binds a qp to a
+	// NIC's queue-pair group and seeds its rate from that device, so this must stay stable for
+	// the qp's lifetime. NIC_UNPINNED preserves the ECMP-hash behavior for every other caller.
+	uint32_t m_pinnedNicIdx = NIC_UNPINNED;
 	uint32_t m_src, m_dest;
 	uint64_t snd_nxt, snd_una; // next seq to send, the highest unacked seq
 	uint16_t m_pg;
