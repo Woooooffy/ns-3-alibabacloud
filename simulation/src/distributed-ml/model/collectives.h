@@ -52,11 +52,19 @@ namespace ns3 {
 		// rollover because COMPUTE_FLAG orders (iter, step) lexicographically.
 		uint32_t iter;
 		int64_t flag;
+		// The wire counterpart of `flag`. `flag` publishes a step the moment it completes
+		// locally -- for a send that is when the message was handed to the transport, not when
+		// its bytes left. `netFlag` publishes it only once the RDMA message has physically
+		// drained, and is what netdepid/netdeps are checked against. Monotone in (iter, step)
+		// under COMPUTE_FLAG exactly like `flag`, so it needs no special handling across the
+		// iteration rollover.
+		int64_t netFlag;
 		bool busy;
 		std::unordered_set<int16_t> tryReschedule; // TBs that should try rescheduling when this TB reaches flag
-		TBState(): bid(-1), global_step(0), local_step(0), iter(0), flag(-1), busy(false){}
+		std::unordered_set<int16_t> netTryReschedule; // ... and when it reaches netFlag
+		TBState(): bid(-1), global_step(0), local_step(0), iter(0), flag(-1), netFlag(-1), busy(false){}
 		TBState(int16_t id): bid(id), global_step(0), local_step(0), iter(0),
-      flag(-1), busy(false){}
+      flag(-1), netFlag(-1), busy(false){}
 	};
 
 /*	struct TransferState{
@@ -262,6 +270,10 @@ namespace ns3 {
 			// completes on the qp -- the CQE a proxy thread could really reap. No-op for a step
 			// with netGate == MSCCL_GATE_NONE.
 			void OpenGateForStep(int16_t bid, int16_t sid);
+			// Called when threadblock `bid`'s oldest outstanding network transfer has physically
+			// drained. Advances that threadblock's netFlag to the value recorded for that step at
+			// dispatch time and wakes anything parked on a netdepid/netdeps referring to it.
+			void NoteNetworkStepComplete(int16_t bid);
 			DataBuffer* GetSrcBuffer();
 			DataBuffer* GetDstBuffer();
 			DataBuffer* GetScratchBuffer();
@@ -386,6 +398,14 @@ namespace ns3 {
 			DataBuffer m_srcBuf;
 			DataBuffer m_dstBuf;
 			DataBuffer m_scratchBuf;
+			// Per-threadblock FIFO of the netFlag value each in-flight network transfer will
+			// publish when it drains. Pushed at dispatch (RunStep), where the step's (iter,
+			// global_step) is still current, and popped on completion -- which can be much later,
+			// by which time the threadblock has moved on and that pair is no longer recoverable.
+			// A FIFO rather than a map because a threadblock's messages complete in issue order:
+			// they share one qp (or, with NIC merging, a fixed set of qps that each drain their
+			// slice of every message in order).
+			std::map<int16_t, std::queue<int64_t>> m_pendingNetFlag;
 			uint16_t m_rdmaSportCounter = 0; // node-global; see AllocateRdmaSport
 			bool m_mergeNics = false;        // MergeNics attribute; see GetRdmaLaneCount
 			std::map<int16_t, uint8_t> m_rdmaLaneCount; // memoized GetRdmaLaneCount

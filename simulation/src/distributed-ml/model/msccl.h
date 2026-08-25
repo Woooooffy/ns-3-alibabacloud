@@ -107,10 +107,24 @@ struct mscclTransfer {
   // on RDMA send-bearing ops. Gates never close; a gate has exactly one owner.
   int16_t netGate;
   int16_t netWait;
+  // Network dependence (XML "netdepid"/"netdeps"): this op may not start until step
+  // `netDepStep` of threadblock `netDepBid` -- on this same GPU -- has physically drained onto
+  // the wire, i.e. its RDMA message completed on the qp. Both -1 when unused.
+  //
+  // This is the *wire* counterpart of depid/deps, which express buffer readiness: a send step
+  // "completes" for depid purposes the moment it is posted to the transport, long before its
+  // bytes are gone. A time-indexed solver (TE-CCL) relies on the wire meaning -- it separates
+  // flows into epochs so that concurrent link demand never exceeds capacity, and only network
+  // completion marks an epoch boundary. Dropping these turns a congestion-free schedule into
+  // an unthrottled release of every flow at once.
+  int16_t netDepBid;
+  int16_t netDepStep;
 };
 
 // Sentinel for netGate/netWait: this op neither opens nor waits on a gate.
 #define MSCCL_GATE_NONE ((int16_t)-1)
+// Sentinel for netDepBid/netDepStep: this op has no network dependence.
+#define MSCCL_NETDEP_NONE ((int16_t)-1)
 // Largest gate id a schedule may use. Not a capacity the runtime preallocates -- gate state is
 // sized per node from the highest id actually seen -- just a bound that keeps a typo'd id from
 // allocating a large gate vector on every node. Six gates per GPU is the measured need.
@@ -152,6 +166,9 @@ inline std::ostream& operator<<(std::ostream& os, const mscclTransfer& t) {
   }
   if (t.netWait != MSCCL_GATE_NONE) {
     os << ", netWait=" << t.netWait;
+  }
+  if (t.netDepBid != MSCCL_NETDEP_NONE) {
+    os << ", netDep=(tb " << t.netDepBid << ", step " << t.netDepStep << ")";
   }
 
   os << " }";

@@ -89,6 +89,8 @@ namespace ns3
 
 		NodeContainer m_gpuNodes;
 		NodeContainer m_switchNodes;
+		int m_nNetDeps = 0;                  // netdepid/netdeps pairs honored, for the parse summary
+		int m_nSendSteps = 0;                // send-bearing steps seen, the summary's denominator
 		int m_nInputChunks = 0;              // per-GPU input chunk count (i_chunks); tester n_chunks
 		int m_nScratchChunks = 0;            // max per-GPU scratch chunk count (s_chunks) over active GPUs
 		int m_nChunksPerLoop = 0;            // nchunksperloop from the <algo> root

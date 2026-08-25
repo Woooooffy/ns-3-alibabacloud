@@ -197,12 +197,53 @@ namespace ns3
 	}
 	#endif
 
+	// Post-parse validation of one GPU's network dependences (see mscclTransfer::netDepBid).
+	// Every reference must name a real step of a real threadblock on this same GPU, and that
+	// step must be one that actually puts bytes on the wire -- a dependence on a step that
+	// never produces a network completion would park the waiter forever.
+	static AlgoParseResult ValidateNetDeps(struct mscclAlgorithm* algo, int gpuId){
+		for (int bid = 0; bid < algo->nBlocks; ++bid){
+			struct mscclThreadBlock* tb = &algo->mscclTBs[bid];
+			for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+				struct mscclTransfer* tran = &tb->transfers[sid];
+				if (tran->netDepBid == MSCCL_NETDEP_NONE) continue;
+				if (tran->netDepBid >= algo->nBlocks){
+					NS_LOG_WARN("MSCCL: tb " << bid << " step " << sid << " on GPU (" << gpuId
+						<< ") has a network dependence on threadblock " << tran->netDepBid
+						<< ", which does not exist on this GPU (" << algo->nBlocks << " threadblocks).");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				struct mscclThreadBlock* dep = &algo->mscclTBs[tran->netDepBid];
+				if (tran->netDepStep < 0 || tran->netDepStep >= (int16_t) dep->nsteps){
+					NS_LOG_WARN("MSCCL: tb " << bid << " step " << sid << " on GPU (" << gpuId
+						<< ") has a network dependence on step " << tran->netDepStep << " of threadblock "
+						<< tran->netDepBid << ", which has only " << dep->nsteps << " steps.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				// Only send-bearing ops signal network completion (MscclChannel::OnRdmaSendComplete).
+				uint8_t t = dep->transfers[tran->netDepStep].type;
+				const bool sends = (t == MSCCL_SEND || t == MSCCL_RECV_COPY_SEND
+					|| t == MSCCL_RECV_REDUCE_SEND || t == MSCCL_RECV_REDUCE_COPY_SEND);
+				if (!sends){
+					NS_LOG_WARN("MSCCL: tb " << bid << " step " << sid << " on GPU (" << gpuId
+						<< ") waits on the network completion of tb " << tran->netDepBid << " step "
+						<< tran->netDepStep << ", which is not a send (type " << (int) t
+						<< ") and therefore never completes on the wire.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+			}
+		}
+		return AlgoParseResult::ALGO_PARSE_SUCCESS;
+	}
+
 	AlgoParseResult AlgoTopology::ParseAlgoXml(const char* file_path){
 		// NOTE: entire method makes use of libxml2-dev being installed
 		#ifdef HAVE_LIBXML2
 		// A re-parse replaces the algorithm wholesale, so stale endpoints from a previous XML
 		// must not survive to be joined against the next switch JSON.
 		m_flowEndpoints.clear();
+		m_nNetDeps = 0;
+		m_nSendSteps = 0;
 		int nRanks = GetNGpuNodes();
 		xmlDocPtr doc = xmlReadFile(file_path, NULL, 0);
 	  if (!doc) return AlgoParseResult::FILE_READ_ERROR;
@@ -415,6 +456,42 @@ namespace ns3
 							xmlFree(waitProp);
 						}
 					}
+
+					// Network dependence (see mscclTransfer::netDepBid). Read leniently like the
+					// attributes above, but counted: an emitter that names these differently, or a
+					// runtime that stops honoring them, silently converts a congestion-free
+					// schedule into "release every flow at t=0" with no other symptom than the
+					// congestion it then measures. The parse summary below is what makes that
+					// visible.
+					int16_t netDepBid = MSCCL_NETDEP_NONE;
+					int16_t netDepStep = MSCCL_NETDEP_NONE;
+					{
+						xmlChar* ndBidProp = xmlGetProp(stepNode, BAD_CAST "netdepid");
+						xmlChar* ndStepProp = xmlGetProp(stepNode, BAD_CAST "netdeps");
+						if (ndBidProp) netDepBid = (int16_t) atoi((const char*)ndBidProp);
+						if (ndStepProp) netDepStep = (int16_t) atoi((const char*)ndStepProp);
+						if (ndBidProp) xmlFree(ndBidProp);
+						if (ndStepProp) xmlFree(ndStepProp);
+						// Half a dependence is always a bug: one of the pair was renamed, or the
+						// emitter wrote an id with no step. Silently ignoring it would reintroduce
+						// exactly the failure this counter exists to catch.
+						if ((netDepBid >= 0) != (netDepStep >= 0)){
+							NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+								<< gpuId << ") has netdepid=" << netDepBid << " but netdeps=" << netDepStep
+								<< " -- both must be present together.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						if (netDepBid >= 0){
+							if (netDepBid > MSCCL_MAX_THREAD_BLOCK_ID){
+								NS_LOG_WARN("MSCCL: netdepid (" << netDepBid << ") at step " << s
+									<< " of threadblock (" << bid << ") on GPU (" << gpuId
+									<< ") exceeds the largest representable thread block id ("
+									<< MSCCL_MAX_THREAD_BLOCK_ID << ").");
+								return AlgoParseResult::INVALID_USE_ERROR;
+							}
+							++m_nNetDeps;
+						}
+					}
 					if (netGate < MSCCL_GATE_NONE || netWait < MSCCL_GATE_NONE){
 						NS_LOG_WARN("MSCCL: netgate/netwait must be >= -1, but step " << s << " of threadblock (" << bid << ") on GPU (" << gpuId << ") has netgate=" << netGate << " netwait=" << netWait << ".");
 						return AlgoParseResult::INVALID_USE_ERROR;
@@ -553,6 +630,8 @@ namespace ns3
 						// transfer -- otherwise an absent attribute would read as gate 0.
 						msccltran->netGate = netGate;
 						msccltran->netWait = netWait;
+						msccltran->netDepBid = netDepBid;
+						msccltran->netDepStep = netDepStep;
 
 						if (count < 0 || count >= MSCCL_MAX_COUNT){
 							NS_LOG_WARN("MSCCL: count (" << count << ") must be positive and less than " << MSCCL_MAX_COUNT);
@@ -561,6 +640,7 @@ namespace ns3
 						msccltran->count = count;
 
 						if (hasSend){
+							++m_nSendSteps;
 							if (sendpeer < 0){
 								NS_LOG_WARN("MSCCL: there is a send in threadblock (" << bid << ") on GPU (" << gpuId << ") without a sendpeer.");
 								return AlgoParseResult::INVALID_USE_ERROR;
@@ -689,6 +769,8 @@ namespace ns3
 			{
 				AlgoParseResult gateRes = ValidateNetGates(mscclAlgo, gpuId);
 				if (gateRes != AlgoParseResult::ALGO_PARSE_SUCCESS) return gateRes;
+				AlgoParseResult netDepRes = ValidateNetDeps(mscclAlgo, gpuId);
+				if (netDepRes != AlgoParseResult::ALGO_PARSE_SUCCESS) return netDepRes;
 			}
 
 			mscclAlgo->isValid = true;
@@ -713,6 +795,19 @@ namespace ns3
 			}
     } // gpu
 		std::sort(m_activeGpuIds.begin(), m_activeGpuIds.end());
+
+		// Unconditional, like the switch-JSON summary. A schedule from a time-indexed solver is
+		// congestion-free only because its network dependences separate flows into epochs; if
+		// this reports 0 while the XML is full of them, the attribute names have drifted and the
+		// run will release every flow at once -- which looks like a congested fabric rather than
+		// like a parse bug, and is very expensive to diagnose from the other end.
+		NS_LOG_UNCOND("Algorithm XML: honoring " << m_nNetDeps << " network dependence(s) over "
+			<< m_nSendSteps << " send step(s)."
+			<< (m_nNetDeps == 0 && m_nSendSteps > 0
+				? " NOTE: no netdepid/netdeps found -- every send is released as soon as its data"
+				  " dependences allow, so a time-indexed schedule will not be paced as solved."
+				: ""));
+
 		xmlFreeDoc(doc);
 		return ALGO_PARSE_SUCCESS;
 	#else

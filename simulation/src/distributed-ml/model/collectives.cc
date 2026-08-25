@@ -594,6 +594,9 @@ namespace ns3 {
 			m_sendLanesLeft.erase(it);
 		}
 		m_app->OpenGateForStep(bid, sid);
+		// Publishes this step's netFlag, releasing any threadblock parked on a netdepid/netdeps
+		// naming it. Both live here because this is the one place that means "the bytes are gone".
+		m_app->NoteNetworkStepComplete(bid);
 	}
 
 	void MscclChannel::Recv(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff){
@@ -904,6 +907,22 @@ namespace ns3 {
 		uint16_t dstbuf = tran->dstbuffer;
 		int16_t srcoff = tran->srcoffset;
 		int16_t dstoff = tran->dstoffset;
+		// Send-bearing ops produce a network completion later (MscclChannel::OnRdmaSendComplete).
+		// Capture the flag it should publish now, while (iter, global_step) still describe this
+		// step -- global_step is already the value StepCompletionCallback will publish as this
+		// step's `flag`, so netFlag and flag stay on the same numbering.
+		switch (tran->type){
+			case MSCCL_SEND:
+			case MSCCL_RECV_COPY_SEND:
+			case MSCCL_RECV_REDUCE_SEND:
+			case MSCCL_RECV_REDUCE_COPY_SEND:
+				if (IsRdmaPeer((int16_t) sendPeer)){
+					m_pendingNetFlag[bid].push(COMPUTE_FLAG(m_currWorkId, iter, m_TBStates[bid].global_step));
+				}
+				break;
+			default:
+				break;
+		}
 		switch (tran->type){
 			case MSCCL_SEND:
 				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId, tran->rate, gridByteOff);
@@ -952,6 +971,31 @@ namespace ns3 {
 		m_gateWaiters[gate].clear();
 	}
 
+	void CollectivesApplication::NoteNetworkStepComplete(int16_t bid){
+		auto it = m_pendingNetFlag.find(bid);
+		if (it == m_pendingNetFlag.end() || it->second.empty()){
+			// A completion with nothing recorded means a send was dispatched down a path RunStep
+			// did not account for; anything waiting on it would hang, so say so loudly.
+			NS_LOG_WARN("GPU " << GetNode()->GetId() << " TB=" << (int)bid
+				<< ": network completion with no pending netFlag recorded. A netdepid on this "
+				<< "threadblock would never be satisfied.");
+			return;
+		}
+		int64_t done = it->second.front();
+		it->second.pop();
+		TBState* tbState = &m_TBStates[bid];
+		// Monotone by construction (messages drain in issue order), but clamp anyway: a
+		// non-monotone netFlag would let an already-satisfied waiter block again.
+		if (done > tbState->netFlag) tbState->netFlag = done;
+		NS_LOG_DEBUG("GPU " << GetNode()->GetId() << " TB=" << (int)bid
+			<< " netFlag -> " << tbState->netFlag
+			<< " t=" << Simulator::Now().GetNanoSeconds());
+		for (int16_t waiter : tbState->netTryReschedule){
+			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, waiter);
+		}
+		tbState->netTryReschedule.clear();
+	}
+
 	void CollectivesApplication::OpenGateForStep(int16_t bid, int16_t sid){
 		int16_t gate = m_algo->mscclTBs[bid].transfers[sid].netGate;
 		if (gate == MSCCL_GATE_NONE) return;
@@ -984,6 +1028,27 @@ namespace ns3 {
 				<< " t=" << Simulator::Now().GetNanoSeconds());
 			m_gateWaiters[tran->netWait].insert(bid);
 			return;
+		}
+		// Network-dependence check (XML netdepid/netdeps). Same placement rationale as the gate
+		// check above: it must precede the data-dependency block, which mutates global_step on
+		// its success path. This is what paces a time-indexed schedule -- without it every send
+		// whose *buffer* is ready fires immediately, and a solve that was congestion-free by
+		// construction is released as one simultaneous burst.
+		if (tran->netDepBid != MSCCL_NETDEP_NONE){
+			TBState* netDepTB = &m_TBStates[tran->netDepBid];
+			// Same per-iteration step numbering as the data dependences below: the target names a
+			// step within this threadblock's own iteration, and COMPUTE_FLAG orders (iter, step)
+			// lexicographically so a producer already in a later iteration satisfies it for free.
+			int64_t needFlag = COMPUTE_FLAG(m_currWorkId, tbState->iter, tran->netDepStep);
+			if (needFlag > netDepTB->netFlag){
+				NS_LOG_DEBUG("GPU " << nodeId << " TB=" << (int)bid << " sid=" << sid
+					<< " BLOCKED on network completion of TB=" << (int)tran->netDepBid
+					<< " step=" << tran->netDepStep
+					<< " needFlag=" << needFlag << " netFlag=" << netDepTB->netFlag
+					<< " t=" << Simulator::Now().GetNanoSeconds());
+				netDepTB->netTryReschedule.insert(bid);
+				return;
+			}
 		}
 		// int16_t nDeps = tState->nPendingDeps;
 		int16_t nDeps = tran->numDependences;
