@@ -13,6 +13,12 @@
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-module.h"
 #include "ns3/distributed-ml-module.h"
+// explicit rather than relying on the module umbrellas: the per-NIC bandwidth trace reads
+// RdmaHw::tx_bytes directly and resolves each link's far end through QbbChannel
+#include "ns3/rdma-driver.h"
+#include "ns3/rdma-hw.h"
+#include "ns3/qbb-channel.h"
+#include "ns3/nvswitch-node.h"
 
 #include <sys/stat.h>
 #include <cstdio>
@@ -64,6 +70,45 @@ static void OnSwitchPfc(FILE* out, uint32_t swId, uint32_t port, uint32_t type) 
     fprintf(out, "%ld,%u,%u,,,%s\n", Simulator::Now().GetNanoSeconds(), swId, port, type == 1 ? "pause" : "resume");
 }
 
+// ---- per-NIC host bandwidth sampling ------------------------------------------------------
+// RdmaHw::tx_bytes is a running per-port byte counter fed from QbbNetDevice's transmit path
+// (RdmaHw::Setup wires m_rdmaUpdateTxBytes), so sampling it periodically costs the simulation
+// nothing and gives each GPU NIC's utilization as a function of time.
+//
+// This is the measurement an aggregate byte count cannot make. Two NIC-selection policies can
+// move identical total bytes over each NIC yet differ in when they move them: one may saturate
+// plane A while plane B idles and then swap, the other may keep both half-busy throughout.
+// Only a time-resolved trace separates "a NIC was left idle" from "both NICs were busy and the
+// limit was elsewhere".
+struct NicProbe {
+    Ptr<RdmaHw> hw;
+    uint32_t nodeId;
+    uint32_t port;
+    const char* kind;   // "nvlink" (peer is an NVSwitch) or "fabric" (peer is a leaf)
+    uint64_t lastBytes;
+};
+
+static void SampleNicBw(FILE* out, std::vector<NicProbe>* probes, Time interval) {
+    const int64_t now = Simulator::Now().GetNanoSeconds();
+    const double secs = interval.GetSeconds();
+    for (NicProbe& p : *probes) {
+        uint64_t cur = p.hw->tx_bytes[p.port];
+        uint64_t delta = cur - p.lastBytes;
+        p.lastBytes = cur;
+        // Idle NICs are emitted too, with delta 0. An omitted row would be indistinguishable
+        // from a sample that never ran, and idleness is the whole point of this trace.
+        fprintf(out, "%ld,%u,%u,%s,%llu,%.4f\n", now, p.nodeId, p.port, p.kind,
+                (unsigned long long) delta, delta * 8.0 / secs / 1e9);
+    }
+    // Guard against keeping the simulation alive forever: a self-rescheduling event is always
+    // pending, so Run() would never see an empty queue and never return. IsFinished() is true
+    // exactly when nothing else remains -- this event has already been popped -- which in a
+    // discrete-event simulator means the run really is over.
+    if (!Simulator::IsFinished()) {
+        Simulator::Schedule(interval, &SampleNicBw, out, probes, interval);
+    }
+}
+
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("DUAL_PLANE_HETERO");
 //    LogComponentEnable("CollectivesApplication", LOG_INFO);
@@ -87,6 +132,9 @@ int main(int argc, char *argv[]) {
     //   0 -> unmerged: one qp per connection, NICs handed out round-robin
     // With flowId on, both are bypassed -- the schedule pins each connection to one plane.
     bool mergeNics = true;
+    // Period of the per-NIC bandwidth trace, in ns. 0 disables it, so every existing invocation
+    // behaves exactly as before and pays nothing.
+    uint32_t nicBwIntervalNs = 0;
     std::string checkLog = "minimal"; // silent | minimal | verbose
     uint32_t maxMismatches = 10;
 
@@ -98,6 +146,7 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("rateTargeting", "Treat per-flow XML rates as targets, not just caps", rateTargeting);
     cmd.AddValue("flowId", "Install per-flow switch forwarding from the switch JSON", flowId);
     cmd.AddValue("mergeNics", "Baseline only (flowId=false): 1 = NCCL-style merged NIC (one qp per NIC, message split across them), 0 = one qp per connection, round-robin NICs", mergeNics);
+    cmd.AddValue("nicBwInterval", "Sample every GPU NIC's transmitted bytes this often, in ns (0 = off). Try 100 at 1MB, 2000 at 128MB.", nicBwIntervalNs);
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
     cmd.Parse(argc, argv);
@@ -743,9 +792,43 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // ---- per-NIC host bandwidth trace (opt-in via --nicBwInterval) ----
+    // Probes are built after RdmaFabricHelper::Build, which is what creates each GPU's
+    // RdmaDriver/RdmaHw and sizes RdmaHw::tx_bytes to the node's device count.
+    static std::vector<NicProbe> nicProbes;
+    FILE* nicOut = nullptr;
+    std::string nicPath;
+    if (nicBwIntervalNs > 0) {
+        nicPath = ns3::SystemPath::Append(LOG_DIR, "host_nic_bw_" + label + ".csv");
+        nicOut = fopen(nicPath.c_str(), "w");
+        if (!nicOut) NS_FATAL_ERROR("Failed to open the per-NIC bandwidth output file.");
+        fprintf(nicOut, "time_ns,node_id,port_id,kind,bytes,gbps\n");
+        for (uint32_t g = 0; g < gpunodes.GetN(); ++g) {
+            Ptr<Node> gpu = gpunodes.Get(g);
+            Ptr<RdmaDriver> drv = gpu->GetObject<RdmaDriver>();
+            if (!drv) continue;
+            for (uint32_t d = 0; d < gpu->GetNDevices(); ++d) {
+                Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(gpu->GetDevice(d));
+                if (!dev) continue;
+                // Classify by what the link actually reaches rather than by device index, so
+                // the trace stays correct if the topology's Install order ever changes.
+                Ptr<QbbChannel> ch = DynamicCast<QbbChannel>(dev->GetChannel());
+                if (!ch) continue;
+                Ptr<NetDevice> other = (ch->GetDevice(0) == dev) ? ch->GetDevice(1) : ch->GetDevice(0);
+                const char* kind = DynamicCast<NVSwitchNode>(other->GetNode()) ? "nvlink" : "fabric";
+                nicProbes.push_back(NicProbe{drv->m_rdma, gpu->GetId(), dev->GetIfIndex(), kind, 0});
+            }
+        }
+        Time iv = NanoSeconds(nicBwIntervalNs);
+        Simulator::Schedule(iv, &SampleNicBw, nicOut, &nicProbes, iv);
+        std::cout << "Per-NIC bandwidth trace: " << nicPath
+                  << " (every " << nicBwIntervalNs << " ns, " << nicProbes.size() << " NICs)" << std::endl;
+    }
+
     Simulator::Run();
     fclose(qlenOut);
     fclose(eventOut);
+    if (nicOut) fclose(nicOut);
     std::cout << "NIC selection: " << (flowId ? "schedule-pinned (one qp per connection)"
         : (mergeNics ? "merged NIC (one qp per NIC, message split across them)"
                      : "round-robin (one qp per connection)")) << std::endl;
