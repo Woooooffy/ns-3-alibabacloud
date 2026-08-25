@@ -9,6 +9,7 @@
 #include <ns3/custom-header.h>
 #include <ns3/int-header.h>
 #include <ns3/msccl-flow-id-header.h>
+#include <deque>
 #include <queue>
 #include <vector>
 #include <functional>
@@ -84,13 +85,32 @@ public:
 		Callback<void> m_notifyAppFinish;
 		Callback<void> m_notifyAppSent;
 	};
-	std::queue<RdmaMessage> m_messages;
+	// A deque rather than a queue because the qp sends out of a different element than it
+	// retires: the FRONT message is the oldest unacknowledged one (retired by FinishMessage
+	// when its bytes are acked), while snd_nxt may already have run on into a LATER message.
+	// Those two are the same element only when m_maxMsgsInFlight == 1.
+	std::deque<RdmaMessage> m_messages;
+	// How many messages this qp may have in flight at once, counting from the oldest
+	// unacknowledged one through the one snd_nxt is currently in. This is the transport's
+	// pipelining depth, and the analogue of NCCL's NCCL_STEPS ring-buffer slots: real hardware
+	// streams the next step's bytes out while earlier steps are still awaiting completion.
+	// 1 restores strict one-message-at-a-time behaviour, in which the qp goes idle for a full
+	// RTT at every message boundary waiting for the ack that retires the front message. Set
+	// from RdmaHw's MaxMsgsInFlight attribute at qp creation.
+	uint32_t m_maxMsgsInFlight = 1;
 	void PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, DataRate rate = DataRate(0));
 	void FinishMessage(); // pops the front message, fires its m_notifyAppFinish
 	bool IsCurMessageFinished(); // snd_una >= front.m_startSeq + front.m_size
-	uint8_t* GetCurSrcDataPtr(); // front message's srcDataPtr, or nullptr if no message pending
-	uint32_t GetCurMscclFlowId(); // front message's mscclFlowId, or this qp's own (fallback) if no message pending
-	DataRate GetCurRate(); // front message's host-side pacing cap, or DataRate(0) (no cap) if no message pending
+	// The message snd_nxt currently falls in -- the one whose bytes the next packet carries --
+	// or nullptr when there is nothing sendable, either because every queued message has been
+	// fully sent or because doing so would exceed m_maxMsgsInFlight. Everything on the send
+	// path is derived from this rather than from front(), since each message on a persistent
+	// qp can carry its own source buffer, flow id and pacing cap.
+	const RdmaMessage* GetSendingMessage();
+	uint8_t* GetCurSrcDataPtr(); // sending message's srcDataPtr, or nullptr if none/not sendable
+	uint64_t GetCurMsgStartSeq(); // sending message's m_startSeq, or snd_nxt if none sendable
+	uint32_t GetCurMscclFlowId(); // sending message's mscclFlowId, or this qp's own (fallback) if none
+	DataRate GetCurRate(); // sending message's host-side pacing cap, or DataRate(0) (no cap) if none
 	/******************************
 	 * runtime states
 	 *****************************/

@@ -48,6 +48,11 @@ public:
 	// max_burst_sz / packet_pacing_burst_bound analog). Converted to a time budget at the
 	// qp's pace rate; bounds how far a starved qp may run ahead after an idle gap.
 	uint32_t m_paceMaxCreditBytes;
+	// Pipelining depth of a persistent qp: how many messages it may have in flight at once,
+	// counting from the oldest unacknowledged one through the one snd_nxt is in. Copied onto
+	// each qp at creation (RdmaQueuePair::m_maxMsgsInFlight). Mirrors NCCL's NCCL_STEPS ring
+	// slots; 1 serializes messages, costing a full RTT of idle wire at every message boundary.
+	uint32_t m_maxMsgsInFlight;
 	uint32_t m_total_pause_times; 
 	uint32_t m_paused_times;
 	std::vector<RdmaInterfaceMgr> m_nic; // list of running nic controlled by this RdmaHw

@@ -147,6 +147,18 @@ TypeId RdmaHw::GetTypeId (void)
 				BooleanValue(false),
 				MakeBooleanAccessor(&RdmaHw::m_rateTargeting),
 				MakeBooleanChecker())
+		.AddAttribute("MaxMsgsInFlight",
+				"How many messages a queue pair may have in flight at once, counting from the "
+				"oldest unacknowledged message through the one it is currently sending. This is "
+				"the transport's pipelining depth, and the analogue of NCCL's NCCL_STEPS ring "
+				"slots: real hardware streams the next message's bytes out while earlier ones "
+				"are still awaiting completion. 1 serializes messages, which leaves the wire "
+				"idle for a full RTT at every message boundary. Only matters for a persistent qp "
+				"that is given several messages at once (e.g. MSCCL pipelining); a qp carrying a "
+				"single message behaves identically at any value.",
+				UintegerValue(8),
+				MakeUintegerAccessor(&RdmaHw::m_maxMsgsInFlight),
+				MakeUintegerChecker<uint32_t>(1))
 		.AddAttribute("PaceMaxCreditBytes",
 				"Max banked catch-up burst for the accumulating rate-targeting pacer, in bytes "
 				"(max_burst_sz analog). Only used when RateTargeting is true.",
@@ -363,6 +375,7 @@ Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t ta
 	qp->SetBaseRtt(baseRtt);
 	qp->SetVarWin(m_var_win);
 	qp->m_pacerAccumulate = m_rateTargeting; // must be set before any PushMessage below
+	qp->m_maxMsgsInFlight = m_maxMsgsInFlight;
 	qp->m_autoClose = autoClose;
 	// size == 0 is used to eagerly establish a persistent connection (see
 	// MscclChannel::SetupRdmaSendPeer) with no message queued yet; a non-persistent caller
@@ -827,13 +840,16 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	uint64_t payload_size = qp->GetBytesLeft();
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
-	// source pointer, if any, belongs to the current message and is indexed relative to
-	// that message's own start offset -- not the connection-wide snd_nxt -- since each
-	// message on a persistent qp can come from a different source buffer (different
-	// srcbuf/srcoff per MSCCL Send() call).
+	// source pointer, if any, belongs to the message snd_nxt is currently in -- which is not
+	// necessarily the front one, since the qp may be pipelining ahead of the oldest
+	// unacknowledged message -- and is indexed relative to that message's own start offset
+	// rather than the connection-wide snd_nxt, since each message on a persistent qp can come
+	// from a different source buffer (different srcbuf/srcoff per MSCCL Send() call).
+	// GetBytesLeft above caps payload_size at that message's end, so a packet never straddles
+	// a boundary and this index stays inside the message's buffer.
 	uint8_t* curSrcDataPtr = qp->GetCurSrcDataPtr();
 	Ptr<Packet> p = (curSrcDataPtr != nullptr)
-		? Create<Packet>(curSrcDataPtr + (qp->snd_nxt - qp->m_messages.front().m_startSeq), (uint32_t)payload_size)
+		? Create<Packet>(curSrcDataPtr + (qp->snd_nxt - qp->GetCurMsgStartSeq()), (uint32_t)payload_size)
 		: Create<Packet>((uint32_t)payload_size);
 	// carry the qp's msccl flow id as a real header (innermost, right next to the
 	// payload) so switches can do custom flow-based forwarding instead of plain

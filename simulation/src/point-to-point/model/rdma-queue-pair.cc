@@ -148,7 +148,7 @@ void RdmaQueuePair::PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t msc
 	msg.m_rate = rate;
 	msg.m_notifyAppFinish = notifyAppFinish;
 	msg.m_notifyAppSent = notifyAppSent;
-	m_messages.push(msg);
+	m_messages.push_back(msg);
 	// m_size/m_init_size are informational only (monitoring/print output); no longer drive
 	// GetBytesLeft/IsFinished, which are computed relative to the message queue below.
 	m_size += size;
@@ -159,7 +159,7 @@ void RdmaQueuePair::PushMessage(uint64_t size, uint8_t* srcDataPtr, uint32_t msc
 void RdmaQueuePair::FinishMessage(){
 	NS_ASSERT_MSG(!m_messages.empty(), "RdmaQueuePair::FinishMessage(): message queue is empty");
 	RdmaMessage msg = m_messages.front();
-	m_messages.pop();
+	m_messages.pop_front();
 	if (!msg.m_notifyAppFinish.IsNull())
 		msg.m_notifyAppFinish();
 }
@@ -170,22 +170,60 @@ bool RdmaQueuePair::IsCurMessageFinished(){
 	return snd_una >= m_messages.front().m_startSeq + m_messages.front().m_size;
 }
 
+// Walks forward from the oldest unacknowledged message to the one snd_nxt sits in. Messages
+// are laid out contiguously in sequence space (PushMessage chains each m_startSeq onto the
+// previous message's end), so this is just a scan for the element whose range covers snd_nxt.
+//
+// Two things stop the scan. Running off the end means every queued byte has already been put
+// on the wire and the qp is simply waiting for acks. Reaching m_maxMsgsInFlight means the
+// pipelining depth is exhausted: index i counts messages from the front, so a sending message
+// at index i implies i+1 messages in flight, and i must stay below the limit. Either way the
+// qp reports nothing to send until an ack retires the front message -- and RdmaHw's ack
+// handler calls TriggerTransmit afterwards, which is what re-polls the NIC once credit frees.
+const RdmaQueuePair::RdmaMessage* RdmaQueuePair::GetSendingMessage(){
+	uint64_t seq = snd_nxt;
+	for (uint32_t i = 0; i < m_messages.size(); i++){
+		if (i >= m_maxMsgsInFlight)
+			return nullptr; // pipelining depth exhausted; wait for an ack to retire the front
+		const RdmaMessage& msg = m_messages[i];
+		if (seq < msg.m_startSeq + msg.m_size)
+			return &msg;
+	}
+	return nullptr; // everything queued is already on the wire
+}
+
 uint8_t* RdmaQueuePair::GetCurSrcDataPtr(){
-	return m_messages.empty() ? nullptr : m_messages.front().m_srcDataPtr;
+	const RdmaMessage* msg = GetSendingMessage();
+	return msg == nullptr ? nullptr : msg->m_srcDataPtr;
+}
+
+uint64_t RdmaQueuePair::GetCurMsgStartSeq(){
+	const RdmaMessage* msg = GetSendingMessage();
+	return msg == nullptr ? snd_nxt : msg->m_startSeq;
 }
 
 uint32_t RdmaQueuePair::GetCurMscclFlowId(){
-	return m_messages.empty() ? GetMscclFlowId() : m_messages.front().m_mscclFlowId;
+	const RdmaMessage* msg = GetSendingMessage();
+	return msg == nullptr ? GetMscclFlowId() : msg->m_mscclFlowId;
 }
 
 DataRate RdmaQueuePair::GetCurRate(){
-	return m_messages.empty() ? DataRate(0) : m_messages.front().m_rate;
+	const RdmaMessage* msg = GetSendingMessage();
+	return msg == nullptr ? DataRate(0) : msg->m_rate;
 }
 
+// Bytes the qp may send right now, which is what makes it eligible for the NIC's arbiter
+// (see QbbNetDevice::DequeueQindex). Deliberately capped at the end of the *sending* message
+// rather than spanning the whole backlog: a packet must never straddle a message boundary,
+// since RdmaHw::GetNxtPacket indexes each message's own source buffer relative to that
+// message's m_startSeq, and consecutive messages on a persistent qp generally come from
+// unrelated buffers. Returning 0 means "nothing sendable now" -- either fully sent, or
+// blocked on pipelining depth -- not "the qp is done"; IsFinished() answers that.
 uint64_t RdmaQueuePair::GetBytesLeft(){
-	if (m_messages.empty())
+	const RdmaMessage* msg = GetSendingMessage();
+	if (msg == nullptr)
 		return 0;
-	uint64_t end = m_messages.front().m_startSeq + m_messages.front().m_size;
+	uint64_t end = msg->m_startSeq + msg->m_size;
 	return end >= snd_nxt ? end - snd_nxt : 0;
 }
 

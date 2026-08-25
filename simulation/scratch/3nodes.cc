@@ -20,9 +20,14 @@ int main(int argc, char *argv[]) {
   //  LogComponentEnable("RdmaHw", LOG_LEVEL_ALL);
     uint32_t inputBytes = (1 << 20) * 4;
 		uint32_t protoChunkBytes = (1 << 20) * 2;
+		uint32_t maxMsgsInFlight = 8;
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
 	cmd.AddValue("protoChunkBytes", "chunk size for algo pipelining", protoChunkBytes);
+	// Transport pipelining depth (NCCL_STEPS analogue). 1 serializes messages on a qp, which
+	// costs a full RTT of idle wire at every message boundary -- only visible once algorithm
+	// pipelining puts more than one message on a qp at a time.
+	cmd.AddValue("maxMsgsInFlight", "messages a qp may have in flight at once", maxMsgsInFlight);
 	cmd.Parse(argc, argv);
 
     NodeContainer gpunodes;
@@ -55,6 +60,7 @@ int main(int argc, char *argv[]) {
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(1));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
+    Config::SetDefault("ns3::RdmaHw::MaxMsgsInFlight", UintegerValue(maxMsgsInFlight));
 
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     // (also installs the internet stack on gpunodes -- do not call
