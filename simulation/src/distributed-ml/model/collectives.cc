@@ -349,7 +349,7 @@ namespace ns3 {
 		m_pendingSends[sock].push(send);
 	}
 
-	void MscclChannel::Send(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff){
+	void MscclChannel::Send(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter){
 		if (sendpeer < 0){
 			NS_FATAL_ERROR("Send peer is negative in Send");
 		}
@@ -357,7 +357,7 @@ namespace ns3 {
 			NS_FATAL_ERROR("Invalid dst offset in Send");
 		}
 		if (m_app->IsRdmaPeer(sendpeer)){
-			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId, rateGBps, gridByteOff);
+			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId, rateGBps, gridByteOff, iter);
 			return;
 		}
 		// gpu<->gpu p2p (socket) path: the host-side "rate" is ignored here, since this
@@ -496,7 +496,7 @@ namespace ns3 {
 		size = myElems * elemSize;
 	}
 
-	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff){
+	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter){
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 
 		auto it = m_rdmaQpByPeer.find(sendpeer);
@@ -532,10 +532,14 @@ namespace ns3 {
 			if (sz > 0) ++activeLanes;
 		}
 		if (activeLanes == 0){
-			// Nothing to send at all; the gate is the only thing waiting, so open it directly.
-			Simulator::ScheduleNow(&CollectivesApplication::OpenGateForStep, m_app, bid, sid);
+			// Nothing to send at all, so no completion will ever fire. Open the gate directly --
+			// and drop the netFlag this step recorded at dispatch, since nothing will arrive to
+			// pop it and every later completion on this threadblock would otherwise be matched
+			// against a stale queue entry.
+			Simulator::ScheduleNow(&CollectivesApplication::OpenGateForStep, m_app, bid, sid, iter);
+			Simulator::ScheduleNow(&CollectivesApplication::NoteNetworkStepComplete, m_app, bid);
 		} else {
-			m_sendLanesLeft[std::make_pair(bid, sid)] = activeLanes;
+			m_sendLanesLeft[std::make_tuple(bid, sid, iter)] = activeLanes;
 		}
 
 		for (uint8_t lane = 0; lane < nLanes; ++lane){
@@ -547,7 +551,7 @@ namespace ns3 {
 			// requires operator!= on the functor, which closures don't have), so bind the
 			// context onto a member-function Callback one argument at a time instead.
 			Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
-				.Bind(bid).Bind(sid).Bind(sendpeer).Bind(srcbuf).Bind(srcoff).Bind(dstbuf).Bind(dstoff).Bind(nElems);
+				.Bind(bid).Bind(sid).Bind(iter).Bind(sendpeer).Bind(nElems);
 
 			qps[lane]->PushMessage(laneBytes, srcDataPtr ? srcDataPtr + laneOff : nullptr,
 				mscclFlowId, finishCb, Callback<void>(), paceRate);
@@ -571,31 +575,33 @@ namespace ns3 {
 		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
 
-	void MscclChannel::OnRdmaSendComplete(int16_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems){
-		uint16_t dstoffU = static_cast<uint16_t>(dstoff);
+	void MscclChannel::OnRdmaSendComplete(int16_t bid, int16_t sid, uint32_t iter, int16_t sendpeer, uint32_t nElems){
 		// The send step itself already completed in SendRdma, when the message was handed to
 		// the RDMA engine; this fires later, on message completion (snd_una >= startSeq+size),
-		// and does not drive step completion. It does open this step's network gate: message
-		// completion is the only signal a real proxy thread can reap, so it is what a gate is
-		// defined on.
+		// and does not drive step completion. It is instead where the two things that genuinely
+		// mean "the bytes are gone" happen: this step's network gate opens, and its netFlag is
+		// published. Message completion is the only signal a real proxy thread can reap.
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
 			<< ": RDMA send to " << sendpeer << " physically drained (sender side)"
-			<< " bid=" << (int)bid << " sid=" << sid
-			<< " dstInfo=(" << dstbuf << "," << dstoffU << ")"
+			<< " bid=" << (int)bid << " sid=" << sid << " iter=" << iter
+			<< " nElems=" << nElems
 			<< " at t=" << Simulator::Now().GetNanoSeconds());
-		// The finishCb bind list is already full, so the gate id is looked up from the transfer
-		// here rather than bound as a ninth argument -- bid and sid identify it uniquely.
-		// With the message striped over several lanes this fires once per lane, but the gate
-		// means "this step's data is off the wire", so it opens only when the last lane drains.
-		auto key = std::make_pair(bid, sid);
+		// With the message striped over several lanes this fires once per lane, but "off the
+		// wire" means every lane, so the effects below run only when the last one drains. The
+		// counter is keyed by iteration as well as step: this threadblock may already have
+		// re-posted the same (bid, sid) for a later slice while these lanes were still in
+		// flight, and a shared counter would let that re-post's seed swallow this step's
+		// remaining completions (see m_sendLanesLeft).
+		auto key = std::make_tuple(bid, sid, iter);
 		auto it = m_sendLanesLeft.find(key);
 		if (it != m_sendLanesLeft.end()){
 			if (--(it->second) > 0) return;
 			m_sendLanesLeft.erase(it);
 		}
-		m_app->OpenGateForStep(bid, sid);
-		// Publishes this step's netFlag, releasing any threadblock parked on a netdepid/netdeps
-		// naming it. Both live here because this is the one place that means "the bytes are gone".
+		// The gate id is looked up from the transfer rather than bound onto the callback, since
+		// bid and sid identify it uniquely.
+		m_app->OpenGateForStep(bid, sid, iter);
+		// Releases any threadblock parked on a netdepid/netdeps naming this step.
 		m_app->NoteNetworkStepComplete(bid);
 	}
 
@@ -925,7 +931,7 @@ namespace ns3 {
 		}
 		switch (tran->type){
 			case MSCCL_SEND:
-				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId, tran->rate, gridByteOff);
+				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId, tran->rate, gridByteOff, iter);
 				break;
 			case MSCCL_RECV:
 				chan->Recv(bid, sid, recvPeer, nElems, dstbuf, dstoff, gridByteOff);
@@ -955,20 +961,21 @@ namespace ns3 {
 		}
 	}
 
-	void CollectivesApplication::OpenGate(int16_t gate){
-		if (m_gateOpen[gate]) return; // idempotent; gates never close
+	void CollectivesApplication::OpenGate(int16_t gate, uint32_t iter){
+		if (m_gateOpen[iter][gate]) return; // idempotent; a gate never closes within its iteration
 		NS_LOG_DEBUG("GPU " << GetNode()->GetId() << " opening gate " << gate
-			<< " (" << m_gateWaiters[gate].size() << " waiter(s))"
+			<< " for iter " << iter
+			<< " (" << m_gateWaiters[iter][gate].size() << " waiter(s))"
 			<< " t=" << Simulator::Now().GetNanoSeconds());
-		m_gateOpen[gate] = 1;
+		m_gateOpen[iter][gate] = 1;
 		// Waking a busy threadblock is safe to drop: TryScheduleNextStep is a no-op while a step
 		// is in flight, but m_gateOpen is an absorbing latch re-read on every entry, and
 		// StepCompletionCallback unconditionally re-calls TryScheduleNextStep when it clears
 		// busy. That level-triggered property is why a gate must never be cleared mid-run.
-		for (int16_t bid : m_gateWaiters[gate]){
+		for (int16_t bid : m_gateWaiters[iter][gate]){
 			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
 		}
-		m_gateWaiters[gate].clear();
+		m_gateWaiters[iter][gate].clear();
 	}
 
 	void CollectivesApplication::NoteNetworkStepComplete(int16_t bid){
@@ -996,10 +1003,10 @@ namespace ns3 {
 		tbState->netTryReschedule.clear();
 	}
 
-	void CollectivesApplication::OpenGateForStep(int16_t bid, int16_t sid){
+	void CollectivesApplication::OpenGateForStep(int16_t bid, int16_t sid, uint32_t iter){
 		int16_t gate = m_algo->mscclTBs[bid].transfers[sid].netGate;
 		if (gate == MSCCL_GATE_NONE) return;
-		OpenGate(gate);
+		OpenGate(gate, iter);
 	}
 
 	void CollectivesApplication::TryScheduleNextStep(int16_t bid){
@@ -1022,11 +1029,11 @@ namespace ns3 {
 		// mutates state on its success path (`tbState->global_step += nDeps - 1`): a gate check
 		// placed after it that returns would leave global_step bumped, and the retry would bump
 		// it again, silently corrupting every downstream flag comparison on this threadblock.
-		if (tran->netWait != MSCCL_GATE_NONE && !m_gateOpen[tran->netWait]){
+		if (tran->netWait != MSCCL_GATE_NONE && !m_gateOpen[tbState->iter][tran->netWait]){
 			NS_LOG_DEBUG("GPU " << nodeId << " TB=" << (int)bid << " sid=" << sid
 				<< " BLOCKED on gate " << tran->netWait
 				<< " t=" << Simulator::Now().GetNanoSeconds());
-			m_gateWaiters[tran->netWait].insert(bid);
+			m_gateWaiters[tbState->iter][tran->netWait].insert(bid);
 			return;
 		}
 		// Network-dependence check (XML netdepid/netdeps). Same placement rationale as the gate
@@ -1155,16 +1162,6 @@ namespace ns3 {
 
 		if (m_nLoops == 1) return;
 
-		// Gates are one-shot latches with no iteration dimension yet (see m_gateOpen): under
-		// pipelining every gate would already be open from iteration 0 and every later
-		// iteration would run completely unpaced. Fail loudly instead.
-		if (m_algo->maxNetGate != MSCCL_GATE_NONE){
-			NS_FATAL_ERROR("Node " << GetNode()->GetId() << ": algorithm uses network gates (maxNetGate="
-				<< m_algo->maxNetGate << ") together with pipelining (nLoops=" << m_nLoops
-				<< "). Gate state is not keyed by iteration yet, so every iteration after the first"
-				<< " would find its gates already open. Set ProtoChunkBytes=0 to disable pipelining,"
-				<< " or use a gate-free schedule.");
-		}
 		// Without the maxAllowedCount loop a count>1 transfer is sent as one contiguous message.
 		// That matches the kernel only when the chunks really are contiguous, which holds only
 		// at nLoops == 1; here it would place bytes wrongly.
@@ -1190,12 +1187,13 @@ namespace ns3 {
 		DerivePipelining();
 		Bootstrap();
 
-		// Network gates (see mscclTransfer::netGate/netWait). Size the gate state from the
-		// highest gate id the parser saw on this GPU -- maxNetGate is -1 when the schedule uses
-		// no gates, which leaves both vectors empty and the gate check in TryScheduleNextStep
-		// unreachable.
-		m_gateOpen.assign(m_algo->maxNetGate + 1, 0);
-		m_gateWaiters.assign(m_algo->maxNetGate + 1, std::unordered_set<int16_t>());
+		// Network gates (see mscclTransfer::netGate/netWait): one independent gate set per
+		// pipeline iteration, each sized from the highest gate id the parser saw on this GPU.
+		// maxNetGate is -1 when the schedule uses no gates, which leaves every inner vector
+		// empty and the gate check in TryScheduleNextStep unreachable.
+		m_gateOpen.assign(m_nLoops, std::vector<uint8_t>(m_algo->maxNetGate + 1, 0));
+		m_gateWaiters.assign(m_nLoops,
+			std::vector<std::unordered_set<int16_t>>(m_algo->maxNetGate + 1));
 		// Gates are opened only on the RDMA path (MscclChannel::OnRdmaSendComplete), so a gate
 		// on a socket-path op would never open and would hang the run. Peer classification is
 		// already known here -- RdmaFabricHelper populates the peer ip table at topology-build
@@ -1491,7 +1489,8 @@ namespace ns3 {
 				if (pair.second.local_step < tb->nsteps){
 					int16_t netWait = tb->transfers[pair.second.local_step].netWait;
 					if (netWait != MSCCL_GATE_NONE){
-						gateInfo << " Parked on gate " << netWait << " (open=" << (int)m_gateOpen[netWait] << ").";
+						gateInfo << " Parked on gate " << netWait << " for iter " << pair.second.iter
+							<< " (open=" << (int)m_gateOpen[pair.second.iter][netWait] << ").";
 					}
 				}
 				NS_FATAL_ERROR("BUG: TB " << pair.first << " on node " << GetNode()->GetId() << " not finished at application close. Has " << tb->nsteps << " steps, at step " << pair.second.local_step << " of iteration " << pair.second.iter << "/" << m_nLoops << "." << gateInfo.str());

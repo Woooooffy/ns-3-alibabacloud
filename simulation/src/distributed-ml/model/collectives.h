@@ -17,6 +17,7 @@
 #include <utility>
 #include <unordered_set>
 #include <queue>
+#include <tuple>
 #include <fstream>
 #include <iostream>
 
@@ -151,7 +152,7 @@ namespace ns3 {
 			void RecvCallback(Ptr<Socket> sock);
 
 			inline void PushPendingSend(Ptr<Socket> sendpeer, PendingTransfer send);
-			void Send(int16_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE, double rateGBps = 0.0, uint32_t gridByteOff = 0);
+			void Send(int16_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE, double rateGBps = 0.0, uint32_t gridByteOff = 0, uint32_t iter = 0);
 			void Recv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff = 0);
 			void RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
 			void RecvRedSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
@@ -164,7 +165,7 @@ namespace ns3 {
 
 			// RDMA-fabric transport (gpu<->switch/nvswitch peers), as opposed to the
 			// p2p PacketSocket path above (gpu<->gpu direct peers)
-			void SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff);
+			void SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter);
 			// eagerly establishes this channel's persistent RDMA connection to `peer` --
 			// called once per (channel,peer) from CollectivesApplication::SetupRdmaPeers,
 			// deferred one tick past Bootstrap() so every node's m_channels already exists
@@ -175,7 +176,10 @@ namespace ns3 {
 			// (see OnBytesArrivedFromPeer's comment).
 			void SetupRdmaSendPeer(int16_t peer);
 			// bound as the RdmaDriver::AddQueuePair completion callback
-			void OnRdmaSendComplete(int16_t bid, int16_t sid, int16_t sendpeer, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems);
+			// `iter` is the pipeline iteration this message was posted under, bound at post time
+			// because a send step completes immediately and the threadblock may have advanced
+			// well past it by the time the bytes actually drain.
+			void OnRdmaSendComplete(int16_t bid, int16_t sid, uint32_t iter, int16_t sendpeer, uint32_t nElems);
 
 			void Close();
 		private:
@@ -233,15 +237,17 @@ namespace ns3 {
 			// lanes still outstanding for a (bid, sid) step, recv side and send side.
 			// m_recvLanesLeft is safe to key on (bid, sid) alone under pipelining: a threadblock
 			// stays busy until its recv completes, so it can never have the same step
-			// outstanding for two iterations at once. m_sendLanesLeft is NOT -- a send step
-			// completes the moment the message is posted, so a threadblock can wrap around and
-			// re-post the same (bid, sid) for the next iteration while the previous iteration's
-			// completions are still in flight, clobbering the counter. That is inert today only
-			// because the counter exists solely to time OpenGateForStep, and gates are rejected
-			// alongside pipelining (see m_gateOpen); keying this by iteration is part of making
-			// gates pipeline-aware.
+			// outstanding for two iterations at once.
+			//
+			// m_sendLanesLeft is not, hence the iteration in its key. A send step completes the
+			// moment the message is posted, so a threadblock can wrap around and re-post the same
+			// (bid, sid) for the next iteration while the previous iteration's lanes are still
+			// draining. Sharing one counter between them makes the second seed overwrite the
+			// first, and the surplus completions then find no entry and each fire a step
+			// completion of their own -- over-advancing netFlag past what has actually drained,
+			// and releasing netdep waiters early.
 			std::map<std::pair<int16_t, int16_t>, uint8_t> m_recvLanesLeft;
-			std::map<std::pair<int16_t, int16_t>, uint8_t> m_sendLanesLeft;
+			std::map<std::tuple<int16_t, int16_t, uint32_t>, uint8_t> m_sendLanesLeft;
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			uint32_t m_flowId_counter = 0;
@@ -269,7 +275,7 @@ namespace ns3 {
 			// from MscclChannel::OnRdmaSendComplete, i.e. when that step's RDMA message actually
 			// completes on the qp -- the CQE a proxy thread could really reap. No-op for a step
 			// with netGate == MSCCL_GATE_NONE.
-			void OpenGateForStep(int16_t bid, int16_t sid);
+			void OpenGateForStep(int16_t bid, int16_t sid, uint32_t iter);
 			// Called when threadblock `bid`'s oldest outstanding network transfer has physically
 			// drained. Advances that threadblock's netFlag to the value recorded for that step at
 			// dispatch time and wakes anything parked on a netdepid/netdeps referring to it.
@@ -330,7 +336,7 @@ namespace ns3 {
 			void RunStep(int16_t bid, int16_t sid);
 			void TryScheduleNextStep(int16_t bid);
 			// Marks `gate` open (idempotently) and re-runs every threadblock parked on it.
-			void OpenGate(int16_t gate);
+			void OpenGate(int16_t gate, uint32_t iter);
 			// Derives m_sliceElems / m_nLoops from m_protoChunkBytes and m_currChunkSize, and
 			// rejects schedules whose features the pipelining model does not cover yet.
 			void DerivePipelining();
@@ -409,17 +415,23 @@ namespace ns3 {
 			uint16_t m_rdmaSportCounter = 0; // node-global; see AllocateRdmaSport
 			bool m_mergeNics = false;        // MergeNics attribute; see GetRdmaLaneCount
 			std::map<int16_t, uint8_t> m_rdmaLaneCount; // memoized GetRdmaLaneCount
-			// Network gate state (see mscclTransfer::netGate/netWait). Both vectors are sized at
-			// InterpretAlgo from mscclAlgorithm::maxNetGate, so there is no MSCCL_MAX_GATES to tune.
+			// Network gate state (see mscclTransfer::netGate/netWait), indexed [iter][gate]. Both
+			// vectors are sized at InterpretAlgo from m_nLoops and mscclAlgorithm::maxNetGate, so
+			// there is no MSCCL_MAX_GATES to tune.
 			//
-			// Gates are one-shot and never reset, so they are sound only for a single-iteration
-			// run: iteration 2 would find every gate already open and run unpaced. Making them
-			// pipeline-aware means keying both vectors by (iter, gate) and carrying the iter
-			// through SendRdma -> OnRdmaSendComplete -> OpenGateForStep, which is not done yet --
-			// InterpretAlgo therefore refuses a schedule that combines gates with m_nLoops > 1
-			// rather than silently mismodelling it.
-			std::vector<uint8_t> m_gateOpen;                       // gate id -> open?
-			std::vector<std::unordered_set<int16_t>> m_gateWaiters; // gate id -> tbs parked on it
+			// A gate is one-shot *within an iteration* and never closes; each iteration gets its
+			// own independent set. That is the natural lift of what a gate means -- slice k of a
+			// waiting op is held until slice k of the opening op is off the wire -- and it
+			// matches how netdepid/netdeps and data dependences already resolve against the
+			// waiter's own iteration. Flat, un-keyed gates would leave every iteration after the
+			// first finding its gates already open, running completely unpaced.
+			//
+			// The level-triggered property OpenGate relies on survives the lift: a parked
+			// threadblock is by definition not busy, and a threadblock's iteration only advances
+			// in StepCompletionCallback, so it cannot change iteration while parked. A gate must
+			// still never be cleared mid-run.
+			std::vector<std::vector<uint8_t>> m_gateOpen;                       // [iter][gate] -> open?
+			std::vector<std::vector<std::unordered_set<int16_t>>> m_gateWaiters; // [iter][gate] -> parked tbs
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			#endif
