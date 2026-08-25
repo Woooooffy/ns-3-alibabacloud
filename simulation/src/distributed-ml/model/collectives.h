@@ -27,7 +27,9 @@
 
 
 /*
-TODO: model work index & iter for sequences of ops & reuse of algorithm over larger grid
+TODO: model work index for sequences of ops
+The `iter` component of the flag tuple is the MSCCL kernel's gridOffset loop -- see
+TBState::iter and CollectivesApplication::m_nLoops.
 Note: msccl uses (work_index, iter, step) flag for dependency tracking, where step is tracked UNIVERSALLY across all TBs-
 if TB1 step0 and TB2 step0 both have same dependiences on TB0 step2, and TB0 steps have no dependencies on other TBs,
 then TB1 step0 and TB2 step0 both have universal step id 3.
@@ -40,11 +42,20 @@ namespace ns3 {
 		int16_t bid;
 		int64_t global_step;
 		int16_t local_step;
+		// Which pipeline iteration (the kernel's gridOffset loop counter) this threadblock is
+		// executing. Deliberately per-threadblock rather than per-app: the whole point of the
+		// gridOffset loop is that there is no barrier between iterations, so a relay TB may
+		// still be forwarding slice 0 while its producer has already moved on to slice 1.
+		// Both global_step and local_step restart at 0 on every iteration, mirroring the
+		// kernel's `int step = 0` inside the gridOffset loop -- dependence targets in the XML
+		// are expressed in that per-iteration step numbering. `flag` stays monotone across the
+		// rollover because COMPUTE_FLAG orders (iter, step) lexicographically.
+		uint32_t iter;
 		int64_t flag;
 		bool busy;
 		std::unordered_set<int16_t> tryReschedule; // TBs that should try rescheduling when this TB reaches flag
-		TBState(): bid(-1), global_step(0), local_step(0), flag(-1), busy(false){}
-		TBState(int16_t id): bid(id), global_step(0), local_step(0),
+		TBState(): bid(-1), global_step(0), local_step(0), iter(0), flag(-1), busy(false){}
+		TBState(int16_t id): bid(id), global_step(0), local_step(0), iter(0),
       flag(-1), busy(false){}
 	};
 
@@ -77,9 +88,14 @@ namespace ns3 {
 		// single-lane transfer; with NIC merging a transfer is cut into one contiguous slice per
 		// lane (see MscclChannel::LaneSlice) and each lane's bytes land at dstOffset + this.
 		uint32_t dstByteShift;
-		PendingTransfer(): bid(-1), sid(-1), receivedBytes(0), pendingBytes(0), op(-1), srcBuf(3), srcOffset(-1), dstBuf(3), dstOffset(-1), scratchBuf(nullptr), dstByteShift(0){}
+		// Byte offset of the pipeline slice this transfer belongs to, within each msccl chunk
+		// (the kernel's `gridOffset`, in bytes). Composes with dstByteShift: bytes land at
+		// dstOffset*chunkBytes + gridByteOff + dstByteShift + receivedBytes. Zero when
+		// pipelining is off, which is why every buffer address below reduces to the old one.
+		uint32_t gridByteOff;
+		PendingTransfer(): bid(-1), sid(-1), receivedBytes(0), pendingBytes(0), op(-1), srcBuf(3), srcOffset(-1), dstBuf(3), dstOffset(-1), scratchBuf(nullptr), dstByteShift(0), gridByteOff(0){}
 		PendingTransfer(int16_t bId, int16_t sId, uint32_t bytes, int8_t Op, uint16_t srcbuf, uint16_t srcoff, uint16_t dstbuf, int16_t dstoff): bid(bId), sid(sId),
-										receivedBytes(0), pendingBytes(bytes), op(Op), srcBuf(srcbuf), srcOffset(srcoff), dstBuf(dstbuf), dstOffset(dstoff), scratchBuf(nullptr), dstByteShift(0){}
+										receivedBytes(0), pendingBytes(bytes), op(Op), srcBuf(srcbuf), srcOffset(srcoff), dstBuf(dstbuf), dstOffset(dstoff), scratchBuf(nullptr), dstByteShift(0), gridByteOff(0){}
 	};
 
 	// bytes that arrived on a peer's connection before a matching Recv()/RecvRedCp() was
@@ -127,11 +143,11 @@ namespace ns3 {
 			void RecvCallback(Ptr<Socket> sock);
 
 			inline void PushPendingSend(Ptr<Socket> sendpeer, PendingTransfer send);
-			void Send(int16_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE, double rateGBps = 0.0);
-			void Recv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
+			void Send(int16_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE, double rateGBps = 0.0, uint32_t gridByteOff = 0);
+			void Recv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff = 0);
 			void RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
 			void RecvRedSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
-			void RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff);
+			void RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff = 0);
 			void RecvRedCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
 			#ifdef FLOW_ID_TEST
 			uint32_t GetFlowId(int src, int dst);
@@ -140,7 +156,7 @@ namespace ns3 {
 
 			// RDMA-fabric transport (gpu<->switch/nvswitch peers), as opposed to the
 			// p2p PacketSocket path above (gpu<->gpu direct peers)
-			void SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps);
+			void SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff);
 			// eagerly establishes this channel's persistent RDMA connection to `peer` --
 			// called once per (channel,peer) from CollectivesApplication::SetupRdmaPeers,
 			// deferred one tick past Bootstrap() so every node's m_channels already exists
@@ -184,7 +200,7 @@ namespace ns3 {
 			// m_unclaimedBytes for `recvPeer` if any (a full or partial claim, in FIFO byte
 			// order), else registers a new pending recv (m_pendingRecvQueue) to be matched by
 			// a future arrival.
-			void ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op);
+			void ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op, uint32_t gridByteOff);
 
 			int8_t m_id;
 			DataType::Type m_dataType;
@@ -206,7 +222,16 @@ namespace ns3 {
 			// per lane, in lane order: index i is pinned to the i'th NIC that reaches the peer,
 			// mirroring how a merged multi-port device stripes its qps over its ports.
 			std::map<int16_t, std::vector<Ptr<RdmaQueuePair>>> m_rdmaQpByPeer;
-			// lanes still outstanding for a (bid, sid) step, recv side and send side
+			// lanes still outstanding for a (bid, sid) step, recv side and send side.
+			// m_recvLanesLeft is safe to key on (bid, sid) alone under pipelining: a threadblock
+			// stays busy until its recv completes, so it can never have the same step
+			// outstanding for two iterations at once. m_sendLanesLeft is NOT -- a send step
+			// completes the moment the message is posted, so a threadblock can wrap around and
+			// re-post the same (bid, sid) for the next iteration while the previous iteration's
+			// completions are still in flight, clobbering the counter. That is inert today only
+			// because the counter exists solely to time OpenGateForStep, and gates are rejected
+			// alongside pipelining (see m_gateOpen); keying this by iteration is part of making
+			// gates pipeline-aware.
 			std::map<std::pair<int16_t, int16_t>, uint8_t> m_recvLanesLeft;
 			std::map<std::pair<int16_t, int16_t>, uint8_t> m_sendLanesLeft;
 			#ifdef FLOW_ID_TEST
@@ -242,7 +267,10 @@ namespace ns3 {
 			DataBuffer* GetScratchBuffer();
 			void AllocBuffer(size_t size, DataBuffer* buf);
 			void* GetBufferPtrRawBytes(uint16_t buf, size_t byte_offset);
-			void* GetBufferPtr(uint16_t buf, int16_t offset);
+			// `offset` is in whole msccl chunks; `gridByteOff` is the byte offset of the current
+			// pipeline slice within that chunk (the kernel's gridOffset). Address is
+			// offset*chunkBytes + gridByteOff.
+			void* GetBufferPtr(uint16_t buf, int16_t offset, uint32_t gridByteOff = 0);
 			void DumpBuffer(DataBuffer* buf, std::ostream& log);
 			void SetCorrectnessCheck(bool enable);
 			bool GetCorrectnessCheck() const;
@@ -286,11 +314,14 @@ namespace ns3 {
   		void StopApplication() override;
 			// inline TransferState* GetTransferState(int16_t bid, int16_t sid);
 			Time GetLocalOpDelay(int8_t op);
-			void NonTransferHandler(int16_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op); // add some fixed delay
+			void NonTransferHandler(int16_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op, uint32_t gridByteOff); // add some fixed delay
 			void RunStep(int16_t bid, int16_t sid);
 			void TryScheduleNextStep(int16_t bid);
 			// Marks `gate` open (idempotently) and re-runs every threadblock parked on it.
 			void OpenGate(int16_t gate);
+			// Derives m_sliceElems / m_nLoops from m_protoChunkBytes and m_currChunkSize, and
+			// rejects schedules whose features the pipelining model does not cover yet.
+			void DerivePipelining();
 			void InterpretAlgo();
 			void Bootstrap();
 			// establishes every channel's persistent RDMA send-peer connections. Deferred one
@@ -309,7 +340,38 @@ namespace ns3 {
 			// std::map<std::pair<int8_t, int16_t>, TransferState> m_transferStates; // transfer (tbId, sId) -> pending dependences info
 			uint32_t m_currChunkSize;
 			uint32_t m_currWorkId = 0;
-			uint32_t m_currIter = 0;
+			// Pipelining (the MSCCL kernel's gridOffset loop). A schedule's chunk is not shipped
+			// as one message: the kernel replays the *entire* threadblock schedule once per
+			// `chunkSize`-sized slice of it, with no barrier between replays, so a relay
+			// threadblock starts forwarding slice 0 while its producer is still pushing slice 1.
+			//
+			// m_protoChunkBytes is the NCCL transport's per-iteration granularity, i.e.
+			// (buffSize/NCCL_STEPS)*chunkSteps -- roughly 1-2 MiB for the SIMPLE protocol at
+			// NCCL's default 4 MiB buffer. 0 disables pipelining entirely (m_nLoops == 1), which
+			// reproduces the pre-pipelining behaviour byte for byte and is the default so that
+			// existing scenarios keep their results until they opt in.
+			//
+			// m_sliceElems / m_nLoops are derived from it against m_currChunkSize in
+			// InterpretAlgo. Every rank derives them from the same three globally-agreed inputs,
+			// so they agree without any handshake -- the same property MscclChannel::LaneSlice
+			// already relies on.
+			//
+			// Not modeled yet: send-side flow control. On real hardware a producer threadblock
+			// cannot run arbitrarily far ahead of its consumer, because the NCCL transport's
+			// ring buffer only holds NCCL_STEPS outstanding steps and the prims send blocks for
+			// a credit once it is full. Here a send step completes the instant the message is
+			// handed to the RDMA engine (see MscclChannel::SendRdma), so a producer can post
+			// every iteration back to back. That makes injection no more aggressive than the
+			// unpipelined case -- which posts the whole chunk at once regardless -- but it does
+			// mean the sender is not throttled by the receiver the way it would be in practice.
+			uint32_t m_protoChunkBytes = 0;
+			uint32_t m_sliceElems = 0; // elements of a chunk covered by one iteration
+			uint32_t m_nLoops = 1;     // number of gridOffset iterations
+			// Elements this iteration covers (the kernel's `nelem`): m_sliceElems, except on the
+			// final iteration where the chunk may not divide evenly.
+			uint32_t SliceElemsForIter(uint32_t iter) const;
+			// Byte offset of `iter`'s slice within a chunk (the kernel's `gridOffset`, in bytes).
+			uint32_t GridByteOffsetForIter(uint32_t iter) const;
 			bool m_correctnessCheck = false;
 			int m_port = 5000;
 			std::map<int, MscclChannel> m_channels;
@@ -330,11 +392,12 @@ namespace ns3 {
 			// Network gate state (see mscclTransfer::netGate/netWait). Both vectors are sized at
 			// InterpretAlgo from mscclAlgorithm::maxNetGate, so there is no MSCCL_MAX_GATES to tune.
 			//
-			// Gates are one-shot and never reset. This is sound only because the simulator runs a
-			// single work item / single iteration: m_currWorkId and m_currIter are initialized to 0
-			// and never advanced, and nLoops is effectively 1. If multi-loop pipelining is ever
-			// modeled, both vectors must be cleared per iteration -- otherwise iteration 2 finds
-			// every gate already open and runs unpaced.
+			// Gates are one-shot and never reset, so they are sound only for a single-iteration
+			// run: iteration 2 would find every gate already open and run unpaced. Making them
+			// pipeline-aware means keying both vectors by (iter, gate) and carrying the iter
+			// through SendRdma -> OnRdmaSendComplete -> OpenGateForStep, which is not done yet --
+			// InterpretAlgo therefore refuses a schedule that combines gates with m_nLoops > 1
+			// rather than silently mismodelling it.
 			std::vector<uint8_t> m_gateOpen;                       // gate id -> open?
 			std::vector<std::unordered_set<int16_t>> m_gateWaiters; // gate id -> tbs parked on it
 			#ifdef FLOW_ID_TEST

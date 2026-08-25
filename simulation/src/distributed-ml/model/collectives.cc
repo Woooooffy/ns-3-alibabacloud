@@ -220,7 +220,7 @@ namespace ns3 {
 					if (cur.scratchBuf == nullptr) cur.scratchBuf = (uint8_t*) malloc(cur.pendingBytes);
 					memcpy(cur.scratchBuf + cur.receivedBytes, payload, fragSize);
 				} else {
-					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(cur.dstBuf, cur.dstOffset);
+					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(cur.dstBuf, cur.dstOffset, cur.gridByteOff);
 					memcpy(dst + cur.dstByteShift + cur.receivedBytes, payload, fragSize);
 				}
 			}
@@ -237,7 +237,7 @@ namespace ns3 {
 			PendingTransfer done = cur; // copy out before pop invalidates the reference
 			pendingQ.pop();
 			if (m_app->GetCorrectnessCheck() && done.op == MSCCL_RECV_REDUCE_COPY){
-				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(done.dstBuf, done.dstOffset);
+				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(done.dstBuf, done.dstOffset, done.gridByteOff);
 				ReduceAdd(dst + done.dstByteShift, done.scratchBuf, done.pendingBytes, m_dataType);
 				free(done.scratchBuf);
 			}
@@ -264,7 +264,7 @@ namespace ns3 {
 	// shared body of Recv()/RecvRedCp(): claims bytes already sitting in m_unclaimedBytes
 	// for `recvPeer` if any (a full or partial claim, in FIFO byte order), else registers a
 	// new pending recv to be matched by a future arrival.
-	void MscclChannel::ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op){
+	void MscclChannel::ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op, uint32_t gridByteOff){
 		if (dstoff < 0) NS_FATAL_ERROR("Invalid offset");
 		uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
 
@@ -286,7 +286,7 @@ namespace ns3 {
 				// fully available: claim the front `laneBytes` worth, leave any remainder (e.g. the
 				// start of a later transfer that also arrived early) for the next claim
 				if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
-					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff) + laneOff;
+					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff, gridByteOff) + laneOff;
 					if (op == MSCCL_RECV_REDUCE_COPY) ReduceAdd(dst, unclaimed.stagingBuf, laneBytes, m_dataType);
 					else memcpy(dst, unclaimed.stagingBuf, laneBytes);
 				}
@@ -307,6 +307,7 @@ namespace ns3 {
 
 			PendingTransfer pt(bid, sid, laneBytes, op, 0, -1, dstbuf, dstoff);
 			pt.dstByteShift = laneOff;
+			pt.gridByteOff = gridByteOff;
 			if (unclaimed.gotBytes > 0){
 				// still streaming in: promote to a pending transfer, carrying over what already
 				// arrived, so future fragments from this peer (now matched via m_pendingRecvQueue)
@@ -316,7 +317,7 @@ namespace ns3 {
 					pt.scratchBuf = (uint8_t*) malloc(laneBytes);
 					if (unclaimed.stagingBuf) memcpy(pt.scratchBuf, unclaimed.stagingBuf, unclaimed.gotBytes);
 				} else if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
-					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff) + laneOff;
+					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff, gridByteOff) + laneOff;
 					memcpy(dst, unclaimed.stagingBuf, unclaimed.gotBytes);
 				}
 				free(unclaimed.stagingBuf);
@@ -348,7 +349,7 @@ namespace ns3 {
 		m_pendingSends[sock].push(send);
 	}
 
-	void MscclChannel::Send(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
+	void MscclChannel::Send(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff){
 		if (sendpeer < 0){
 			NS_FATAL_ERROR("Send peer is negative in Send");
 		}
@@ -356,7 +357,7 @@ namespace ns3 {
 			NS_FATAL_ERROR("Invalid dst offset in Send");
 		}
 		if (m_app->IsRdmaPeer(sendpeer)){
-			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId, rateGBps);
+			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId, rateGBps, gridByteOff);
 			return;
 		}
 		// gpu<->gpu p2p (socket) path: the host-side "rate" is ignored here, since this
@@ -380,7 +381,7 @@ namespace ns3 {
 		maxPayload -= maxPayload % elemSize;
 
 		const uint8_t* srcData = m_app->GetCorrectnessCheck()
-		    ? (const uint8_t*) m_app->GetBufferPtr(srcbuf, srcoff)
+		    ? (const uint8_t*) m_app->GetBufferPtr(srcbuf, srcoff, gridByteOff)
 		    : nullptr;
 
 		std::queue<PendingFragment> frags;
@@ -495,7 +496,7 @@ namespace ns3 {
 		size = myElems * elemSize;
 	}
 
-	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
+	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff){
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 
 		auto it = m_rdmaQpByPeer.find(sendpeer);
@@ -511,7 +512,7 @@ namespace ns3 {
 		// GetNxtPacket call for this message -- otherwise the first packet of the transfer
 		// would embed zero bytes instead of real data.
 		uint8_t* srcDataPtr = m_app->GetCorrectnessCheck()
-			? (uint8_t*)m_app->GetBufferPtr(srcbuf, srcoff) : nullptr;
+			? (uint8_t*)m_app->GetBufferPtr(srcbuf, srcoff, gridByteOff) : nullptr;
 
 		// host-side pacing cap: XML "rate" is in GB/s (gigabytes/s); DataRate is in bits/s,
 		// so convert bytes->bits. 0 (unspecified) maps to DataRate(0), i.e. no cap, and the
@@ -595,8 +596,8 @@ namespace ns3 {
 		m_app->OpenGateForStep(bid, sid);
 	}
 
-	void MscclChannel::Recv(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
-		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV);
+	void MscclChannel::Recv(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff){
+		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV, gridByteOff);
 	}
 
 	void MscclChannel::RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
@@ -607,8 +608,8 @@ namespace ns3 {
 	NS_FATAL_ERROR("RecvRedSend not yet implemented");
 	}
 
-	void MscclChannel::RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff){
-		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV_REDUCE_COPY);
+	void MscclChannel::RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff){
+		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV_REDUCE_COPY, gridByteOff);
 	}
 
 	void MscclChannel::RecvRedCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
@@ -676,6 +677,19 @@ namespace ns3 {
 				UintegerValue(1024),
 				MakeUintegerAccessor(&CollectivesApplication::m_currChunkSize),
 				MakeUintegerChecker<uint32_t>())
+				.AddAttribute(
+					"ProtoChunkBytes",
+					"Pipelining granularity, in bytes: how much of one msccl chunk the schedule "
+					"moves per replay, mirroring the MSCCL kernel's gridOffset loop. This is the "
+					"NCCL transport's (buffSize/NCCL_STEPS)*chunkSteps -- about 1-2 MiB for the "
+					"SIMPLE protocol at NCCL's default 4 MiB buffer. A chunk larger than this is "
+					"split into ceil(chunkBytes/this) iterations that overlap across threadblocks, "
+					"so a relay starts forwarding slice 0 while its producer is still on slice 1. "
+					"0 disables pipelining (one iteration over the whole chunk), which is the "
+					"pre-pipelining behaviour and the default.",
+					UintegerValue(0),
+					MakeUintegerAccessor(&CollectivesApplication::m_protoChunkBytes),
+					MakeUintegerChecker<uint32_t>())
 				.AddAttribute(
 					"CorrectnessCheck",
 					"When true, perform actual memcpy and reduce operations for correctness verification. "
@@ -853,12 +867,12 @@ namespace ns3 {
 		return MilliSeconds(0);
 	}
 
-	void CollectivesApplication::NonTransferHandler(int16_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op){
+	void CollectivesApplication::NonTransferHandler(int16_t bid, int16_t sid, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t nElems, int8_t op, uint32_t gridByteOff){
 		uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
 		switch (op){
 			case MSCCL_LOCAL_COPY:
 				if (m_correctnessCheck)
-					memcpy(GetBufferPtr(dstbuf, dstoff), GetBufferPtr(srcbuf, srcoff), bytes);
+					memcpy(GetBufferPtr(dstbuf, dstoff, gridByteOff), GetBufferPtr(srcbuf, srcoff, gridByteOff), bytes);
 				break;
 			default:
 				NS_FATAL_ERROR("Not implemented.");
@@ -869,24 +883,33 @@ namespace ns3 {
 
 	void CollectivesApplication::RunStep(int16_t bid, int16_t sid){
 		// TODO: add realistic packet size modeling
-		// Count rounds loop logic based on msccl scheduling? skipped for now
 		mscclThreadBlock* tb = &(m_algo->mscclTBs[bid]);
 		int8_t chanId = tb->channelId;
 		MscclChannel* chan = &m_channels[chanId];
 		mscclTransfer* tran = &tb->transfers[sid];
 		uint16_t sendPeer = tb->sendpeer;
 		uint16_t recvPeer = tb->recvpeer;
-		uint32_t nElems = ((uint32_t) tran->count) * m_currChunkSize;
+		// This step moves only the current pipeline slice of each of its `count` chunks, not
+		// the whole chunk -- the kernel's `thisNelem = nelem * thisCount`. With pipelining off
+		// nelem == m_currChunkSize and this is the whole chunk exactly as before.
+		//
+		// The maxAllowedCount loop (`for c = 0; c < count; c += maxAllowedCount`) is not
+		// modeled yet, so a count>1 transfer is emitted as one contiguous message rather than
+		// as the kernel's separate strided sub-messages. That only diverges when m_nLoops > 1,
+		// which InterpretAlgo rejects for such a schedule.
+		const uint32_t iter = m_TBStates[bid].iter;
+		const uint32_t gridByteOff = GridByteOffsetForIter(iter);
+		uint32_t nElems = ((uint32_t) tran->count) * SliceElemsForIter(iter);
 		uint16_t srcbuf = tran->srcbuffer;
 		uint16_t dstbuf = tran->dstbuffer;
 		int16_t srcoff = tran->srcoffset;
 		int16_t dstoff = tran->dstoffset;
 		switch (tran->type){
 			case MSCCL_SEND:
-				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId, tran->rate);
+				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId, tran->rate, gridByteOff);
 				break;
 			case MSCCL_RECV:
-				chan->Recv(bid, sid, recvPeer, nElems, dstbuf, dstoff);
+				chan->Recv(bid, sid, recvPeer, nElems, dstbuf, dstoff, gridByteOff);
 				break;
 			case MSCCL_RECV_COPY_SEND:
 				chan->RecvCpSend(bid, sid, sendPeer, recvPeer, nElems);
@@ -895,18 +918,18 @@ namespace ns3 {
 				chan->RecvRedSend(bid, sid, sendPeer, recvPeer, nElems);
 				break;
 			case MSCCL_RECV_REDUCE_COPY:
-				chan->RecvRedCp(bid, sid, recvPeer, nElems, dstbuf, dstoff);
+				chan->RecvRedCp(bid, sid, recvPeer, nElems, dstbuf, dstoff, gridByteOff);
 				break;
 			case MSCCL_RECV_REDUCE_COPY_SEND:
 				chan->RecvRedCpSend(bid, sid, sendPeer, recvPeer, nElems);
 				break;
 			case MSCCL_LOCAL_COPY:
-				NonTransferHandler(bid, sid, srcbuf, srcoff, dstbuf, dstoff, nElems, MSCCL_LOCAL_COPY);
+				NonTransferHandler(bid, sid, srcbuf, srcoff, dstbuf, dstoff, nElems, MSCCL_LOCAL_COPY, gridByteOff);
 				break;
 			case MSCCL_REDUCE:
 				// TODO: need to change if count loop implemented
 				m_TBStates[bid].global_step += tran->numReductions - 1;
-				NonTransferHandler(bid, sid, srcbuf, srcoff, dstbuf, dstoff, nElems, MSCCL_REDUCE);
+				NonTransferHandler(bid, sid, srcbuf, srcoff, dstbuf, dstoff, nElems, MSCCL_REDUCE, gridByteOff);
 				break;
 			default:
 				return;
@@ -940,6 +963,7 @@ namespace ns3 {
 		TBState* tbState = &m_TBStates[bid];
 		uint32_t nodeId = GetNode()->GetId();
 		NS_LOG_DEBUG("GPU " << nodeId << " TryScheduleNextStep TB=" << (int)bid
+			<< " iter=" << tbState->iter
 			<< " local_step=" << tbState->local_step
 			<< " global_step=" << tbState->global_step
 			<< " flag=" << tbState->flag
@@ -969,7 +993,12 @@ namespace ns3 {
 			for (int dep = firstDepId; dep < firstDepId + nDeps; ++dep){
 				int16_t depbid = tb->dependentBid[dep];
 				int16_t depsid = tb->dependentStep[dep]; // depsid is global step
-				int64_t depflag = COMPUTE_FLAG(m_currWorkId, m_currIter, depsid);
+				// The goal flag names the dependence's step *in this threadblock's own
+				// iteration* -- exactly the kernel's COMPUTE_FLAG(workIndex, iter, dependentStep).
+				// Flags are monotone in (iter, step), so a producer that has already run ahead
+				// into a later iteration clears every earlier iteration's goal for free; that is
+				// what lets iterations overlap instead of barriering.
+				int64_t depflag = COMPUTE_FLAG(m_currWorkId, tbState->iter, depsid);
 				TBState* depTB = &m_TBStates[depbid];
 				if (depflag > depTB->flag) {
 					NS_LOG_DEBUG("GPU " << nodeId << " TB=" << (int)bid << " sid=" << sid
@@ -1009,8 +1038,21 @@ namespace ns3 {
 		TBState* tbState = &m_TBStates[bid];
 		tbState->busy = false;
 		tbState->local_step++;
-		tbState->flag = (uint64_t) COMPUTE_FLAG(m_currWorkId, m_currIter, tbState->global_step); // flag update
+		// Publish the flag for the step that just finished, i.e. still under the iteration it
+		// belonged to -- the rollover below must not be visible to a waiter until the next
+		// iteration's steps actually start completing.
+		tbState->flag = (uint64_t) COMPUTE_FLAG(m_currWorkId, tbState->iter, tbState->global_step); // flag update
 		tbState->global_step++;
+		// End of the schedule: replay it on the next pipeline slice. Both step counters restart
+		// at 0, mirroring the kernel's `int step = 0` at the top of the gridOffset loop, since
+		// XML dependence targets are numbered within an iteration. There is deliberately no
+		// barrier here -- this threadblock moves on the instant its own last step lands, which
+		// is where the pipelining overlap comes from.
+		if (tbState->local_step == (int16_t) m_algo->mscclTBs[bid].nsteps && tbState->iter + 1 < m_nLoops){
+			tbState->iter++;
+			tbState->local_step = 0;
+			tbState->global_step = 0;
+		}
 		Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
 		for (int16_t depTB : tbState->tryReschedule){
 			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, depTB);
@@ -1018,10 +1060,69 @@ namespace ns3 {
 		tbState->tryReschedule.clear();
 	}
 
+	// Splits a chunk into the pipeline slices the kernel's gridOffset loop walks. Mirrors
+	// mscclSetupCount: nLoops = ceil(nBytes / (nChunksPerLoop * chunkEffectiveSize)), which
+	// with sizePerMscclChunk = nBytes/nChunksPerLoop is just ceil(chunkBytes / protoChunkBytes).
+	//
+	// Note the invariant this leans on: mscclSetupCount also derives
+	// maxAllowedCount = max(1, chunkEffectiveSize / sizePerMscclChunk), so whenever a chunk is
+	// large enough to need more than one iteration, maxAllowedCount collapses to 1 and the
+	// count loop stops splitting anything. The two loops are therefore never both active, and
+	// not modeling the count loop only costs fidelity for schedules that use count > 1 in a
+	// regime where nLoops > 1 -- rejected below rather than silently mismodelled.
+	void CollectivesApplication::DerivePipelining(){
+		const uint32_t elemSize = DataType::GetSizeBytes(m_dataType);
+		if (m_protoChunkBytes == 0){
+			m_sliceElems = m_currChunkSize;
+			m_nLoops = 1;
+		} else {
+			m_sliceElems = std::max(1u, m_protoChunkBytes / elemSize);
+			if (m_sliceElems >= m_currChunkSize){
+				m_sliceElems = m_currChunkSize;
+				m_nLoops = 1;
+			} else {
+				m_nLoops = (m_currChunkSize + m_sliceElems - 1) / m_sliceElems;
+			}
+		}
+		NS_LOG_INFO("GPU " << GetNode()->GetId() << ": pipelining chunk of " << m_currChunkSize
+			<< " elems into " << m_nLoops << " iteration(s) of " << m_sliceElems << " elems"
+			<< " (protoChunkBytes=" << m_protoChunkBytes << ")");
+
+		if (m_nLoops == 1) return;
+
+		// Gates are one-shot latches with no iteration dimension yet (see m_gateOpen): under
+		// pipelining every gate would already be open from iteration 0 and every later
+		// iteration would run completely unpaced. Fail loudly instead.
+		if (m_algo->maxNetGate != MSCCL_GATE_NONE){
+			NS_FATAL_ERROR("Node " << GetNode()->GetId() << ": algorithm uses network gates (maxNetGate="
+				<< m_algo->maxNetGate << ") together with pipelining (nLoops=" << m_nLoops
+				<< "). Gate state is not keyed by iteration yet, so every iteration after the first"
+				<< " would find its gates already open. Set ProtoChunkBytes=0 to disable pipelining,"
+				<< " or use a gate-free schedule.");
+		}
+		// Without the maxAllowedCount loop a count>1 transfer is sent as one contiguous message.
+		// That matches the kernel only when the chunks really are contiguous, which holds only
+		// at nLoops == 1; here it would place bytes wrongly.
+		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
+			mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
+			for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+				if (tb->transfers[sid].count > 1){
+					NS_FATAL_ERROR("Node " << GetNode()->GetId() << " TB " << (int)bid << " step " << sid
+						<< " has count=" << (int)tb->transfers[sid].count << " but pipelining is active"
+						<< " (nLoops=" << m_nLoops << "). The maxAllowedCount loop that splits such a"
+						<< " transfer into per-chunk sub-messages is not modeled yet, so its bytes would"
+						<< " be placed contiguously instead of strided. Set ProtoChunkBytes=0 to disable"
+						<< " pipelining.");
+				}
+			}
+		}
+	}
+
 	void CollectivesApplication::InterpretAlgo(){
 		if (!m_algo->isValid){
 			NS_FATAL_ERROR("No valid algorithm found.");
 		}
+		DerivePipelining();
 		Bootstrap();
 
 		// Network gates (see mscclTransfer::netGate/netWait). Size the gate state from the
@@ -1212,8 +1313,21 @@ namespace ns3 {
 		return ((uint8_t*)buffer.dataBuffer) + offset;
 	}
 
-	void* CollectivesApplication::GetBufferPtr(uint16_t buf, int16_t offset){
-		return GetBufferPtrRawBytes(buf, offset * m_currChunkSize * (DataType::GetSizeBytes(m_dataType)));
+	// The kernel also rounds realChunkSize up to a multiple of the threadblock's vector width
+	// ((nthreads-WARP_SIZE)*sizeof(uint64_t)/sizeof(T)); that is a GPU load/store alignment
+	// concern with no bearing on how many bytes cross the wire, so it is not modeled.
+	uint32_t CollectivesApplication::SliceElemsForIter(uint32_t iter) const {
+		uint32_t gridOff = iter * m_sliceElems;
+		if (gridOff >= m_currChunkSize) return 0;
+		return std::min(m_sliceElems, m_currChunkSize - gridOff);
+	}
+
+	uint32_t CollectivesApplication::GridByteOffsetForIter(uint32_t iter) const {
+		return iter * m_sliceElems * DataType::GetSizeBytes(m_dataType);
+	}
+
+	void* CollectivesApplication::GetBufferPtr(uint16_t buf, int16_t offset, uint32_t gridByteOff){
+		return GetBufferPtrRawBytes(buf, (size_t) offset * m_currChunkSize * (DataType::GetSizeBytes(m_dataType)) + gridByteOff);
 	}
 
 	void CollectivesApplication::DumpBuffer(DataBuffer* buf, std::ostream& log_txt){
@@ -1305,7 +1419,7 @@ namespace ns3 {
 		// tb states checks
 		for (auto& pair : m_TBStates){
 			mscclThreadBlock* tb = &m_algo->mscclTBs[pair.first];
-			if (pair.second.busy || pair.second.local_step < tb->nsteps){
+			if (pair.second.busy || pair.second.local_step < tb->nsteps || pair.second.iter + 1 < m_nLoops){
 				// Name the gate too when the tb is parked on one: a gate that never opens drains
 				// the event queue and returns a plausible-looking wrong answer otherwise.
 				std::ostringstream gateInfo;
@@ -1315,7 +1429,7 @@ namespace ns3 {
 						gateInfo << " Parked on gate " << netWait << " (open=" << (int)m_gateOpen[netWait] << ").";
 					}
 				}
-				NS_FATAL_ERROR("BUG: TB " << pair.first << " on node " << GetNode()->GetId() << " not finished at application close. Has " << tb->nsteps << " steps, at step " << pair.second.local_step << "." << gateInfo.str());
+				NS_FATAL_ERROR("BUG: TB " << pair.first << " on node " << GetNode()->GetId() << " not finished at application close. Has " << tb->nsteps << " steps, at step " << pair.second.local_step << " of iteration " << pair.second.iter << "/" << m_nLoops << "." << gateInfo.str());
 			}
 		}
 	}

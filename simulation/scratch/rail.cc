@@ -69,11 +69,17 @@ int main(int argc, char *argv[]) {
     // (and then stops scanning) -- enough to localize a bug. "verbose" is for small debug topologies.
     std::string checkLog = "minimal"; // silent | minimal | verbose
     uint32_t maxMismatches = 10;
+    // Pipelining granularity (the MSCCL kernel's gridOffset loop). 0 = off, i.e. one replay of
+    // the schedule over the whole chunk. Set it to the transport's (buffSize/NCCL_STEPS)*chunkSteps
+    // -- ~1-2 MiB for SIMPLE at NCCL's default 4 MiB buffer -- to have a chunk larger than that
+    // split into overlapping slices. See CollectivesApplication's ProtoChunkBytes attribute.
+    uint32_t protoChunkBytes = 0;
     CommandLine cmd;
     cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
     cmd.AddValue("label", "Suffix for the congestion-monitor output CSVs", label);
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
+    cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
     cmd.Parse(argc, argv);
 
     NodeContainer gpunodes;
@@ -709,6 +715,7 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("DataType", EnumValue(dtype));
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
+    app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(protoChunkBytes));
     ApplicationContainer apps = app_helper.Install<GPU>(topo);
 
     NS_LOG_INFO("Finished installing collective apps.");
