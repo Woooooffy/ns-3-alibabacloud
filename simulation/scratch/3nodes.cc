@@ -18,9 +18,11 @@ int main(int argc, char *argv[]) {
 //    LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
 	// LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
   //  LogComponentEnable("RdmaHw", LOG_LEVEL_ALL);
-    uint32_t inputBytes = (1 << 20);
+    uint32_t inputBytes = (1 << 20) * 4;
+		uint32_t protoChunkBytes = (1 << 20) * 2;
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
+	cmd.AddValue("protoChunkBytes", "chunk size for algo pipelining", protoChunkBytes);
 	cmd.Parse(argc, argv);
 
     NodeContainer gpunodes;
@@ -109,6 +111,7 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("DataType", EnumValue(dtype));
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
+		app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(protoChunkBytes));
     ApplicationContainer apps = app_helper.Install<GPU>(gpunodes);
 
     NS_LOG_INFO("Finished installing collective apps.");
