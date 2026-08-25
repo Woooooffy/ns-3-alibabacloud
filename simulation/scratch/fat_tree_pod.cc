@@ -18,8 +18,22 @@ int main(int argc, char *argv[]) {
     LogComponentEnable("CollectivesApplication", LOG_INFO);
 //	LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     uint32_t inputBytes = (1 << 20);
+    // Algorithm pipelining granularity (the MSCCL kernel's gridOffset loop); 0 disables it.
+    // fat_tree_pod_2.xml has a genuine store-and-forward relay -- e.g. GPU 0 tb2 receives
+    // chunk 3 from GPU 3, and GPU 0 tb1 step 1 forwards it to GPU 1, gated on that recv --
+    // so this is where slicing should actually cut the critical path rather than just
+    // re-cutting the same bytes.
+    uint32_t protoChunkBytes = 0;
+    // Transport pipelining depth (NCCL_STEPS analogue). Note this scenario runs with
+    // L2AckInterval=0 (no-ack mode), where the sender self-acknowledges at send completion,
+    // so messages retire without waiting for a round trip and the depth makes no difference
+    // here. That is deliberate: it isolates the algorithm-level relay overlap from the
+    // transport-level message-boundary stall measured on 3nodes.
+    uint32_t maxMsgsInFlight = 8;
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
+	cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
+	cmd.AddValue("maxMsgsInFlight", "messages a qp may have in flight at once", maxMsgsInFlight);
 	cmd.Parse(argc, argv);
 
     NodeContainer gpunodes;
@@ -58,6 +72,7 @@ int main(int argc, char *argv[]) {
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
+    Config::SetDefault("ns3::RdmaHw::MaxMsgsInFlight", UintegerValue(maxMsgsInFlight));
 
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     RdmaFabricHelper rdmaFabric;
@@ -116,6 +131,7 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("DataType", EnumValue(dtype));
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
+    app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(protoChunkBytes));
     ApplicationContainer apps = app_helper.Install<GPU>(gpunodes);
 
     NS_LOG_INFO("Finished installing collective apps.");
