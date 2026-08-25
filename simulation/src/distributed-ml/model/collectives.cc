@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iomanip>
 #include <functional>
+#include <algorithm>
 
 #define MSCCL_MAX_ITER 65536
 // L2 overhead (e.g. PPP/eth header) added by the NetDevice on top of our packet,
@@ -186,8 +187,9 @@ namespace ns3 {
 			// to surface a send/recv order or count mismatch between ranks' algorithm XML,
 			// exactly the class of bug real hardware would silently misdeliver on.
 			int16_t peerIdSigned = static_cast<int16_t>(peerId);
-			if (!m_pendingRecvQueue[peerIdSigned].empty()){
-				const PendingTransfer& front = m_pendingRecvQueue[peerIdSigned].front();
+			auto sockLaneKey = std::make_pair(peerIdSigned, (uint8_t) 0);
+			if (!m_pendingRecvQueue[sockLaneKey].empty()){
+				const PendingTransfer& front = m_pendingRecvQueue[sockLaneKey].front();
 				if (front.dstBuf != hdr.GetDstBuf() || front.dstOffset != (int16_t)hdr.GetDstOff()){
 					NS_LOG_WARN("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
 						<< ": wire-carried dst=(" << hdr.GetDstBuf() << "," << hdr.GetDstOff()
@@ -195,7 +197,8 @@ namespace ns3 {
 						<< ") from peer " << peerId << " -- possible algorithm XML order/count mismatch.");
 				}
 			}
-			OnBytesArrivedFromPeer(static_cast<int16_t>(peerId), tmp, recvSize);
+			// the p2p socket transport is always a single stream, i.e. lane 0
+			OnBytesArrivedFromPeer(static_cast<int16_t>(peerId), 0, tmp, recvSize);
 			free(tmp);
 		}
 	}
@@ -207,8 +210,9 @@ namespace ns3 {
 	// (PendingTransfer::receivedBytes) -- no fragment offset or transfer-size info from the
 	// sender is used or needed. Stages bytes in m_unclaimedBytes if no matching
 	// Recv()/RecvRedCp() has been posted yet.
-	void MscclChannel::OnBytesArrivedFromPeer(int16_t peer, const uint8_t* payload, uint32_t fragSize){
-		auto& pendingQ = m_pendingRecvQueue[peer];
+	void MscclChannel::OnBytesArrivedFromPeer(int16_t peer, uint8_t lane, const uint8_t* payload, uint32_t fragSize){
+		auto laneKey = std::make_pair(peer, lane);
+		auto& pendingQ = m_pendingRecvQueue[laneKey];
 		if (!pendingQ.empty()){
 			PendingTransfer& cur = pendingQ.front();
 			if (m_app->GetCorrectnessCheck()){
@@ -217,12 +221,12 @@ namespace ns3 {
 					memcpy(cur.scratchBuf + cur.receivedBytes, payload, fragSize);
 				} else {
 					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(cur.dstBuf, cur.dstOffset);
-					memcpy(dst + cur.receivedBytes, payload, fragSize);
+					memcpy(dst + cur.dstByteShift + cur.receivedBytes, payload, fragSize);
 				}
 			}
 			cur.receivedBytes += fragSize;
 			NS_LOG_DEBUG("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": recv frag from peer "
-				<< peer << " dst=(" << cur.dstBuf << "," << cur.dstOffset << ") fragBytes=" << fragSize
+				<< peer << " lane " << (int)lane << " dst=(" << cur.dstBuf << "," << cur.dstOffset << ") fragBytes=" << fragSize
 				<< " accum=" << cur.receivedBytes << "/" << cur.pendingBytes);
 			if (cur.receivedBytes < cur.pendingBytes) return;
 			if (cur.receivedBytes > cur.pendingBytes){
@@ -234,20 +238,22 @@ namespace ns3 {
 			pendingQ.pop();
 			if (m_app->GetCorrectnessCheck() && done.op == MSCCL_RECV_REDUCE_COPY){
 				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(done.dstBuf, done.dstOffset);
-				ReduceAdd(dst, done.scratchBuf, done.pendingBytes, m_dataType);
+				ReduceAdd(dst + done.dstByteShift, done.scratchBuf, done.pendingBytes, m_dataType);
 				free(done.scratchBuf);
 			}
 			NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
 				<< ": transfer complete from peer " << peer << " dst=(" << done.dstBuf << "," << done.dstOffset
 				<< ") totalBytes=" << done.pendingBytes << " at t=" << Simulator::Now().GetNanoSeconds());
-			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, done.bid, done.sid);
+			// The step is done only when every lane's slice has landed; with one lane this is
+			// an immediate fire, exactly as before.
+			NoteRecvLaneComplete(done.bid, done.sid, 1);
 			return;
 		}
 		// early arrival: no Recv()/RecvRedCp() posted for this peer yet -- accumulate into
 		// the unclaimed byte stream; a future Recv()/RecvRedCp() call will carve off exactly
 		// the bytes it locally expects from the front, in FIFO order. Nothing about transfer
 		// boundaries crosses the wire, so none is needed here.
-		UnclaimedBytes& unclaimed = m_unclaimedBytes[peer];
+		UnclaimedBytes& unclaimed = m_unclaimedBytes[laneKey];
 		if (m_app->GetCorrectnessCheck()){
 			unclaimed.stagingBuf = (uint8_t*) realloc(unclaimed.stagingBuf, unclaimed.gotBytes + fragSize);
 			memcpy(unclaimed.stagingBuf + unclaimed.gotBytes, payload, fragSize);
@@ -261,51 +267,81 @@ namespace ns3 {
 	void MscclChannel::ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op){
 		if (dstoff < 0) NS_FATAL_ERROR("Invalid offset");
 		uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
-		UnclaimedBytes& unclaimed = m_unclaimedBytes[recvPeer];
-		if (unclaimed.gotBytes >= bytes){
-			// fully available: claim the front `bytes` worth, leave any remainder (e.g. the
-			// start of a later transfer that also arrived early) for the next claim
-			if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
-				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff);
-				if (op == MSCCL_RECV_REDUCE_COPY) ReduceAdd(dst, unclaimed.stagingBuf, bytes, m_dataType);
-				else memcpy(dst, unclaimed.stagingBuf, bytes);
-			}
-			uint32_t remaining = unclaimed.gotBytes - bytes;
-			if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
-				if (remaining > 0){
-					memmove(unclaimed.stagingBuf, unclaimed.stagingBuf + bytes, remaining);
-					unclaimed.stagingBuf = (uint8_t*) realloc(unclaimed.stagingBuf, remaining);
-				} else {
-					free(unclaimed.stagingBuf);
-					unclaimed.stagingBuf = nullptr;
+
+		// One posted recv per lane. The sender cut this transfer into the same contiguous
+		// slices (LaneSlice is a pure function of the byte count, and both ends derive the
+		// byte count from their own copy of the algorithm), and sends slice i on lane i, so
+		// matching lane i's stream against lane i's slice reassembles the transfer with no
+		// per-fragment placement information on the wire. The step completes when the last
+		// lane's slice does.
+		const uint8_t nLanes = m_app->GetRdmaLaneCount(recvPeer);
+		m_recvLanesLeft[std::make_pair(bid, sid)] = nLanes;
+
+		for (uint8_t lane = 0; lane < nLanes; ++lane){
+			uint32_t laneOff = 0, laneBytes = 0;
+			LaneSlice(bytes, nLanes, lane, laneOff, laneBytes);
+			UnclaimedBytes& unclaimed = m_unclaimedBytes[std::make_pair(recvPeer, lane)];
+
+			if (unclaimed.gotBytes >= laneBytes){
+				// fully available: claim the front `laneBytes` worth, leave any remainder (e.g. the
+				// start of a later transfer that also arrived early) for the next claim
+				if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
+					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff) + laneOff;
+					if (op == MSCCL_RECV_REDUCE_COPY) ReduceAdd(dst, unclaimed.stagingBuf, laneBytes, m_dataType);
+					else memcpy(dst, unclaimed.stagingBuf, laneBytes);
 				}
+				uint32_t remaining = unclaimed.gotBytes - laneBytes;
+				if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
+					if (remaining > 0){
+						memmove(unclaimed.stagingBuf, unclaimed.stagingBuf + laneBytes, remaining);
+						unclaimed.stagingBuf = (uint8_t*) realloc(unclaimed.stagingBuf, remaining);
+					} else {
+						free(unclaimed.stagingBuf);
+						unclaimed.stagingBuf = nullptr;
+					}
+				}
+				unclaimed.gotBytes = remaining;
+				NoteRecvLaneComplete(bid, sid, nLanes);
+				continue;
 			}
-			unclaimed.gotBytes = remaining;
+
+			PendingTransfer pt(bid, sid, laneBytes, op, 0, -1, dstbuf, dstoff);
+			pt.dstByteShift = laneOff;
+			if (unclaimed.gotBytes > 0){
+				// still streaming in: promote to a pending transfer, carrying over what already
+				// arrived, so future fragments from this peer (now matched via m_pendingRecvQueue)
+				// land at the now-known destination
+				pt.receivedBytes = unclaimed.gotBytes;
+				if (op == MSCCL_RECV_REDUCE_COPY){
+					pt.scratchBuf = (uint8_t*) malloc(laneBytes);
+					if (unclaimed.stagingBuf) memcpy(pt.scratchBuf, unclaimed.stagingBuf, unclaimed.gotBytes);
+				} else if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
+					uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff) + laneOff;
+					memcpy(dst, unclaimed.stagingBuf, unclaimed.gotBytes);
+				}
+				free(unclaimed.stagingBuf);
+				unclaimed.stagingBuf = nullptr;
+				unclaimed.gotBytes = 0;
+			}
+			m_pendingRecvQueue[std::make_pair(recvPeer, lane)].push(pt);
+		}
+	}
+
+	// A step's recv completes once every lane's slice has landed. The counter is seeded by
+	// ClaimOrRegisterPendingRecv; arrivals decrement it without knowing the lane count, since
+	// the entry already carries it.
+	void MscclChannel::NoteRecvLaneComplete(int16_t bid, int16_t sid, uint8_t /*nLanes*/){
+		auto key = std::make_pair(bid, sid);
+		auto it = m_recvLanesLeft.find(key);
+		if (it == m_recvLanesLeft.end()){
+			// No counter seeded: this transfer was never posted through
+			// ClaimOrRegisterPendingRecv. Treat it as single-lane and complete it directly.
 			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 			return;
 		}
-		if (unclaimed.gotBytes > 0){
-			// still streaming in: promote to a pending transfer, carrying over what already
-			// arrived, so future fragments from this peer (now matched via m_pendingRecvQueue)
-			// land at the now-known destination
-			PendingTransfer pt(bid, sid, bytes, op, 0, -1, dstbuf, dstoff);
-			pt.receivedBytes = unclaimed.gotBytes;
-			if (op == MSCCL_RECV_REDUCE_COPY){
-				pt.scratchBuf = (uint8_t*) malloc(bytes);
-				if (unclaimed.stagingBuf) memcpy(pt.scratchBuf, unclaimed.stagingBuf, unclaimed.gotBytes);
-			} else if (m_app->GetCorrectnessCheck() && unclaimed.stagingBuf){
-				uint8_t* dst = (uint8_t*) m_app->GetBufferPtr(dstbuf, dstoff);
-				memcpy(dst, unclaimed.stagingBuf, unclaimed.gotBytes);
-			}
-			free(unclaimed.stagingBuf);
-			unclaimed.stagingBuf = nullptr;
-			unclaimed.gotBytes = 0;
-			m_pendingRecvQueue[recvPeer].push(pt);
-			return;
-		}
-		// nothing arrived yet: register pending
-		PendingTransfer pt(bid, sid, bytes, op, 0, -1, dstbuf, dstoff);
-		m_pendingRecvQueue[recvPeer].push(pt);
+		if (--(it->second) > 0) return;
+		m_recvLanesLeft.erase(it);
+		Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, m_app, bid, sid);
 	}
 
 	void MscclChannel::PushPendingSend(Ptr<Socket> sock, PendingTransfer send){
@@ -377,52 +413,86 @@ namespace ns3 {
 	// no message queued yet (autoClose=false, so idling between Send() calls never tears it
 	// down -- see RdmaQueuePair::m_autoClose).
 	void MscclChannel::SetupRdmaSendPeer(int16_t peer){
-		// node-global (not per-channel) -- see CollectivesApplication::AllocateRdmaSport for why
-		uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + m_app->AllocateRdmaSport());
-
 		Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(peer));
 		Ptr<CollectivesApplication> peerApp =
 			DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
 		MscclChannel* peerChan = peerApp->GetChannel(m_id);
-
-		// Force-create (rather than wait for the first packet to lazily create) the peer's
-		// RdmaRxQueuePair for this connection and hang the byte-arrival callback directly off
-		// it -- this piggybacks on RdmaHw's own (senderIp,senderSport,pg) rx-qp key instead of
-		// deriving a second, independent key, so uniqueness is guaranteed by construction as
-		// long as sport is unique (see AllocateRdmaSport). Parameter mapping mirrors
-		// RdmaHw::ReceiveUdp's GetRxQp(ch.dip, ch.sip, ch.udp.dport, ch.udp.sport, ch.udp.pg,
-		// true) call from the sender's side of that connection: this node is "ch.sip"/"dip",
-		// the peer is "ch.dip"/"sip", MSCCL_RDMA_DPORT is "ch.udp.dport"/"sport", and this
-		// connection's freshly allocated sport is "ch.udp.sport"/"dport".
-		// perPktFn forwards straight into the shared matching logic -- RdmaHw's wire-level
-		// sequence number is deliberately ignored; the receiver derives everything it needs
-		// (write offset, transfer boundaries) from its own local accumulators instead (see
-		// OnBytesArrivedFromPeer).
 		int16_t myId = static_cast<int16_t>(m_app->GetNode()->GetId());
-		Ptr<RdmaRxQueuePair> rxQp = peerApp->GetRdmaDriver()->m_rdma->GetRxQp(
-			m_app->GetPeerIp(peer).Get(), m_app->GetMyIp().Get(), MSCCL_RDMA_DPORT, sport, MSCCL_RDMA_PG, true);
-		rxQp->m_perPktFn = [peerChan, myId](const uint8_t* payload, uint32_t sz, uint64_t /*seqOffset*/){
-			peerChan->OnBytesArrivedFromPeer(myId, payload, sz);
-		};
 
-		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
-			<< ": established persistent rx qp (sport=" << sport << ") for peer " << peer
-			<< " at t=" << Simulator::Now().GetNanoSeconds());
+		// One lane per NIC this connection is striped over: 1 normally, or one per equal-cost
+		// NIC when NIC merging is on (see CollectivesApplication::GetRdmaLaneCount). Both ends
+		// compute the same count from the same rule, so lane i here is lane i there.
+		const uint8_t nLanes = m_app->GetRdmaLaneCount(peer);
 
-		// If a switch JSON was parsed, it dictates which NIC this connection injects on -- on a
-		// multi-homed fabric that choice picks the plane, and letting RdmaHw hash it would land
-		// roughly half the connections on a plane whose switches hold no rules for their flows,
-		// silently reverting them to ECMP. Absent a switch JSON this stays NIC_UNPINNED and the
-		// hash is used, exactly as before.
-		uint32_t pinnedNic = RdmaQueuePair::NIC_UNPINNED;
-		DynamicCast<GPU>(m_app->GetNode())->GetPeerNic(peer, m_id, pinnedNic);
+		// The NIC the schedule dictates, if any. On a multi-homed fabric that choice picks the
+		// network plane, and a connection injected on the wrong plane meets no flow rules at all
+		// along its path, silently reverting to ECMP. It is only meaningful single-lane: a
+		// merged device deliberately spans every plane at once, which is why NIC merging and the
+		// schedule pin are mutually exclusive (GetRdmaLaneCount returns 1 whenever a pin exists).
+		uint32_t scheduledNic = RdmaQueuePair::NIC_UNPINNED;
+		DynamicCast<GPU>(m_app->GetNode())->GetPeerNic(peer, m_id, scheduledNic);
 
-		Ptr<RdmaQueuePair> qp = m_app->GetRdmaDriver()->AddQueuePair(
-			m_app->GetNode()->GetId(), static_cast<uint32_t>(peer), /* tag */ 0, /* size */ 0, MSCCL_RDMA_PG,
-			m_app->GetMyIp(), m_app->GetPeerIp(peer), sport, MSCCL_RDMA_DPORT,
-			m_app->GetPeerWin(peer), m_app->GetPeerBaseRtt(peer), MSCCL_FLOW_ID_NONE, Callback<void>(), Callback<void>(),
-			nullptr, /* autoClose */ false, pinnedNic);
-		m_rdmaQpByPeer[peer] = qp;
+		// NICs reaching this peer, in ifIndex order. Lane i takes nics[i], the same
+		// "devIndex = qpIndex % ndevs" striping a merged device uses over its ports.
+		std::vector<int> nics;
+		m_app->GetRdmaDriver()->m_rdma->GetNicsToward(m_app->GetPeerIp(peer), nics);
+
+		std::vector<Ptr<RdmaQueuePair>>& qps = m_rdmaQpByPeer[peer];
+		qps.clear();
+		for (uint8_t lane = 0; lane < nLanes; ++lane){
+			// node-global (not per-channel) -- see CollectivesApplication::AllocateRdmaSport for why
+			uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + m_app->AllocateRdmaSport());
+
+			// Force-create (rather than wait for the first packet to lazily create) the peer's
+			// RdmaRxQueuePair for this connection and hang the byte-arrival callback directly off
+			// it -- this piggybacks on RdmaHw's own (senderIp,senderSport,pg) rx-qp key instead of
+			// deriving a second, independent key, so uniqueness is guaranteed by construction as
+			// long as sport is unique (see AllocateRdmaSport). Parameter mapping mirrors
+			// RdmaHw::ReceiveUdp's GetRxQp(ch.dip, ch.sip, ch.udp.dport, ch.udp.sport, ch.udp.pg,
+			// true) call from the sender's side of that connection: this node is "ch.sip"/"dip",
+			// the peer is "ch.dip"/"sip", MSCCL_RDMA_DPORT is "ch.udp.dport"/"sport", and this
+			// connection's freshly allocated sport is "ch.udp.sport"/"dport".
+			// perPktFn forwards straight into the shared matching logic -- RdmaHw's wire-level
+			// sequence number is deliberately ignored; the receiver derives everything it needs
+			// (write offset, transfer boundaries) from its own local accumulators instead (see
+			// OnBytesArrivedFromPeer). Binding `lane` here is what ties the receiver's slice of
+			// each transfer to the sender's: this qp carries slice `lane`, so its arrivals are
+			// matched against the receiver's lane-`lane` queue and land at that slice's offset.
+			Ptr<RdmaRxQueuePair> rxQp = peerApp->GetRdmaDriver()->m_rdma->GetRxQp(
+				m_app->GetPeerIp(peer).Get(), m_app->GetMyIp().Get(), MSCCL_RDMA_DPORT, sport, MSCCL_RDMA_PG, true);
+			rxQp->m_perPktFn = [peerChan, myId, lane](const uint8_t* payload, uint32_t sz, uint64_t /*seqOffset*/){
+				peerChan->OnBytesArrivedFromPeer(myId, lane, payload, sz);
+			};
+
+			uint32_t pinnedNic = (nLanes > 1)
+				? (lane < nics.size() ? (uint32_t) nics[lane] : RdmaQueuePair::NIC_UNPINNED)
+				: scheduledNic;
+
+			NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+				<< ": established persistent rx qp (sport=" << sport << ") for peer " << peer
+				<< " lane " << (int)lane << "/" << (int)nLanes
+				<< " at t=" << Simulator::Now().GetNanoSeconds());
+
+			qps.push_back(m_app->GetRdmaDriver()->AddQueuePair(
+				m_app->GetNode()->GetId(), static_cast<uint32_t>(peer), /* tag */ 0, /* size */ 0, MSCCL_RDMA_PG,
+				m_app->GetMyIp(), m_app->GetPeerIp(peer), sport, MSCCL_RDMA_DPORT,
+				m_app->GetPeerWin(peer), m_app->GetPeerBaseRtt(peer), MSCCL_FLOW_ID_NONE, Callback<void>(), Callback<void>(),
+				nullptr, /* autoClose */ false, pinnedNic));
+		}
+	}
+
+	// Cuts on element boundaries, spreading any remainder one element at a time over the low
+	// lanes, so every lane's slice is a whole number of elements and the slices tile the
+	// transfer exactly. Depends only on its arguments, so sender and receiver agree without
+	// exchanging anything -- the same property the peer-keyed FIFO matching already relies on.
+	void MscclChannel::LaneSlice(uint32_t totalBytes, uint8_t nLanes, uint8_t lane, uint32_t& offset, uint32_t& size) const {
+		uint32_t elemSize = DataType::GetSizeBytes(m_dataType);
+		uint32_t nElems = totalBytes / elemSize;
+		uint32_t base = nElems / nLanes, rem = nElems % nLanes;
+		uint32_t startElem = (uint32_t) lane * base + std::min<uint32_t>(lane, rem);
+		uint32_t myElems = base + (lane < rem ? 1 : 0);
+		offset = startElem * elemSize;
+		size = myElems * elemSize;
 	}
 
 	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps){
@@ -434,7 +504,8 @@ namespace ns3 {
 				<< ": SendRdma to peer " << sendpeer << " but no persistent qp was established -- "
 				<< "peer " << sendpeer << " is missing from this channel's sendPeerInfo in the algorithm XML.");
 		}
-		Ptr<RdmaQueuePair> qp = it->second;
+		std::vector<Ptr<RdmaQueuePair>>& qps = it->second;
+		const uint8_t nLanes = static_cast<uint8_t>(qps.size());
 
 		// srcDataPtr is passed into PushMessage so RdmaHw can resolve it BEFORE the first
 		// GetNxtPacket call for this message -- otherwise the first packet of the transfer
@@ -442,27 +513,53 @@ namespace ns3 {
 		uint8_t* srcDataPtr = m_app->GetCorrectnessCheck()
 			? (uint8_t*)m_app->GetBufferPtr(srcbuf, srcoff) : nullptr;
 
-		// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
-		// requires operator!= on the functor, which closures don't have), so bind the
-		// context onto a member-function Callback one argument at a time instead.
-		Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
-			.Bind(bid).Bind(sid).Bind(sendpeer).Bind(srcbuf).Bind(srcoff).Bind(dstbuf).Bind(dstoff).Bind(nElems);
-
 		// host-side pacing cap: XML "rate" is in GB/s (gigabytes/s); DataRate is in bits/s,
 		// so convert bytes->bits. 0 (unspecified) maps to DataRate(0), i.e. no cap, and the
 		// qp paces at its congestion-controlled rate (see RdmaHw::UpdateNextAvail).
-		DataRate paceRate = rateGBps > 0.0 ? DataRate((uint64_t)(rateGBps * 8e9)) : DataRate(0);
+		// Split across lanes with the bytes, so the connection's total target rate is what the
+		// schedule asked for rather than nLanes times it.
+		DataRate paceRate = rateGBps > 0.0 ? DataRate((uint64_t)(rateGBps * 8e9 / nLanes)) : DataRate(0);
 
-		qp->PushMessage(totalBytes, srcDataPtr, mscclFlowId, finishCb, Callback<void>(), paceRate);
-		// PushMessage only enqueues onto the qp; unlike AddQueuePair (which calls NewQp once
-		// at bootstrap for this persistent qp's creation), it doesn't wake up the NIC. Without
-		// this, a qp that had drained to idle between Send() calls never gets re-polled and
-		// the message sits forever -- see RdmaHw::TriggerTransmit.
-		m_app->GetRdmaDriver()->m_rdma->TriggerTransmit(qp);
+		// This step's network gate opens only once every lane has physically drained, so count
+		// the lanes up front and let OnRdmaSendComplete count them back down. Empty lanes (a
+		// transfer of fewer elements than lanes) are excluded: a zero-byte message is never
+		// acked, so it would never fire its completion and the gate would hang.
+		uint8_t activeLanes = 0;
+		for (uint8_t lane = 0; lane < nLanes; ++lane){
+			uint32_t off = 0, sz = 0;
+			LaneSlice(totalBytes, nLanes, lane, off, sz);
+			if (sz > 0) ++activeLanes;
+		}
+		if (activeLanes == 0){
+			// Nothing to send at all; the gate is the only thing waiting, so open it directly.
+			Simulator::ScheduleNow(&CollectivesApplication::OpenGateForStep, m_app, bid, sid);
+		} else {
+			m_sendLanesLeft[std::make_pair(bid, sid)] = activeLanes;
+		}
+
+		for (uint8_t lane = 0; lane < nLanes; ++lane){
+			uint32_t laneOff = 0, laneBytes = 0;
+			LaneSlice(totalBytes, nLanes, lane, laneOff, laneBytes);
+			if (laneBytes == 0) continue;
+
+			// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
+			// requires operator!= on the functor, which closures don't have), so bind the
+			// context onto a member-function Callback one argument at a time instead.
+			Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
+				.Bind(bid).Bind(sid).Bind(sendpeer).Bind(srcbuf).Bind(srcoff).Bind(dstbuf).Bind(dstoff).Bind(nElems);
+
+			qps[lane]->PushMessage(laneBytes, srcDataPtr ? srcDataPtr + laneOff : nullptr,
+				mscclFlowId, finishCb, Callback<void>(), paceRate);
+			// PushMessage only enqueues onto the qp; unlike AddQueuePair (which calls NewQp once
+			// at bootstrap for this persistent qp's creation), it doesn't wake up the NIC. Without
+			// this, a qp that had drained to idle between Send() calls never gets re-polled and
+			// the message sits forever -- see RdmaHw::TriggerTransmit.
+			m_app->GetRdmaDriver()->m_rdma->TriggerTransmit(qps[lane]);
+		}
 
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
-			<< sendpeer << " totalBytes=" << totalBytes << " rateGBps=" << rateGBps
-			<< " at t=" << Simulator::Now().GetNanoSeconds());
+			<< sendpeer << " totalBytes=" << totalBytes << " over " << (int)nLanes << " lane(s)"
+			<< " rateGBps=" << rateGBps << " at t=" << Simulator::Now().GetNanoSeconds());
 
 		// The send step completes as soon as the message is handed to the RDMA engine, not
 		// when the data physically finishes transmitting: from the host algorithm's view its
@@ -487,6 +584,14 @@ namespace ns3 {
 			<< " at t=" << Simulator::Now().GetNanoSeconds());
 		// The finishCb bind list is already full, so the gate id is looked up from the transfer
 		// here rather than bound as a ninth argument -- bid and sid identify it uniquely.
+		// With the message striped over several lanes this fires once per lane, but the gate
+		// means "this step's data is off the wire", so it opens only when the last lane drains.
+		auto key = std::make_pair(bid, sid);
+		auto it = m_sendLanesLeft.find(key);
+		if (it != m_sendLanesLeft.end()){
+			if (--(it->second) > 0) return;
+			m_sendLanesLeft.erase(it);
+		}
 		m_app->OpenGateForStep(bid, sid);
 	}
 
@@ -520,12 +625,12 @@ namespace ns3 {
 		// unfinished recvs
 		for (auto& recvQueue : m_pendingRecvQueue){
 			if (!recvQueue.second.empty()){
-				NS_FATAL_ERROR("BUG: has pending recv from peer " << recvQueue.first << " on node " << m_app->GetNode()->GetId() << " channel " << (int)m_id << " at application close.");
+				NS_FATAL_ERROR("BUG: has pending recv from peer " << recvQueue.first.first << " lane " << (int)recvQueue.first.second << " on node " << m_app->GetNode()->GetId() << " channel " << (int)m_id << " at application close.");
 			}
 		}
 		for (auto& unclaimed : m_unclaimedBytes){
 			if (unclaimed.second.gotBytes > 0){
-				NS_FATAL_ERROR("BUG: has " << unclaimed.second.gotBytes << " unclaimed bytes from peer " << unclaimed.first << " on node " << m_app->GetNode()->GetId() << " channel " << (int)m_id << " at application close.");
+				NS_FATAL_ERROR("BUG: has " << unclaimed.second.gotBytes << " unclaimed bytes from peer " << unclaimed.first.first << " lane " << (int)unclaimed.first.second << " on node " << m_app->GetNode()->GetId() << " channel " << (int)m_id << " at application close.");
 			}
 		}
 		// socket close
@@ -538,7 +643,7 @@ namespace ns3 {
 		}
 		// tear down persistent RDMA connections
 		for (auto& pair: m_rdmaQpByPeer){
-			m_app->GetRdmaDriver()->CloseQueuePair(pair.second);
+			for (Ptr<RdmaQueuePair>& qp : pair.second) m_app->GetRdmaDriver()->CloseQueuePair(qp);
 		}
 	}
 
@@ -577,6 +682,16 @@ namespace ns3 {
 					"Set false for large-chunk simulation where data values are irrelevant.",
 					BooleanValue(false),
 					MakeBooleanAccessor(&CollectivesApplication::m_correctnessCheck),
+					MakeBooleanChecker())
+				.AddAttribute(
+					"MergeNics",
+					"Model NCCL's merged virtual device (NCCL_IB_MERGE_NICS): fuse the NICs that "
+					"reach a peer into one logical device, open one queue pair per NIC, and split "
+					"every message across them. When false, each connection is bound to a single "
+					"NIC. Ignored for connections whose NIC the switch JSON pins, which are "
+					"deliberately confined to one network plane.",
+					BooleanValue(false),
+					MakeBooleanAccessor(&CollectivesApplication::m_mergeNics),
 					MakeBooleanChecker());
 		return tid;
 	}
@@ -623,6 +738,54 @@ namespace ns3 {
 
 	int CollectivesApplication::GetPort(){
 		return m_port;
+	}
+
+	// Lanes = parallel RDMA connections to `peer`, i.e. how many NICs a transfer is striped
+	// over. This models NCCL's merged virtual device: with NCCL_IB_MERGE_NICS the ports of one
+	// physical NIC are fused into a single logical device, one qp is created per port
+	// ("devIndex = qpIndex % ndevs"), and every message is split proportionally across them --
+	// as opposed to the unmerged case, where a connection gets exactly one port.
+	//
+	// Both ends must agree, and there is no handshake to carry the number, so it is derived:
+	// the min of the two ends' equal-cost NIC counts is symmetric, so each end computes the
+	// same value from the same two inputs.
+	uint8_t CollectivesApplication::GetRdmaLaneCount(int16_t peer){
+		auto cached = m_rdmaLaneCount.find(peer);
+		if (cached != m_rdmaLaneCount.end()) return cached->second;
+
+		uint8_t lanes = 1;
+		if (m_mergeNics && IsRdmaPeer(peer)){
+			Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(peer));
+			Ptr<CollectivesApplication> peerApp =
+				DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
+			// A schedule-pinned connection is deliberately confined to one plane, the opposite
+			// of what merging does, so a pin wins and keeps the connection single-lane. Checked
+			// on BOTH ends: a pin on either side alone would otherwise leave one end striping
+			// over two lanes while the other expected one, desyncing the streams.
+			if (HasScheduledNicToward(peer) || peerApp->HasScheduledNicToward(static_cast<int16_t>(GetNode()->GetId()))){
+				m_rdmaLaneCount[peer] = 1;
+				return 1;
+			}
+			std::vector<int> mine, theirs;
+			GetRdmaDriver()->m_rdma->GetNicsToward(GetPeerIp(peer), mine);
+			peerApp->GetRdmaDriver()->m_rdma->GetNicsToward(GetMyIp(), theirs);
+			size_t n = std::min(mine.size(), theirs.size());
+			if (n > MSCCL_MAX_RDMA_LANES) n = MSCCL_MAX_RDMA_LANES;
+			if (n > 1) lanes = static_cast<uint8_t>(n);
+		}
+		m_rdmaLaneCount[peer] = lanes;
+		return lanes;
+	}
+
+	// True if AlgoTopology::ParseSwitchJson pinned this node's connection to `peer` on any
+	// channel (see GPU::PushPeerNic).
+	bool CollectivesApplication::HasScheduledNicToward(int16_t peer){
+		Ptr<GPU> self = DynamicCast<GPU>(GetNode());
+		uint32_t pinned = RdmaQueuePair::NIC_UNPINNED;
+		for (int c = 0; c < m_algo->nChannels; ++c){
+			if (self->GetPeerNic(peer, c, pinned)) return true;
+		}
+		return false;
 	}
 
 	bool CollectivesApplication::IsRdmaPeer(int16_t peer){

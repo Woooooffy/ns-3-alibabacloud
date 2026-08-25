@@ -73,9 +73,13 @@ namespace ns3 {
 		// packet boundaries aren't guaranteed aligned to the element size the way the socket
 		// path's Send() fragmentation is.
 		uint8_t* scratchBuf;
-		PendingTransfer(): bid(-1), sid(-1), receivedBytes(0), pendingBytes(0), op(-1), srcBuf(3), srcOffset(-1), dstBuf(3), dstOffset(-1), scratchBuf(nullptr){}
+		// Byte offset of this lane's slice within the transfer's destination range. Zero for a
+		// single-lane transfer; with NIC merging a transfer is cut into one contiguous slice per
+		// lane (see MscclChannel::LaneSlice) and each lane's bytes land at dstOffset + this.
+		uint32_t dstByteShift;
+		PendingTransfer(): bid(-1), sid(-1), receivedBytes(0), pendingBytes(0), op(-1), srcBuf(3), srcOffset(-1), dstBuf(3), dstOffset(-1), scratchBuf(nullptr), dstByteShift(0){}
 		PendingTransfer(int16_t bId, int16_t sId, uint32_t bytes, int8_t Op, uint16_t srcbuf, uint16_t srcoff, uint16_t dstbuf, int16_t dstoff): bid(bId), sid(sId),
-										receivedBytes(0), pendingBytes(bytes), op(Op), srcBuf(srcbuf), srcOffset(srcoff), dstBuf(dstbuf), dstOffset(dstoff), scratchBuf(nullptr){}
+										receivedBytes(0), pendingBytes(bytes), op(Op), srcBuf(srcbuf), srcOffset(srcoff), dstBuf(dstbuf), dstOffset(dstoff), scratchBuf(nullptr), dstByteShift(0){}
 	};
 
 	// bytes that arrived on a peer's connection before a matching Recv()/RecvRedCp() was
@@ -93,6 +97,11 @@ namespace ns3 {
 		uint8_t* stagingBuf; // nullptr if correctness check disabled; grows (realloc) as bytes arrive
 		UnclaimedBytes(): gotBytes(0), stagingBuf(nullptr){}
 	};
+
+	// Ceiling on lanes per RDMA connection (see CollectivesApplication::GetRdmaLaneCount).
+	// Mirrors NCCL_IB_MAX_DEVS_PER_NIC: a merged virtual device fuses at most this many
+	// physical ports, so a connection over one never needs more parallel qps than this.
+	#define MSCCL_MAX_RDMA_LANES 4
 
 	// a single on-wire fragment of a Send(), queued for pacing onto the NIC.
 	// the packet is fully constructed at Send() time so source data is captured
@@ -155,7 +164,22 @@ namespace ns3 {
 			// m_unclaimedBytes if no matching Recv()/RecvRedCp() has been posted yet, and
 			// completes the step once a transfer's full locally-expected byte count has
 			// arrived.
-			void OnBytesArrivedFromPeer(int16_t peer, const uint8_t* payload, uint32_t fragSize);
+			// `lane` identifies which of the peer's parallel connections these bytes arrived on.
+			// With NIC merging a peer opens one qp per NIC, each carrying a fixed contiguous
+			// slice of every transfer, so each lane is its own independent in-order byte stream
+			// and gets its own pending-recv queue and unclaimed-byte staging area. Lane indices
+			// are assigned in the same order on both ends (SetupRdmaSendPeer creates the sender's
+			// qp and registers the receiver's callback for lane i in the same iteration), which
+			// is what makes "lane i carries slice i" agree across the connection.
+			void OnBytesArrivedFromPeer(int16_t peer, uint8_t lane, const uint8_t* payload, uint32_t fragSize);
+			// Byte range of `lane` when `totalBytes` is cut into `nLanes` contiguous slices.
+			// Cuts on element boundaries so no slice splits a data element, and is a pure
+			// function of (totalBytes, nLanes, lane) so both ends compute the same split from
+			// their own copy of the algorithm without exchanging anything.
+			void LaneSlice(uint32_t totalBytes, uint8_t nLanes, uint8_t lane, uint32_t& offset, uint32_t& size) const;
+			// Counts down a step's lanes; drives StepCompletionCallback (recv) / the network
+			// gate (send) only once the last lane of that step has completed.
+			void NoteRecvLaneComplete(int16_t bid, int16_t sid, uint8_t nLanes);
 			// shared body of Recv()/RecvRedCp(): claims bytes already sitting in
 			// m_unclaimedBytes for `recvPeer` if any (a full or partial claim, in FIFO byte
 			// order), else registers a new pending recv (m_pendingRecvQueue) to be matched by
@@ -172,14 +196,19 @@ namespace ns3 {
 			// posted via Recv()/RecvRedCp(), dst known, awaiting bytes; per peer, FIFO in the
 			// order this node's own step interpreter posted them -- matches real hardware's
 			// per-connection step ordering (destination is never derived from wire content)
-			std::map<int16_t, std::queue<PendingTransfer>> m_pendingRecvQueue;
+			std::map<std::pair<int16_t, uint8_t>, std::queue<PendingTransfer>> m_pendingRecvQueue;
 			// bytes that arrived before a matching Recv()/RecvRedCp() was posted; per peer, one
 			// continuous unclaimed byte stream (symmetric early-arrival counterpart to
 			// m_pendingRecvQueue) -- see UnclaimedBytes for why this isn't chunked by transfer.
-			std::map<int16_t, UnclaimedBytes> m_unclaimedBytes;
+			std::map<std::pair<int16_t, uint8_t>, UnclaimedBytes> m_unclaimedBytes;
 			std::map<Ptr<Socket>, std::queue<PendingTransfer>> m_pendingSends;
-			// persistent per-peer RDMA connection, established once in SetupRdmaSendPeer
-			std::map<int16_t, Ptr<RdmaQueuePair>> m_rdmaQpByPeer;
+			// persistent per-peer RDMA connection, established once in SetupRdmaSendPeer. One qp
+			// per lane, in lane order: index i is pinned to the i'th NIC that reaches the peer,
+			// mirroring how a merged multi-port device stripes its qps over its ports.
+			std::map<int16_t, std::vector<Ptr<RdmaQueuePair>>> m_rdmaQpByPeer;
+			// lanes still outstanding for a (bid, sid) step, recv side and send side
+			std::map<std::pair<int16_t, int16_t>, uint8_t> m_recvLanesLeft;
+			std::map<std::pair<int16_t, int16_t>, uint8_t> m_sendLanesLeft;
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			uint32_t m_flowId_counter = 0;
@@ -235,6 +264,17 @@ namespace ns3 {
 			// both connecting to the same peer would otherwise allocate the same sport and
 			// collide on that key.
 			uint16_t AllocateRdmaSport();
+			// How many parallel RDMA connections ("lanes") this node opens to `peer`, i.e. how
+			// many of its NICs a transfer to that peer is striped over. 1 unless NIC merging is
+			// on. Modeled on NCCL's merged virtual device: NCCL_IB_MERGE_NICS fuses the ports of
+			// one physical NIC into a single logical device, creates one qp per port, and splits
+			// every message proportionally across them, rather than giving each connection a
+			// single port. Cached, and computed as the min of the two ends' NIC counts so both
+			// ends derive the same number without exchanging it.
+			uint8_t GetRdmaLaneCount(int16_t peer);
+			// True if the parsed switch JSON pinned this node's connection to `peer` (any
+			// channel) to a specific NIC. Queried on both ends by GetRdmaLaneCount.
+			bool HasScheduledNicToward(int16_t peer);
 			#ifdef FLOW_ID_TEST
 			// void SetFlowIdTableForChannel(std::map<std::pair<int, int>, uint32_t>*, int channel);
 			// void SetFlowIdTableForAllChannels(std::map<std::pair<int, int>, uint32_t>* table);
@@ -285,6 +325,8 @@ namespace ns3 {
 			DataBuffer m_dstBuf;
 			DataBuffer m_scratchBuf;
 			uint16_t m_rdmaSportCounter = 0; // node-global; see AllocateRdmaSport
+			bool m_mergeNics = false;        // MergeNics attribute; see GetRdmaLaneCount
+			std::map<int16_t, uint8_t> m_rdmaLaneCount; // memoized GetRdmaLaneCount
 			// Network gate state (see mscclTransfer::netGate/netWait). Both vectors are sized at
 			// InterpretAlgo from mscclAlgorithm::maxNetGate, so there is no MSCCL_MAX_GATES to tune.
 			//

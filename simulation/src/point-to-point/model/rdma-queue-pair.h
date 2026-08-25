@@ -22,14 +22,22 @@ public:
 	uint16_t sport, dport;
 	uint64_t m_size, m_init_size, m_tag; // m_size/m_init_size are informational (monitoring/print only) since the message queue below drives GetBytesLeft/IsFinished
 	uint32_t m_mscclFlowId; // app-level msccl flow id, carried on the wire via MscclFlowIdHeader; MscclFlowIdHeader::NO_FLOW_ID if unset
-	// sentinel for m_pinnedNicIdx meaning "no NIC pinned; hash across the equal-cost NICs"
+	// sentinel: no NIC bound yet (m_pinnedNicIdx), and no NIC asked for (m_requestedNicIdx).
 	static constexpr uint32_t NIC_UNPINNED = 0xffffffff;
-	// The NIC (ifIndex, which is also the index into RdmaHw::m_nic) this qp must leave by,
-	// when the schedule dictates one -- on a multi-homed fabric the sender's NIC choice picks
-	// the plane, and hashing it would land half the connections on a plane whose switches hold
-	// no rules for their flows. Set once at creation and never changed: RdmaHw binds a qp to a
-	// NIC's queue-pair group and seeds its rate from that device, so this must stay stable for
-	// the qp's lifetime. NIC_UNPINNED preserves the ECMP-hash behavior for every other caller.
+	// The NIC the schedule asks this connection to use, or NIC_UNPINNED when nothing dictates
+	// one. This is only a request: RdmaHw::ResolveNic honors it if that NIC actually reaches
+	// the destination, and otherwise warns and falls back, so it is kept separate from the
+	// binding below rather than written straight into it.
+	uint32_t m_requestedNicIdx = NIC_UNPINNED;
+	// The NIC (ifIndex, which is also the index into RdmaHw::m_nic) this qp sends on. Resolved
+	// once -- by RdmaHw::GetNicIdxOfQp on its first call, from m_requestedNicIdx when the
+	// schedule dictates one and from the node's round-robin rotation otherwise -- and never
+	// changed afterwards,
+	// mirroring hardware: a verbs queue pair is bound to a device at creation and cannot
+	// migrate. RdmaHw also places the qp in that NIC's queue-pair group and seeds its rate from
+	// that device, so a binding that drifted mid-connection would corrupt pacing outright.
+	// On a multi-homed fabric this choice picks the network plane, and therefore decides
+	// whether the switches along the path hold any flow rules for this connection at all.
 	uint32_t m_pinnedNicIdx = NIC_UNPINNED;
 	uint32_t m_src, m_dest;
 	uint64_t snd_nxt, snd_una; // next seq to send, the highest unacked seq

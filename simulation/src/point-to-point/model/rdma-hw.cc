@@ -260,45 +260,72 @@ void RdmaHw::Setup(QpCompleteCallback cb,SendCompleteCallback send_cb){
     m_sendCompleteCallback = send_cb;
 }
 uint32_t ip_to_node_id(Ipv4Address ip) { return (ip.Get() >> 8) & 0xffff; }
+// A qp uses one NIC for its whole life, as on real hardware: a verbs queue pair is bound to
+// a device at creation and cannot migrate. The binding is resolved once, on the first call
+// here, and cached on the qp -- every later call (TriggerTransmit, the ack and rate paths,
+// ...) just reads it back, so the answer can never vary mid-connection.
 uint32_t RdmaHw::GetNicIdxOfQp(Ptr<RdmaQueuePair> qp){
-	// Same fix as GetNicIdxOfRxQp below: which table holds this destination is decided by
-	// actual membership, not by a src/m_gpus_per_server == dst/m_gpus_per_server guess.
-	// That guess assumes every NVSwitch has the same GPU fan-out, which a heterogeneous
-	// fabric (e.g. dual_plane_hetero's 16-GPU and 8-GPU NVSwitch groups) violates: a pair
-	// the guess calls "same server" can still have its BFS-computed route sitting in
-	// m_rtTable (network path) rather than m_rtTable_nxthop_nvswitch, and querying the
-	// wrong table hits an empty vector and asserts. rdma-fabric-helper.cc's Build() already
-	// documents GPUsPerServer as a perf hint, not a routing-correctness input.
+	if (qp->m_pinnedNicIdx != RdmaQueuePair::NIC_UNPINNED)
+		return qp->m_pinnedNicIdx;
+
+	// Which table holds this destination is decided by actual membership, not by a
+	// src/m_gpus_per_server == dst/m_gpus_per_server guess (same fix as GetNicIdxOfRxQp
+	// below). That guess assumes every NVSwitch has the same GPU fan-out, which a
+	// heterogeneous fabric (e.g. dual_plane_hetero's 16-GPU and 8-GPU NVSwitch groups)
+	// violates: a pair the guess calls "same server" can still have its BFS-computed route
+	// sitting in m_rtTable (network path) rather than m_rtTable_nxthop_nvswitch, and querying
+	// the wrong table hits an empty vector and asserts. rdma-fabric-helper.cc's Build()
+	// already documents GPUsPerServer as a perf hint, not a routing-correctness input.
 	uint32_t dip = qp->dip.Get();
 	if(m_rtTable.count(dip) != 0){
-		return SelectNic(qp, m_rtTable[dip]);
+		qp->m_pinnedNicIdx = ResolveNic(qp, m_rtTable[dip]);
 	}else if(m_rtTable_nxthop_nvswitch.count(dip) != 0){
-		return SelectNic(qp, m_rtTable_nxthop_nvswitch[dip]);
+		qp->m_pinnedNicIdx = ResolveNic(qp, m_rtTable_nxthop_nvswitch[dip]);
 	}else{
 		NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
+		return 0;
 	}
-	NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-	return 0;
+	return qp->m_pinnedNicIdx;
 }
 
-// Picks this qp's NIC out of the equal-cost set BFS computed toward its destination. A qp
-// whose NIC the schedule dictates (see RdmaQueuePair::m_pinnedNicIdx) takes it; everything
-// else keeps the 5-tuple hash. The pin is honored only if it is actually in `candidates`,
-// so a stale or wrong switch JSON degrades to hashing rather than parking the qp on a NIC
-// that does not reach the destination at all.
-uint32_t RdmaHw::SelectNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates){
+// Binds a new qp to one of the equal-cost NICs BFS computed toward its destination.
+//
+// qp->m_requestedNicIdx is the NIC the schedule dictates, when there is one (AlgoTopology
+// derives it from the switch JSON: the NIC facing the plane whose switches actually hold
+// this connection's flow rules -- see MscclChannel::SetupRdmaSendPeer). Otherwise NICs are
+// handed out round-robin, which is what a real collective library does: it assigns each
+// connection a rail by topology, deliberately and evenly, rather than hashing. Hashing was
+// the previous behavior and is not modeled anymore -- on a node with only two fabric NICs a
+// per-connection coin flip leaves the busiest NIC ~35% over the mean, an artifact of the
+// model rather than anything hardware does.
+uint32_t RdmaHw::ResolveNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates){
 	NS_ASSERT_MSG(candidates.size() > 0, "We assume at least one NIC is alive");
-	if (qp->m_pinnedNicIdx != RdmaQueuePair::NIC_UNPINNED){
-		if (std::find(candidates.begin(), candidates.end(), (int) qp->m_pinnedNicIdx) != candidates.end())
-			return qp->m_pinnedNicIdx;
-		// Once per qp would need extra state; this fires per call but only on a broken pin,
-		// which is a configuration error worth being noisy about.
+	if (candidates.size() == 1)
+		return candidates[0]; // no choice to make, and no reason to disturb the rotation
+
+	if (qp->m_requestedNicIdx != RdmaQueuePair::NIC_UNPINNED){
+		if (std::find(candidates.begin(), candidates.end(), (int) qp->m_requestedNicIdx) != candidates.end())
+			return qp->m_requestedNicIdx;
 		NS_LOG_WARN("RdmaHw on node " << m_node->GetId() << ": qp to " << qp->dip
-			<< " is pinned to NIC " << qp->m_pinnedNicIdx << ", which is not an equal-cost next "
-			<< "hop toward that destination; falling back to ECMP hashing. The switch JSON's "
+			<< " asks for NIC " << qp->m_requestedNicIdx << ", which is not an equal-cost next "
+			<< "hop toward that destination; falling back to round-robin. The switch JSON's "
 			<< "ingress port for this connection likely disagrees with the built topology.");
 	}
-	return candidates[qp->GetHash() % candidates.size()];
+	// Node-global rotation, not per-destination: the point is to spread this node's
+	// connections evenly over its own NICs, and a per-destination counter would restart at
+	// zero for every peer and pile every connection onto the first NIC.
+	return candidates[m_nicRoundRobin++ % candidates.size()];
+}
+bool RdmaHw::GetNicsToward(Ipv4Address dip, std::vector<int>& out){
+	out.clear();
+	uint32_t d = dip.Get();
+	// Same table-membership rule as GetNicIdxOfQp: the network path if there is one, else the
+	// nvswitch path.
+	auto net = m_rtTable.find(d);
+	if (net != m_rtTable.end()){ out = net->second; return !out.empty(); }
+	auto nvs = m_rtTable_nxthop_nvswitch.find(d);
+	if (nvs != m_rtTable_nxthop_nvswitch.end()){ out = nvs->second; return !out.empty(); }
+	return false;
 }
 uint64_t RdmaHw::GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg){
 	return ((uint64_t)dip << 32) | ((uint64_t)sport << 16) | (uint64_t)pg;
@@ -313,9 +340,11 @@ Ptr<RdmaQueuePair> RdmaHw::GetQp(uint32_t dip, uint16_t sport, uint16_t pg){
 Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose, uint32_t pinnedNic){
 	// create qp
 	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
-	// must be set before the GetNicIdxOfQp below: that call not only places the qp in a NIC's
-	// queue-pair group but also seeds m_rate/m_max_rate from the chosen device
-	qp->m_pinnedNicIdx = pinnedNic;
+	// Must be set before the GetNicIdxOfQp below, which is what actually resolves and caches
+	// this qp's NIC binding: that call places the qp in a NIC's queue-pair group and seeds
+	// m_rate/m_max_rate from the chosen device. NIC_UNPINNED here means "no scheduled NIC",
+	// and ResolveNic then takes the next one in this node's round-robin rotation.
+	qp->m_requestedNicIdx = pinnedNic;
 	qp->SetSrc(src);
 	qp->SetDest(dest);
 	qp->SetTag(tag);

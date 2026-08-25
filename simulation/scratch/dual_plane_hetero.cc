@@ -81,6 +81,12 @@ int main(int argc, char *argv[]) {
     // just an upper bound, so a flow paced below line rate actually runs at its assigned rate.
     bool rateTargeting = true;
     bool flowId = true;              // install the per-flow switch forwarding table from the JSON
+    // Baseline NIC-selection model when flowId is off, mirroring NCCL_IB_MERGE_NICS:
+    //   1 -> merged virtual device: one qp per NIC per connection, every message split across
+    //        them (what NCCL does by default for the two ports of one physical NIC)
+    //   0 -> unmerged: one qp per connection, NICs handed out round-robin
+    // With flowId on, both are bypassed -- the schedule pins each connection to one plane.
+    bool mergeNics = true;
     std::string checkLog = "minimal"; // silent | minimal | verbose
     uint32_t maxMismatches = 10;
 
@@ -91,6 +97,7 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("rate", "Use the rate-annotated XML (false = the _no_rate ablation)", rate);
     cmd.AddValue("rateTargeting", "Treat per-flow XML rates as targets, not just caps", rateTargeting);
     cmd.AddValue("flowId", "Install per-flow switch forwarding from the switch JSON", flowId);
+    cmd.AddValue("mergeNics", "Baseline only (flowId=false): 1 = NCCL-style merged NIC (one qp per NIC, message split across them), 0 = one qp per connection, round-robin NICs", mergeNics);
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
     cmd.Parse(argc, argv);
@@ -666,6 +673,10 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("DataType", EnumValue(dtype));
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
+    // The schedule's per-connection plane pin and NIC merging are mutually exclusive: merging
+    // deliberately spans every plane at once. GetRdmaLaneCount also refuses to merge a pinned
+    // connection, so this is belt-and-braces -- but it keeps the reported config honest.
+    app_helper.SetAttribute("MergeNics", BooleanValue(!flowId && mergeNics));
     ApplicationContainer apps = app_helper.Install<GPU>(topo);
 
     NS_LOG_INFO("Finished installing collective apps.");
@@ -735,6 +746,9 @@ int main(int argc, char *argv[]) {
     Simulator::Run();
     fclose(qlenOut);
     fclose(eventOut);
+    std::cout << "NIC selection: " << (flowId ? "schedule-pinned (one qp per connection)"
+        : (mergeNics ? "merged NIC (one qp per NIC, message split across them)"
+                     : "round-robin (one qp per connection)")) << std::endl;
     std::cout << "Algorithm XML: " << XML_ALGO << std::endl;
     std::cout << "Switch queue trace: " << qlenPath << std::endl;
     std::cout << "Switch drop/PFC trace: " << eventPath << std::endl;

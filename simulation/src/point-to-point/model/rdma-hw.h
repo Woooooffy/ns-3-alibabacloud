@@ -55,6 +55,10 @@ public:
 	std::unordered_map<uint64_t, Ptr<RdmaRxQueuePair> > m_rxQpMap; // mapping from uint64_t to rx qp
 	std::unordered_map<uint32_t, std::vector<int> > m_rtTable; // map from ip address (u32) to possible ECMP port (index of dev)
 	std::unordered_map<uint32_t, std::vector<int> > m_rtTable_nxthop_nvswitch; // map from ip address (u32) to possible ECMP port (index of dev) connected to nvswitch
+	// Rotation used by ResolveNic to hand this node's NICs out to new qps evenly when the
+	// schedule does not dictate one. Node-global and advanced only when there is an actual
+	// choice (>1 equal-cost NIC), so single-homed destinations do not perturb the alternation.
+	uint32_t m_nicRoundRobin = 0;
 	uint32_t m_gpus_per_server; // uesed for routing; if src and dst in the same server, then communicate by nvswitch.
 	uint32_t nvls_enable;
 	std::set<uint32_t> nvswitch_set;
@@ -85,10 +89,17 @@ public:
 	void Setup(QpCompleteCallback cb,SendCompleteCallback send_cb); // setup shared data and callbacks with the QbbNetDevice
 	static uint64_t GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg); // get the lookup key for m_qpMap
 	Ptr<RdmaQueuePair> GetQp(uint32_t dip, uint16_t sport, uint16_t pg); // get the qp
-	uint32_t GetNicIdxOfQp(Ptr<RdmaQueuePair> qp); // get the NIC index of the qp
-	// shared tail of GetNicIdxOfQp: honor a schedule-dictated NIC if it is one of `candidates`,
-	// otherwise fall back to hashing the qp's 5-tuple across them
-	uint32_t SelectNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates);
+	// get the NIC index of the qp; resolves and caches the binding on first call, so a qp
+	// always answers with the same NIC for its whole life (as a verbs qp does)
+	uint32_t GetNicIdxOfQp(Ptr<RdmaQueuePair> qp);
+	// binds a new qp to one of `candidates`: the schedule's NIC if it dictated one and it is
+	// reachable, otherwise the next NIC in this node's round-robin rotation
+	uint32_t ResolveNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates);
+	// Every NIC that reaches `dip` at equal cost, in ifIndex order, as BFS computed them.
+	// Lets the app stripe one connection's qps over the NICs (see
+	// CollectivesApplication::GetRdmaLaneCount) instead of picking just one. Returns false
+	// if the destination is unknown; `out` is cleared first.
+	bool GetNicsToward(Ipv4Address dip, std::vector<int>& out);
 	// creates a new qp and, if size != 0, pushes it as the qp's first message (size == 0 is
 	// used to eagerly establish a persistent MSCCL connection at bootstrap with no data
 	// queued yet -- see MscclChannel::SetupRdmaSendPeer). Returns the qp so callers that
