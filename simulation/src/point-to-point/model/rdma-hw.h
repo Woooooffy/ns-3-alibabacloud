@@ -95,6 +95,12 @@ public:
 	// binds a new qp to one of `candidates`: the schedule's NIC if it dictated one and it is
 	// reachable, otherwise the next NIC in this node's round-robin rotation
 	uint32_t ResolveNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates);
+	// The equal-cost next-hop NICs toward `dip`, preferring the NVSwitch when both an NVSwitch
+	// and a fabric route exist (two GPUs behind one NVSwitch are equidistant either way, and
+	// intra-node traffic must stay off the fabric). Single source of truth for that choice --
+	// GetNicIdxOfQp, GetNicIdxOfRxQp and GetNicsToward all route through it so the data path,
+	// the ack path and the app's lane setup can never disagree about which NICs are eligible.
+	const std::vector<int>& NicCandidates(uint32_t dip);
 	// Every NIC that reaches `dip` at equal cost, in ifIndex order, as BFS computed them.
 	// Lets the app stripe one connection's qps over the NICs (see
 	// CollectivesApplication::GetRdmaLaneCount) instead of picking just one. Returns false

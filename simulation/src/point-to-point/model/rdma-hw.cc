@@ -269,22 +269,14 @@ uint32_t RdmaHw::GetNicIdxOfQp(Ptr<RdmaQueuePair> qp){
 		return qp->m_pinnedNicIdx;
 
 	// Which table holds this destination is decided by actual membership, not by a
-	// src/m_gpus_per_server == dst/m_gpus_per_server guess (same fix as GetNicIdxOfRxQp
-	// below). That guess assumes every NVSwitch has the same GPU fan-out, which a
-	// heterogeneous fabric (e.g. dual_plane_hetero's 16-GPU and 8-GPU NVSwitch groups)
-	// violates: a pair the guess calls "same server" can still have its BFS-computed route
-	// sitting in m_rtTable (network path) rather than m_rtTable_nxthop_nvswitch, and querying
-	// the wrong table hits an empty vector and asserts. rdma-fabric-helper.cc's Build()
-	// already documents GPUsPerServer as a perf hint, not a routing-correctness input.
+	// src/m_gpus_per_server == dst/m_gpus_per_server guess. That guess assumes every NVSwitch
+	// has the same GPU fan-out, which a heterogeneous fabric (e.g. dual_plane_hetero's 16-GPU
+	// and 8-GPU NVSwitch groups) violates: a pair the guess calls "same server" can still have
+	// its BFS-computed route sitting in m_rtTable rather than m_rtTable_nxthop_nvswitch, and
+	// querying the wrong table hits an empty vector and asserts. rdma-fabric-helper.cc's
+	// Build() already documents GPUsPerServer as a perf hint, not a routing-correctness input.
 	uint32_t dip = qp->dip.Get();
-	if(m_rtTable.count(dip) != 0){
-		qp->m_pinnedNicIdx = ResolveNic(qp, m_rtTable[dip]);
-	}else if(m_rtTable_nxthop_nvswitch.count(dip) != 0){
-		qp->m_pinnedNicIdx = ResolveNic(qp, m_rtTable_nxthop_nvswitch[dip]);
-	}else{
-		NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-		return 0;
-	}
+	qp->m_pinnedNicIdx = ResolveNic(qp, NicCandidates(dip));
 	return qp->m_pinnedNicIdx;
 }
 
@@ -299,7 +291,10 @@ uint32_t RdmaHw::GetNicIdxOfQp(Ptr<RdmaQueuePair> qp){
 // per-connection coin flip leaves the busiest NIC ~35% over the mean, an artifact of the
 // model rather than anything hardware does.
 uint32_t RdmaHw::ResolveNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates){
+	// NS_ASSERT compiles out in optimized builds, so this needs a real guard: the round-robin
+	// below would otherwise take a modulus by zero.
 	NS_ASSERT_MSG(candidates.size() > 0, "We assume at least one NIC is alive");
+	if (candidates.empty()) return 0;
 	if (candidates.size() == 1)
 		return candidates[0]; // no choice to make, and no reason to disturb the rotation
 
@@ -316,16 +311,31 @@ uint32_t RdmaHw::ResolveNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candi
 	// zero for every peer and pile every connection onto the first NIC.
 	return candidates[m_nicRoundRobin++ % candidates.size()];
 }
+// The equal-cost next-hop NICs toward `dip`, preferring the NVSwitch.
+//
+// BFS records a next hop only when it is exactly one hop closer to the destination, so every
+// entry in either table is already on a shortest path and choosing between them can never
+// lengthen the route. For two GPUs behind the same NVSwitch BOTH tables get populated --
+// gpu->nvswitch->gpu and gpu->leaf->gpu are both two hops -- so the tie has to be broken here,
+// and it must be broken toward the NVSwitch: that is the intra-node interconnect (1800 GBps in
+// dual_plane_hetero, ~36x a 400 Gbps fabric link), and a collective's schedule assumes intra-node
+// transfers never touch the fabric at all. Preferring m_rtTable instead silently pushed every
+// same-NVSwitch transfer out onto the network.
+const std::vector<int>& RdmaHw::NicCandidates(uint32_t dip){
+	static const std::vector<int> empty;
+	auto nvs = m_rtTable_nxthop_nvswitch.find(dip);
+	if (nvs != m_rtTable_nxthop_nvswitch.end() && !nvs->second.empty()) return nvs->second;
+	auto net = m_rtTable.find(dip);
+	if (net != m_rtTable.end() && !net->second.empty()) return net->second;
+	NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
+	return empty;
+}
+
 bool RdmaHw::GetNicsToward(Ipv4Address dip, std::vector<int>& out){
 	out.clear();
-	uint32_t d = dip.Get();
-	// Same table-membership rule as GetNicIdxOfQp: the network path if there is one, else the
-	// nvswitch path.
-	auto net = m_rtTable.find(d);
-	if (net != m_rtTable.end()){ out = net->second; return !out.empty(); }
-	auto nvs = m_rtTable_nxthop_nvswitch.find(d);
-	if (nvs != m_rtTable_nxthop_nvswitch.end()){ out = nvs->second; return !out.empty(); }
-	return false;
+	const std::vector<int>& c = NicCandidates(dip.Get());
+	out = c;
+	return !out.empty();
 }
 uint64_t RdmaHw::GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg){
 	return ((uint64_t)dip << 32) | ((uint64_t)sport << 16) | (uint64_t)pg;
@@ -449,22 +459,15 @@ uint32_t RdmaHw::GetNicIdxOfRxQp(Ptr<RdmaRxQueuePair> q){
 	// BUG就出现在这里了，首先要判断m_rtTable[q->dip]是否存在，若不存在就去判断m_rtTable_nxthop_nvswitch是否存在，如果都不存在，那么就输出错误
 	// auto &v = m_rtTable[q->dip];
 
-	if(m_rtTable.count(q->dip) != 0) {
-		auto &v = m_rtTable[q->dip];
-		if(v.size() > 0)
-			return v[q->GetHash() % v.size()];
-		else
-			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-	} else if(m_rtTable_nxthop_nvswitch.count(q->dip) != 0) {
-		auto &v = m_rtTable_nxthop_nvswitch[q->dip];
-		if(v.size() > 0)
-			return v[q->GetHash() % v.size()];
-		else
-			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-	} else {
-		NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
+	// Same NVSwitch-first rule as the data path (see NicCandidates): the reverse direction of a
+	// connection must use the same interconnect the data came in on, or an intra-node transfer's
+	// acks would leak onto the fabric.
+	{
+		const std::vector<int>& v = NicCandidates(q->dip);
+		if (v.size() > 0) return v[q->GetHash() % v.size()];
 	}
 	NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
+	return 0;
 
 }
 void RdmaHw::DeleteRxQp(uint32_t dip, uint16_t pg, uint16_t dport){
