@@ -64,8 +64,12 @@ static void OnSwitchDrop(FILE* out, uint32_t swId, uint32_t port, Ptr<const Pack
     fprintf(out, "%ld,%u,%u,%u,%u,drop\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, p->GetSize());
 }
 
-// QbbPfc: type 1 = PAUSE sent upstream (this port's ingress is congested), 0 = RESUME.
-// q_id and bytes columns are left blank so PFC rows share the drop event schema.
+// QbbPfc: fires on the port that RECEIVES a PFC frame (QbbNetDevice::Receive, l3Prot 0xFE),
+// so type 1 = this port was PAUSED by the far end -- i.e. the *neighbour's* ingress is
+// congested and this port's transmit is being throttled. type 0 = RESUME. Note the direction:
+// "gpu fabric NIC pause" means the leaf paused the GPU, throttling host injection; it does
+// NOT mean the GPU sent a pause. q_id and bytes are left blank so PFC rows share the drop
+// event schema.
 static void OnSwitchPfc(FILE* out, uint32_t swId, uint32_t port, uint32_t type) {
     fprintf(out, "%ld,%u,%u,,,%s\n", Simulator::Now().GetNanoSeconds(), swId, port, type == 1 ? "pause" : "resume");
 }
@@ -110,6 +114,20 @@ static void SampleNicBw(FILE* out, std::vector<NicProbe>* probes, Time interval)
 }
 
 int main(int argc, char *argv[]) {
+    // Picoseconds, not the ns-3 default of nanoseconds. DataRate::CalculateBytesTxTime is
+    // Seconds(bytes*8) / m_bps, and Time's integer division truncates at the simulator's
+    // resolution -- so a link fast enough that a packet serializes in single-digit ns is
+    // modelled meaningfully FAST. For the 4152-byte full-MTU wire packet here (4096 MTU +
+    // 56 B header):
+    //     NVLink 1800GBps: 2.3067 ns -> 2 ns  => 2076 GBps, +15.33% overspeed
+    //     fabric  400Gbps: 83.040 ns -> 83 ns =>  400.2 Gbps, +0.05%
+    // The NVLink figure is not hypothetical: at NS resolution the per-NIC trace reports
+    // nvlink ports pinned at exactly 4152000 B / 2000 ns = 16608 Gbps, above the 14400 Gbps
+    // line rate. At PS the same packet is 2306 ps, leaving 0.03% error on both link classes.
+    // Must precede any topology construction; ns-3 rescales already-built Times (ConvertTimes)
+    // but the call is only meaningful before the run. int64 ps still spans ~106 days.
+    Time::SetResolution(Time::PS);
+
     NS_LOG_COMPONENT_DEFINE("DUAL_PLANE_HETERO");
 //    LogComponentEnable("CollectivesApplication", LOG_INFO);
 //    LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
