@@ -8,8 +8,10 @@ top of the range -- 1 GB per pair -- is 96 GB per rank, 9.2 TB moved. Start smal
     ./sweep_dual_plane_features.py --start 1KB --end 64KB          # a quick shakeout
     ./sweep_dual_plane_features.py --start 1KB --end 1GB           # the real thing
 
-Six configurations per size: a baseline with every feature off, one run per feature turned
-on alone, and one with all of them on (the scratch's own defaults).
+Seven configurations per size: a baseline with every feature off, one run per feature turned
+on alone (flow ids paired with schedule-pinned NICs, since routing by flow id says nothing
+useful about connections injected on whichever NIC), one with everything on except the rate
+annotations, and one with all of them on (the scratch's own defaults).
 
 Results are appended to results.csv in the output directory and re-read on startup, so an
 interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are (re)printed
@@ -30,14 +32,24 @@ OFF_NODE = 88.0 / 96.0
 HOST_TX_BPS = 2 * 400e9
 
 # name -> the flags that differ from the scratch's own defaults.
-# baseline is everything off; each feature run flips exactly one knob back on.
+# baseline is everything off; each feature run turns one feature back on, and "all" is the
+# scratch's own defaults.
+#
+# flowId is deliberately NOT tested alone: per-flow switch forwarding only steers a packet the
+# schedule already put on the right plane, so with merged NICs the routing rules would mostly
+# be applied to connections injected on the wrong NIC. The flow-id run therefore carries
+# --nicSel=schedule with it, and nicSel alone (schedule-pinned NICs, plain ECMP in the fabric)
+# is the run that separates the two halves.
 CONFIGS = collections.OrderedDict([
-    ("baseline", dict(rate=0, netDeps=0, flowId=0, nicSel="merged")),
-    ("rate",     dict(rate=1, netDeps=0, flowId=0, nicSel="merged")),
-    ("netDeps",  dict(rate=0, netDeps=1, flowId=0, nicSel="merged")),
-    ("flowId",   dict(rate=0, netDeps=0, flowId=1, nicSel="merged")),
-    ("nicSel",   dict(rate=0, netDeps=0, flowId=0, nicSel="schedule")),
-    ("all",      dict(rate=1, netDeps=1, flowId=1, nicSel="schedule")),
+    ("baseline",   dict(rate=0, netDeps=0, flowId=0, nicSel="merged")),
+    ("rate",       dict(rate=1, netDeps=0, flowId=0, nicSel="merged")),
+    ("netDeps",    dict(rate=0, netDeps=1, flowId=0, nicSel="merged")),
+    ("nicSel",     dict(rate=0, netDeps=0, flowId=0, nicSel="schedule")),
+    ("flowId+nic", dict(rate=0, netDeps=0, flowId=1, nicSel="schedule")),
+    # Everything on except the rate-annotated XML: isolates what the schedule's per-flow rates
+    # buy once the rest of the machinery is already in force.
+    ("noRate",     dict(rate=0, netDeps=1, flowId=1, nicSel="schedule")),
+    ("all",        dict(rate=1, netDeps=1, flowId=1, nicSel="schedule")),
 ])
 BASELINE = "baseline"
 
