@@ -73,9 +73,10 @@ class Program:
     def __init__(self, spec, ranks=None):
         self.path = self._resolve(spec)
         self.name = os.path.splitext(os.path.basename(self.path))[0]
+        # The shortcut ./ns3 run resolves to a real cmake target. Note that ./ns3 build cannot
+        # take this: build passes its argument to a regex expecting an already-built path, so
+        # only the run path knows how to turn scratch/<name> into a target.
         self.target = f"scratch/{self.name}"
-        # scratch/CMakeLists.txt names each scratch's build target with a scratch_ prefix.
-        self.build_target = f"scratch_{self.name}"
         src = open(self.path, encoding="utf-8", errors="replace").read()
 
         self.flags = set(re.findall(r'cmd\.AddValue\(\s*"([A-Za-z0-9_]+)"', src))
@@ -184,7 +185,7 @@ def nic_interval_ns(input_bytes, prog, host_tx_gbps, target_samples=500):
 
 # ---- running -----------------------------------------------------------------------------
 
-def run_one(pair_bytes, name, flags, args, prog):
+def run_one(pair_bytes, name, flags, args, prog, no_build):
     input_bytes = pair_bytes * prog.ranks
     label = f"sweep_{prog.name}_{name}_{fmt_size(pair_bytes)}"
     interval = nic_interval_ns(input_bytes, prog, args.host_tx_gbps)
@@ -208,10 +209,11 @@ def run_one(pair_bytes, name, flags, args, prog):
         print(f"  note: {prog.name} declares no " + ", ".join(f"--{d}" for d in sorted(set(dropped)))
               + " -- left at the program's own default", flush=True)
         run_one.warned = True
-    # --no-build: ns3 run otherwise re-runs cmake and the build check before every single
-    # invocation, which on a 147-run sweep costs more than some of the runs themselves. The
-    # target is built once up front instead, by build_once() below.
-    cmd = ["./ns3", "run", "--no-build", " ".join(argv)]
+    # ns3 re-runs cmake and a build check before every invocation, which on a 147-run sweep
+    # costs more than some of the runs themselves -- and worse, a source edit landing mid-sweep
+    # would rebuild between two points and silently make them incomparable. Only the first run
+    # of a sweep is allowed to build; every one after it is --no-build.
+    cmd = ["./ns3", "run"] + (["--no-build"] if no_build else []) + [" ".join(argv)]
 
     print(f"  [{name:8s}] {' '.join(argv[1:])}", flush=True)
     if args.dry_run:
@@ -259,25 +261,6 @@ def pace_stats(out):
     u = re.search(r"one MTU or less \(rate unshapeable\):\s*\d+ \(([0-9.]+)%\)", out)
     return dict(paced_pct=float(m.group(1)) if m else "",
                 unshapeable_pct=float(u.group(1)) if u else "")
-
-
-def build_once(prog, args):
-    """Build the target once, before the sweep, so no run has to.
-
-    Every run then uses --no-build, which means a source edit made mid-sweep will NOT be
-    picked up -- that is the point, since a rebuild between two points of the same sweep would
-    silently make them incomparable.
-    """
-    if args.skip_build:
-        print(f"skipping the build; {prog.build_target} must already be built\n")
-        return
-    print(f"building {prog.build_target} once (runs use --no-build)", flush=True)
-    proc = subprocess.run(["./ns3", "build", prog.build_target], cwd=NS3_DIR,
-                          capture_output=True, text=True)
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stdout[-4000:] + proc.stderr[-4000:])
-        raise SystemExit(f"build of {prog.build_target} failed")
-    print("build ok\n", flush=True)
 
 
 # ---- trace reduction ---------------------------------------------------------------------
@@ -486,7 +469,7 @@ def main():
     ap.add_argument("--keep-traces", action="store_true",
                     help="keep the raw per-run CSVs instead of deleting them once reduced")
     ap.add_argument("--skip-build", action="store_true",
-                    help="do not build the target first either; every run still uses --no-build")
+                    help="assume the target is already built, so even the first run is --no-build")
     ap.add_argument("--force", action="store_true", help="re-run points already in results.csv")
     ap.add_argument("--dry-run", action="store_true", help="print the commands and stop")
     ap.add_argument("--tables-only", action="store_true", help="reprint tables from results.csv")
@@ -526,15 +509,18 @@ def main():
         print(f"{len(sweep)} sizes x {len(args.configs.split(','))} configs, "
               f"{fmt_size(args.start)}..{fmt_size(args.end)} per pair "
               f"({fmt_size(args.start * prog.ranks)}..{fmt_size(args.end * prog.ranks)} per rank)\n")
-        if not args.dry_run:
-            build_once(prog, args)
+        # The first run to actually execute carries the build; the rest never rebuild.
+        built = args.skip_build
+        print("build: " + ("assumed current (--skip-build), every run is --no-build"
+                           if built else "on the first run only, then --no-build") + "\n")
         for s in sweep:
             print(f"{fmt_size(s)}/pair -> --inputBytes={s * prog.ranks}")
             for name in args.configs.split(","):
                 if (s, name) in done and not args.force:
                     print(f"  [{name:8s}] already in results.csv, skipping")
                     continue
-                row = run_one(s, name, CONFIGS[name], args, prog)
+                row = run_one(s, name, CONFIGS[name], args, prog, no_build=built)
+                built = True
                 if row is None:
                     continue
                 append(results, row)
