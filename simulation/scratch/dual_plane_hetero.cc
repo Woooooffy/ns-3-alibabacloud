@@ -114,19 +114,35 @@ static void SampleNicBw(FILE* out, std::vector<NicProbe>* probes, Time interval)
 }
 
 int main(int argc, char *argv[]) {
-    // Picoseconds, not the ns-3 default of nanoseconds. DataRate::CalculateBytesTxTime is
-    // Seconds(bytes*8) / m_bps, and Time's integer division truncates at the simulator's
-    // resolution -- so a link fast enough that a packet serializes in single-digit ns is
-    // modelled meaningfully FAST. For the 4152-byte full-MTU wire packet here (4096 MTU +
-    // 56 B header):
+    // KNOWN MODEL LIMITATION -- deliberately left in place; see the measurement below before
+    // "fixing" it. DataRate::CalculateBytesTxTime is Seconds(bytes*8) / m_bps, and Time's
+    // integer division truncates at the simulator's resolution (ns-3 default: nanoseconds).
+    // A link fast enough that a packet serializes in single-digit ns is therefore modelled
+    // FAST. For the 4152-byte full-MTU wire packet here (4096 MTU + 56 B header):
     //     NVLink 1800GBps: 2.3067 ns -> 2 ns  => 2076 GBps, +15.33% overspeed
     //     fabric  400Gbps: 83.040 ns -> 83 ns =>  400.2 Gbps, +0.05%
-    // The NVLink figure is not hypothetical: at NS resolution the per-NIC trace reports
-    // nvlink ports pinned at exactly 4152000 B / 2000 ns = 16608 Gbps, above the 14400 Gbps
-    // line rate. At PS the same packet is 2306 ps, leaving 0.03% error on both link classes.
-    // Must precede any topology construction; ns-3 rescales already-built Times (ConvertTimes)
-    // but the call is only meaningful before the run. int64 ps still spans ~106 days.
-    Time::SetResolution(Time::PS);
+    // Not hypothetical: the per-NIC trace reports nvlink ports pinned at exactly
+    // 4152000 B / 2000 ns = 16608 Gbps, above the 14400 Gbps line rate. It is why
+    // check_congestion.py's "NVLink aggregate peak" can exceed 96 x 14.4 Tbps -- do not read
+    // that number as a real utilization.
+    //
+    // Why it is tolerated for the fabric-bound collectives this scratch runs: on the 128MB
+    // alltoall the busiest GPU needs 44.7 us of NVLink time against 1247.2 us of fabric time
+    // (3.6%), the overspeed understates NVLink by at most 5.9 us per GPU, and the per-NIC
+    // trace shows 0 of 96 fabric NICs idling before they finish -- so NVLink is never on the
+    // critical path and the wall-clock error is ~0 (0.47% even assuming full serialization).
+    //
+    // Time::SetResolution(Time::PS) corrects it (fabric becomes exact at 83040 ps, NVLink
+    // drops to +0.03%) but costs a large amount of WALL-CLOCK run time, because finer ticks
+    // defeat event coalescing in the rate pacer: QbbNetDevice gates on
+    // `qp->m_nextAvail > Simulator::Now()` (DequeueAndTransmit) and the same comparison in
+    // GetNextQindex. At NS a sub-ns pacing deadline truncates to exactly Now(), the qp counts
+    // as available and transmits inline; at PS it sits 1-999 ps in the future, so each packet
+    // instead costs a cancelled/rescheduled DequeueAndTransmit wakeup. RateTargeting (on by
+    // default) pushes m_nextAvail into the future deliberately, so this hits nearly every
+    // packet. Enable PS only for an NVLink-BOUND workload (allreduce, small messages, or
+    // anything where NVLink demand approaches fabric demand), where the accuracy is worth the
+    // slowdown. It must precede any topology construction.
 
     NS_LOG_COMPONENT_DEFINE("DUAL_PLANE_HETERO");
 //    LogComponentEnable("CollectivesApplication", LOG_INFO);
@@ -143,13 +159,21 @@ int main(int argc, char *argv[]) {
     // Make the per-flow XML "rate" a true target (accumulating token-bucket shaper) rather than
     // just an upper bound, so a flow paced below line rate actually runs at its assigned rate.
     bool rateTargeting = true;
-    bool flowId = true;              // install the per-flow switch forwarding table from the JSON
-    // Baseline NIC-selection model when flowId is off, mirroring NCCL_IB_MERGE_NICS:
-    //   1 -> merged virtual device: one qp per NIC per connection, every message split across
-    //        them (what NCCL does by default for the two ports of one physical NIC)
-    //   0 -> unmerged: one qp per connection, NICs handed out round-robin
-    // With flowId on, both are bypassed -- the schedule pins each connection to one plane.
-    bool mergeNics = true;
+    // Honor the XML netdepid/netdeps wire-ordering dependences. These are what pace a
+    // time-indexed (TE-CCL) solve; off releases every buffer-ready send at once. Safe to ablate
+    // -- buffer readiness is still enforced by depid/deps.
+    bool netDeps = true;
+    // Network-side only: put the schedule's flow id on the wire and install the per-flow
+    // forwarding table from the JSON, so switches route by it instead of hashing ECMP. When
+    // false the header is not merely ignored, it is never added, so neither arm carries its 4
+    // bytes per packet. Deliberately says nothing about which NIC a connection uses -- that is
+    // --nicSel, and the two are now independent knobs.
+    bool flowId = true;
+    // How each connection picks its NIC, independent of --flowId:
+    //   schedule -> the NIC the switch JSON dictates (one qp per connection, pinned to a plane)
+    //   merged   -> NCCL_IB_MERGE_NICS: one qp per NIC, every message split across them
+    //   rr       -> one qp per connection, NICs handed out round-robin
+    std::string nicSel = "schedule";
     // Period of the per-NIC bandwidth trace, in ns. 0 disables it, so every existing invocation
     // behaves exactly as before and pays nothing.
     uint32_t nicBwIntervalNs = 0;
@@ -162,13 +186,16 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("coll", "Collective to run: allgather | alltoall", coll);
     cmd.AddValue("rate", "Use the rate-annotated XML (false = the _no_rate ablation)", rate);
     cmd.AddValue("rateTargeting", "Treat per-flow XML rates as targets, not just caps", rateTargeting);
-    cmd.AddValue("flowId", "Install per-flow switch forwarding from the switch JSON", flowId);
-    cmd.AddValue("mergeNics", "Baseline only (flowId=false): 1 = NCCL-style merged NIC (one qp per NIC, message split across them), 0 = one qp per connection, round-robin NICs", mergeNics);
+    cmd.AddValue("flowId", "Network only: carry msccl flow ids and install per-flow switch forwarding from the JSON (does not affect NIC selection)", flowId);
+    cmd.AddValue("nicSel", "NIC selection: schedule (switch JSON pins the NIC) | merged (NCCL-style merged NIC, one qp per NIC) | rr (one qp per connection, round-robin NICs)", nicSel);
+    cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences (false = release every buffer-ready send immediately)", netDeps);
     cmd.AddValue("nicBwInterval", "Sample every GPU NIC's transmitted bytes this often, in ns (0 = off). Try 100 at 1MB, 2000 at 128MB.", nicBwIntervalNs);
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
     cmd.Parse(argc, argv);
 
+    if (nicSel != "schedule" && nicSel != "merged" && nicSel != "rr")
+        NS_FATAL_ERROR("Unknown --nicSel value '" << nicSel << "' (expected schedule|merged|rr).");
     if (coll != "allgather" && coll != "alltoall")
         NS_FATAL_ERROR("Unknown --coll value '" << coll << "' (expected allgather|alltoall).");
 
@@ -710,8 +737,12 @@ int main(int argc, char *argv[]) {
     // otherwise surface far downstream (zero input chunks) with NS_LOG_ERROR off by default.
     if (result != AlgoParseResult::ALGO_PARSE_SUCCESS)
         NS_FATAL_ERROR("Encountered issue in parsing XML algorithm " << XML_ALGO << ", error code " << result);
-    if (flowId) {
-        AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str());
+    // The JSON feeds two independent consumers, so it is parsed whenever EITHER wants it, with
+    // each effect switched on separately. --flowId=0 --nicSel=schedule is a real configuration:
+    // plain ECMP switches, but each connection still injected on the plane the schedule chose.
+    const bool pinNics = (nicSel == "schedule");
+    if (flowId || pinNics) {
+        AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str(), flowId, pinNics);
         // Fatal for the same reason the XML parse above is: ParseSwitchJson returns on the
         // first bad entry, leaving flow forwarding half-installed (CustomFlowForwarding on,
         // table mostly empty), and the run then silently falls back to ECMP everywhere.
@@ -740,10 +771,10 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("DataType", EnumValue(dtype));
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
-    // The schedule's per-connection plane pin and NIC merging are mutually exclusive: merging
-    // deliberately spans every plane at once. GetRdmaLaneCount also refuses to merge a pinned
-    // connection, so this is belt-and-braces -- but it keeps the reported config honest.
-    app_helper.SetAttribute("MergeNics", BooleanValue(!flowId && mergeNics));
+    app_helper.SetAttribute("NicSelection", StringValue(
+        nicSel == "schedule" ? "SCHEDULED" : (nicSel == "merged" ? "MERGED" : "ROUND_ROBIN")));
+    app_helper.SetAttribute("NetworkFlowIds", BooleanValue(flowId));
+    app_helper.SetAttribute("HonorNetDeps", BooleanValue(netDeps));
     ApplicationContainer apps = app_helper.Install<GPU>(topo);
 
     NS_LOG_INFO("Finished installing collective apps.");
@@ -847,9 +878,12 @@ int main(int argc, char *argv[]) {
     fclose(qlenOut);
     fclose(eventOut);
     if (nicOut) fclose(nicOut);
-    std::cout << "NIC selection: " << (flowId ? "schedule-pinned (one qp per connection)"
-        : (mergeNics ? "merged NIC (one qp per NIC, message split across them)"
-                     : "round-robin (one qp per connection)")) << std::endl;
+    std::cout << "NIC selection: " << (nicSel == "schedule" ? "schedule-pinned (one qp per connection)"
+        : (nicSel == "merged" ? "merged NIC (one qp per NIC, message split across them)"
+                              : "round-robin (one qp per connection)")) << std::endl;
+    std::cout << "Network flow ids: " << (flowId ? "on (custom headers + per-flow switch forwarding)"
+                                                 : "off (no header on the wire, plain ECMP)") << std::endl;
+    std::cout << "Network deps (netdepid/netdeps): " << (netDeps ? "honored" : "skipped") << std::endl;
     std::cout << "Algorithm XML: " << XML_ALGO << std::endl;
     std::cout << "Switch queue trace: " << qlenPath << std::endl;
     std::cout << "Switch drop/PFC trace: " << eventPath << std::endl;

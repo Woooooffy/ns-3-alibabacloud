@@ -914,7 +914,8 @@ namespace ns3
 			<< " left unpinned due to conflicting plane assignments.");
 	}
 
-	AlgoParseResult AlgoTopology::ParseSwitchJson(const char* file_path){
+	AlgoParseResult AlgoTopology::ParseSwitchJson(const char* file_path,
+			bool installSwitchRules, bool pinNics){
 		std::ifstream in(file_path);
 		if (!in.is_open()) return AlgoParseResult::FILE_READ_ERROR;
 
@@ -940,7 +941,10 @@ namespace ns3
 					NS_LOG_WARN("Switch JSON: node " << switchId << " is not a SwitchNode");
 					return AlgoParseResult::INVALID_USE_ERROR;
 				}
-				sw->SetAttribute("CustomFlowForwarding", BooleanValue(true));
+				// Gated, but the rest of the loop still runs when it is off: the same walk records
+				// each flow's ingress NIC, which is what pinNics publishes below. That is the
+				// whole point of the split -- one parse can feed either side, or both.
+				if (installSwitchRules) sw->SetAttribute("CustomFlowForwarding", BooleanValue(true));
 
 				for (auto& [flowIdStr, entry] : flows.items()){
 					uint32_t flowId = static_cast<uint32_t>(std::stoul(flowIdStr));
@@ -1009,8 +1013,11 @@ namespace ns3
 						return AlgoParseResult::INVALID_USE_ERROR;
 					}
 
-					sw->AddFlowForwardingRule(flowId, outIfIndices);
-					ResolveScheduledNics(sw, flowId);
+					// Independently gated: the rule is the network-side effect, ResolveScheduledNics
+					// the host-side one. Both still need the port resolution above, so the parse
+					// runs in full either way and only the two publications are switched off.
+					if (installSwitchRules) sw->AddFlowForwardingRule(flowId, outIfIndices);
+					if (pinNics) ResolveScheduledNics(sw, flowId);
 					std::ostringstream portList;
 					for (size_t p = 0; p < outIfIndices.size(); ++p){
 						if (p) portList << ",";
@@ -1026,7 +1033,7 @@ namespace ns3
 
 		// Only after every rule has been seen: a conflicting connection may not reveal itself
 		// until its second flow, so publishing incrementally could pin one that later conflicts.
-		PublishScheduledNics();
+		if (pinNics) PublishScheduledNics();
 		return AlgoParseResult::ALGO_PARSE_SUCCESS;
 	}
 

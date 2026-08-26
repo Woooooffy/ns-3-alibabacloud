@@ -137,8 +137,29 @@ public:
 
   uint8_t GetIpv4EcnBits (void) const;
   static uint32_t GetAckSerializedSize(void);
-  static uint32_t GetUdpHeaderSize(void); // include udp, seqTs, INT
-  static uint32_t GetStaticWholeHeaderSize(void); // ppp + ip + udp + int
+  uint32_t GetUdpHeaderSize(void) const; // include udp, seqTs, INT, and the msccl flow id if present
+  uint32_t GetStaticWholeHeaderSize(void) const; // ppp + ip + udp + int
+
+  // Whether this packet actually carries a MscclFlowIdHeader. Emission is decided per RDMA
+  // connection (see MscclChannel::SetupRdmaSendPeer): a connection whose schedule steps carry
+  // no flow id -- every intra-NVSwitch connection, and every connection at all when the
+  // feature is off -- sends none, so the 4 bytes are simply absent from the wire.
+  //
+  // Deserialize cannot know this: it parses a raw buffer with no connection context, and
+  // there is no spare in-band bit to mark it with (ToS bits 0-1 are ECN, which switches
+  // rewrite in flight, and bit 2 is NVLS, tested by exact equality). So it always reads the
+  // field -- on a headerless packet that just pulls 4 payload bytes into udp.mscclFlowId,
+  // which is harmless: nothing after that read touches the iterator, and the only consumer
+  // (SwitchNode::SendToDev) is unreachable for such packets, which are intra-NVSwitch by
+  // construction. Only the *size* has to be corrected, and only by the receiver, which does
+  // know: RdmaHw::ReceiveUdp calls this after its rx-qp lookup, before sizing the payload.
+  void SetMscclFlowIdPresent (bool present) { m_hasMscclFlowId = present; }
+  bool GetMscclFlowIdPresent (void) const { return m_hasMscclFlowId; }
+
+private:
+  // Defaults to true so every existing parse site keeps today's layout; only a receiver that
+  // has resolved the connection ever clears it.
+  bool m_hasMscclFlowId = true;
 };
 
 } // namespace ns3

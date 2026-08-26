@@ -508,6 +508,7 @@ int RdmaHw::SendPacketComplete(Ptr<Packet> p, CustomHeader &ch)
 		// No-ack mode: the receiver never sends an Ack back (see
 		// ReceiverCheckSeq), so infer completion locally from this node's own
 		// send completion instead of waiting for one.
+		ch.SetMscclFlowIdPresent(qp->m_emitFlowIdHdr); // same correction as ReceiveUdp; qp is this packet's own sender
 		uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 		qp->Acknowledge(seq + payload_size);
 		while (!qp->m_messages.empty() && qp->IsCurMessageFinished()){
@@ -530,9 +531,14 @@ void RdmaHw::SendComplete(Ptr<RdmaQueuePair> qp)
 int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 	uint8_t ecnbits = ch.GetIpv4EcnBits();
 
-	uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 	// TODO find corresponding rx queue pair
 	Ptr<RdmaRxQueuePair> rxQp = GetRxQp(ch.dip, ch.sip, ch.udp.dport, ch.udp.sport, ch.udp.pg, true);
+	// Must precede every use of ch.GetSerializedSize() below: whether this connection's packets
+	// carry a MscclFlowIdHeader is not detectable from the wire, so the parse assumed the field
+	// was present and the rx qp is the only thing that knows better. Hence the lookup moved
+	// above the payload sizing -- it reads nothing the sizing produces.
+	ch.SetMscclFlowIdPresent(rxQp->m_expectFlowIdHdr);
+	uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 	if (ecnbits != 0){
 		rxQp->m_ecn_source.ecnbits |= ecnbits;
 		rxQp->m_ecn_source.qfb++;
@@ -855,9 +861,16 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	// payload) so switches can do custom flow-based forwarding instead of plain
 	// ECMP when enabled. Added before SimpleSeqTsHeader so it doesn't shift the
 	// fixed byte offsets switches use to reach the INT header.
-	MscclFlowIdHeader mscclFlowIdHeader;
-	mscclFlowIdHeader.SetFlowId(qp->GetCurMscclFlowId());
-	p->AddHeader(mscclFlowIdHeader);
+	//
+	// Only on connections that actually have flow ids to carry (see
+	// RdmaQueuePair::m_emitFlowIdHdr). A connection the schedule never labels -- every
+	// intra-NVSwitch one, and all of them when the feature is off -- puts nothing on the wire,
+	// so the ablation compares like with like instead of paying 4 bytes per packet in one arm.
+	if (qp->m_emitFlowIdHdr){
+		MscclFlowIdHeader mscclFlowIdHeader;
+		mscclFlowIdHeader.SetFlowId(qp->GetCurMscclFlowId());
+		p->AddHeader(mscclFlowIdHeader);
+	}
 	// add SimpleSeqTsHeader
 	SimpleSeqTsHeader seqTs;
 	seqTs.SetSeq (qp->snd_nxt);

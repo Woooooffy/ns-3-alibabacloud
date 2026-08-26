@@ -246,7 +246,7 @@ namespace ns3 {
 				<< ") totalBytes=" << done.pendingBytes << " at t=" << Simulator::Now().GetNanoSeconds());
 			// The step is done only when every lane's slice has landed; with one lane this is
 			// an immediate fire, exactly as before.
-			NoteRecvLaneComplete(done.bid, done.sid, 1);
+			NoteRecvLaneComplete(done.bid, done.sid, done.part);
 			return;
 		}
 		// early arrival: no Recv()/RecvRedCp() posted for this peer yet -- accumulate into
@@ -264,7 +264,7 @@ namespace ns3 {
 	// shared body of Recv()/RecvRedCp(): claims bytes already sitting in m_unclaimedBytes
 	// for `recvPeer` if any (a full or partial claim, in FIFO byte order), else registers a
 	// new pending recv to be matched by a future arrival.
-	void MscclChannel::ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op, uint32_t gridByteOff){
+	void MscclChannel::ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op, uint32_t gridByteOff, uint16_t part){
 		if (dstoff < 0) NS_FATAL_ERROR("Invalid offset");
 		uint32_t bytes = nElems * DataType::GetSizeBytes(m_dataType);
 
@@ -274,8 +274,11 @@ namespace ns3 {
 		// matching lane i's stream against lane i's slice reassembles the transfer with no
 		// per-fragment placement information on the wire. The step completes when the last
 		// lane's slice does.
+		// Keyed by sub-transfer as well as step: a step the count loop split posts one recv per
+		// part, and each part must complete on its own so StepCompletionCallback's part counter
+		// sees exactly one completion from each.
 		const uint8_t nLanes = m_app->GetRdmaLaneCount(recvPeer);
-		m_recvLanesLeft[std::make_pair(bid, sid)] = nLanes;
+		m_recvLanesLeft[std::make_tuple(bid, sid, part)] = nLanes;
 
 		for (uint8_t lane = 0; lane < nLanes; ++lane){
 			uint32_t laneOff = 0, laneBytes = 0;
@@ -301,13 +304,14 @@ namespace ns3 {
 					}
 				}
 				unclaimed.gotBytes = remaining;
-				NoteRecvLaneComplete(bid, sid, nLanes);
+				NoteRecvLaneComplete(bid, sid, part);
 				continue;
 			}
 
 			PendingTransfer pt(bid, sid, laneBytes, op, 0, -1, dstbuf, dstoff);
 			pt.dstByteShift = laneOff;
 			pt.gridByteOff = gridByteOff;
+			pt.part = part;
 			if (unclaimed.gotBytes > 0){
 				// still streaming in: promote to a pending transfer, carrying over what already
 				// arrived, so future fragments from this peer (now matched via m_pendingRecvQueue)
@@ -328,11 +332,13 @@ namespace ns3 {
 		}
 	}
 
-	// A step's recv completes once every lane's slice has landed. The counter is seeded by
-	// ClaimOrRegisterPendingRecv; arrivals decrement it without knowing the lane count, since
-	// the entry already carries it.
-	void MscclChannel::NoteRecvLaneComplete(int16_t bid, int16_t sid, uint8_t /*nLanes*/){
-		auto key = std::make_pair(bid, sid);
+	// One sub-transfer of a step's recv completes once every lane's slice of it has landed. The
+	// counter is seeded per (step, sub-transfer) by ClaimOrRegisterPendingRecv; arrivals
+	// decrement it without knowing the lane count, since the entry already carries it. Each
+	// sub-transfer reports its own completion, and StepCompletionCallback's part counter is what
+	// holds the threadblock until every one of them has.
+	void MscclChannel::NoteRecvLaneComplete(int16_t bid, int16_t sid, uint16_t part){
+		auto key = std::make_tuple(bid, sid, part);
 		auto it = m_recvLanesLeft.find(key);
 		if (it == m_recvLanesLeft.end()){
 			// No counter seeded: this transfer was never posted through
@@ -349,7 +355,7 @@ namespace ns3 {
 		m_pendingSends[sock].push(send);
 	}
 
-	void MscclChannel::Send(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter){
+	void MscclChannel::Send(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter, uint16_t part){
 		if (sendpeer < 0){
 			NS_FATAL_ERROR("Send peer is negative in Send");
 		}
@@ -357,7 +363,7 @@ namespace ns3 {
 			NS_FATAL_ERROR("Invalid dst offset in Send");
 		}
 		if (m_app->IsRdmaPeer(sendpeer)){
-			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId, rateGBps, gridByteOff, iter);
+			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId, rateGBps, gridByteOff, iter, part);
 			return;
 		}
 		// gpu<->gpu p2p (socket) path: the host-side "rate" is ignored here, since this
@@ -425,13 +431,22 @@ namespace ns3 {
 		// compute the same count from the same rule, so lane i here is lane i there.
 		const uint8_t nLanes = m_app->GetRdmaLaneCount(peer);
 
-		// The NIC the schedule dictates, if any. On a multi-homed fabric that choice picks the
-		// network plane, and a connection injected on the wrong plane meets no flow rules at all
-		// along its path, silently reverting to ECMP. It is only meaningful single-lane: a
-		// merged device deliberately spans every plane at once, which is why NIC merging and the
-		// schedule pin are mutually exclusive (GetRdmaLaneCount returns 1 whenever a pin exists).
+		// The NIC the schedule dictates, consulted only in NIC_SCHEDULED mode. On a multi-homed
+		// fabric that choice picks the network plane, and a connection injected on the wrong
+		// plane meets no flow rules at all along its path, silently reverting to ECMP.
+		//
+		// The other two modes ignore the pin even when a switch JSON has published one, which is
+		// what lets NIC selection be ablated against an unchanged network configuration: the
+		// same JSON can install switch forwarding rules while the host picks NICs some other way.
 		uint32_t scheduledNic = RdmaQueuePair::NIC_UNPINNED;
-		DynamicCast<GPU>(m_app->GetNode())->GetPeerNic(peer, m_id, scheduledNic);
+		if (m_app->GetNicSelection() == NIC_SCHEDULED){
+			DynamicCast<GPU>(m_app->GetNode())->GetPeerNic(peer, m_id, scheduledNic);
+		}
+
+		// Whether this connection puts a flow id on the wire at all. One decision for the whole
+		// connection, taken here so the sender can stamp the receiver's matching bit below rather
+		// than have both ends derive it and risk disagreeing.
+		const bool emitFlowIdHdr = m_app->ConnectionCarriesFlowIds(peer, m_id);
 
 		// NICs reaching this peer, in ifIndex order. Lane i takes nics[i], the same
 		// "devIndex = qpIndex % ndevs" striping a merged device uses over its ports.
@@ -464,6 +479,11 @@ namespace ns3 {
 			rxQp->m_perPktFn = [peerChan, myId, lane](const uint8_t* payload, uint32_t sz, uint64_t /*seqOffset*/){
 				peerChan->OnBytesArrivedFromPeer(myId, lane, payload, sz);
 			};
+			// Set from the sending side, alongside m_perPktFn and for the same reason: the
+			// receiver cannot tell from the wire whether these packets carry a MscclFlowIdHeader
+			// (there is no in-band marker), and it needs to know to size the payload correctly.
+			// Stamping it here rather than recomputing it there makes disagreement impossible.
+			rxQp->m_expectFlowIdHdr = emitFlowIdHdr;
 
 			uint32_t pinnedNic = (nLanes > 1)
 				? (lane < nics.size() ? (uint32_t) nics[lane] : RdmaQueuePair::NIC_UNPINNED)
@@ -474,11 +494,13 @@ namespace ns3 {
 				<< " lane " << (int)lane << "/" << (int)nLanes
 				<< " at t=" << Simulator::Now().GetNanoSeconds());
 
-			qps.push_back(m_app->GetRdmaDriver()->AddQueuePair(
+			Ptr<RdmaQueuePair> qp = m_app->GetRdmaDriver()->AddQueuePair(
 				m_app->GetNode()->GetId(), static_cast<uint32_t>(peer), /* tag */ 0, /* size */ 0, MSCCL_RDMA_PG,
 				m_app->GetMyIp(), m_app->GetPeerIp(peer), sport, MSCCL_RDMA_DPORT,
 				m_app->GetPeerWin(peer), m_app->GetPeerBaseRtt(peer), MSCCL_FLOW_ID_NONE, Callback<void>(), Callback<void>(),
-				nullptr, /* autoClose */ false, pinnedNic));
+				nullptr, /* autoClose */ false, pinnedNic);
+			qp->m_emitFlowIdHdr = emitFlowIdHdr;
+			qps.push_back(qp);
 		}
 	}
 
@@ -496,7 +518,35 @@ namespace ns3 {
 		size = myElems * elemSize;
 	}
 
-	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter){
+	// See the declaration: the sentinel keeps the step's lane countdown off zero while its
+	// sub-transfers are being issued, so the step-level effects fire exactly once, after the
+	// last lane of the last sub-transfer.
+	void MscclChannel::BeginSendStep(int16_t bid, int16_t sid, uint32_t iter){
+		m_sendLanesLeft[std::make_tuple(bid, sid, iter)] = 1;
+	}
+
+	void MscclChannel::EndSendStep(int16_t bid, int16_t sid, uint32_t iter){
+		NoteSendLaneComplete(bid, sid, iter);
+	}
+
+	// Drops one outstanding lane (or the issuing sentinel) from a send step and, when the last
+	// one goes, publishes the two things that mean "this step's bytes are off the wire": its
+	// network gate opens and its netFlag advances. Both are step-level, so they must not fire
+	// per lane or per sub-transfer.
+	void MscclChannel::NoteSendLaneComplete(int16_t bid, int16_t sid, uint32_t iter){
+		auto key = std::make_tuple(bid, sid, iter);
+		auto it = m_sendLanesLeft.find(key);
+		if (it == m_sendLanesLeft.end()) return; // not a tracked step
+		if (--(it->second) > 0) return;
+		m_sendLanesLeft.erase(it);
+		// The gate id is looked up from the transfer rather than bound onto the callback, since
+		// bid and sid identify it uniquely.
+		m_app->OpenGateForStep(bid, sid, iter);
+		// Releases any threadblock parked on a netdepid/netdeps naming this step.
+		m_app->NoteNetworkStepComplete(bid);
+	}
+
+	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter, uint16_t part){
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 
 		auto it = m_rdmaQpByPeer.find(sendpeer);
@@ -517,30 +567,30 @@ namespace ns3 {
 		// host-side pacing cap: XML "rate" is in GB/s (gigabytes/s); DataRate is in bits/s,
 		// so convert bytes->bits. 0 (unspecified) maps to DataRate(0), i.e. no cap, and the
 		// qp paces at its congestion-controlled rate (see RdmaHw::UpdateNextAvail).
-		// Split across lanes with the bytes, so the connection's total target rate is what the
-		// schedule asked for rather than nLanes times it.
+		//
+		// Divided across lanes, and deliberately NOT across the count loop's sub-transfers. The
+		// two split a step for opposite reasons: lanes carry their slices *concurrently* over
+		// different NICs, so each must be given its share or the connection would run at nLanes
+		// times the requested rate; sub-transfers are queued back to back on the *same* qp and
+		// drain one after another, so each must carry the full per-lane rate or the step would
+		// take nParts times as long as the schedule asked for. Splitting a step into more
+		// messages must not change how fast its bytes leave the NIC.
 		DataRate paceRate = rateGBps > 0.0 ? DataRate((uint64_t)(rateGBps * 8e9 / nLanes)) : DataRate(0);
 
-		// This step's network gate opens only once every lane has physically drained, so count
-		// the lanes up front and let OnRdmaSendComplete count them back down. Empty lanes (a
-		// transfer of fewer elements than lanes) are excluded: a zero-byte message is never
-		// acked, so it would never fire its completion and the gate would hang.
+		// The step's gate and netFlag fire only once every lane of every sub-transfer has
+		// physically drained, so add this sub-transfer's lanes to the step-level countdown that
+		// BeginSendStep opened. Empty lanes (a sub-transfer of fewer elements than lanes) are
+		// excluded: a zero-byte message is never acked, so it would never fire its completion
+		// and the step would hang. Accumulating rather than assigning is what lets several
+		// sub-transfers share one countdown; the sentinel BeginSendStep planted keeps it off
+		// zero until EndSendStep says every sub-transfer has been issued.
 		uint8_t activeLanes = 0;
 		for (uint8_t lane = 0; lane < nLanes; ++lane){
 			uint32_t off = 0, sz = 0;
 			LaneSlice(totalBytes, nLanes, lane, off, sz);
 			if (sz > 0) ++activeLanes;
 		}
-		if (activeLanes == 0){
-			// Nothing to send at all, so no completion will ever fire. Open the gate directly --
-			// and drop the netFlag this step recorded at dispatch, since nothing will arrive to
-			// pop it and every later completion on this threadblock would otherwise be matched
-			// against a stale queue entry.
-			Simulator::ScheduleNow(&CollectivesApplication::OpenGateForStep, m_app, bid, sid, iter);
-			Simulator::ScheduleNow(&CollectivesApplication::NoteNetworkStepComplete, m_app, bid);
-		} else {
-			m_sendLanesLeft[std::make_tuple(bid, sid, iter)] = activeLanes;
-		}
+		m_sendLanesLeft[std::make_tuple(bid, sid, iter)] += activeLanes;
 
 		for (uint8_t lane = 0; lane < nLanes; ++lane){
 			uint32_t laneOff = 0, laneBytes = 0;
@@ -564,6 +614,7 @@ namespace ns3 {
 
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
 			<< sendpeer << " totalBytes=" << totalBytes << " over " << (int)nLanes << " lane(s)"
+			<< " bid=" << (int)bid << " sid=" << sid << " iter=" << iter << " part=" << part
 			<< " rateGBps=" << rateGBps << " at t=" << Simulator::Now().GetNanoSeconds());
 
 		// The send step completes as soon as the message is handed to the RDMA engine, not
@@ -586,27 +637,16 @@ namespace ns3 {
 			<< " bid=" << (int)bid << " sid=" << sid << " iter=" << iter
 			<< " nElems=" << nElems
 			<< " at t=" << Simulator::Now().GetNanoSeconds());
-		// With the message striped over several lanes this fires once per lane, but "off the
-		// wire" means every lane, so the effects below run only when the last one drains. The
-		// counter is keyed by iteration as well as step: this threadblock may already have
-		// re-posted the same (bid, sid) for a later slice while these lanes were still in
-		// flight, and a shared counter would let that re-post's seed swallow this step's
-		// remaining completions (see m_sendLanesLeft).
-		auto key = std::make_tuple(bid, sid, iter);
-		auto it = m_sendLanesLeft.find(key);
-		if (it != m_sendLanesLeft.end()){
-			if (--(it->second) > 0) return;
-			m_sendLanesLeft.erase(it);
-		}
-		// The gate id is looked up from the transfer rather than bound onto the callback, since
-		// bid and sid identify it uniquely.
-		m_app->OpenGateForStep(bid, sid, iter);
-		// Releases any threadblock parked on a netdepid/netdeps naming this step.
-		m_app->NoteNetworkStepComplete(bid);
+		// Fires once per lane per sub-transfer, but "off the wire" means all of them, so the
+		// step-level effects are left to NoteSendLaneComplete's countdown. That counter is keyed
+		// by iteration as well as step: this threadblock may already have re-posted the same
+		// (bid, sid) for a later slice while these lanes were still in flight, and a shared
+		// counter would let that re-post's seed swallow this step's remaining completions.
+		NoteSendLaneComplete(bid, sid, iter);
 	}
 
-	void MscclChannel::Recv(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff){
-		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV, gridByteOff);
+	void MscclChannel::Recv(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff, uint16_t part){
+		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV, gridByteOff, part);
 	}
 
 	void MscclChannel::RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
@@ -617,8 +657,8 @@ namespace ns3 {
 	NS_FATAL_ERROR("RecvRedSend not yet implemented");
 	}
 
-	void MscclChannel::RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff){
-		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV_REDUCE_COPY, gridByteOff);
+	void MscclChannel::RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff, uint16_t part){
+		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV_REDUCE_COPY, gridByteOff, part);
 	}
 
 	void MscclChannel::RecvRedCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
@@ -707,14 +747,48 @@ namespace ns3 {
 					MakeBooleanAccessor(&CollectivesApplication::m_correctnessCheck),
 					MakeBooleanChecker())
 				.AddAttribute(
-					"MergeNics",
-					"Model NCCL's merged virtual device (NCCL_IB_MERGE_NICS): fuse the NICs that "
-					"reach a peer into one logical device, open one queue pair per NIC, and split "
-					"every message across them. When false, each connection is bound to a single "
-					"NIC. Ignored for connections whose NIC the switch JSON pins, which are "
-					"deliberately confined to one network plane.",
-					BooleanValue(false),
-					MakeBooleanAccessor(&CollectivesApplication::m_mergeNics),
+					"NicSelection",
+					"How each RDMA connection picks its NIC. SCHEDULED follows the NIC the switch "
+					"JSON dictates (one qp per connection, pinned to one plane; requires a switch "
+					"JSON parsed with NIC pinning enabled). MERGED models NCCL's merged virtual "
+					"device (NCCL_IB_MERGE_NICS): fuse the NICs reaching a peer into one logical "
+					"device, one qp per NIC, every message split across them. ROUND_ROBIN gives "
+					"each connection one qp and hands out NICs by RdmaHw's node-global rotation. "
+					"Independent of NetworkFlowIds -- the switch's forwarding mode and the host's "
+					"NIC choice are separate knobs.\n"
+					"Defaults to SCHEDULED, which reproduces the pre-split behaviour exactly: when "
+					"no switch JSON pinned this connection, GetPeerNic reports nothing and RdmaHw "
+					"falls back to its round-robin rotation anyway.",
+					EnumValue(NIC_SCHEDULED),
+					MakeEnumAccessor(&CollectivesApplication::m_nicSelection),
+					MakeEnumChecker(
+						NIC_SCHEDULED, "SCHEDULED",
+						NIC_MERGED, "MERGED",
+						NIC_ROUND_ROBIN, "ROUND_ROBIN"))
+				.AddAttribute(
+					"NetworkFlowIds",
+					"Put the schedule's per-step msccl flow id on the wire (MscclFlowIdHeader), so "
+					"switches configured with CustomFlowForwarding route by it instead of hashing "
+					"ECMP. When false the header is not added at all -- not merely ignored -- so "
+					"neither arm of the comparison pays for it. Only connections whose schedule "
+					"steps actually name flow ids carry it either way, which keeps it off the "
+					"intra-NVSwitch path. Does NOT affect NIC selection; see NicSelection.\n"
+					"Defaults true, matching the pre-split behaviour of emitting the header "
+					"unconditionally; switches still ignore it unless CustomFlowForwarding is on.",
+					BooleanValue(true),
+					MakeBooleanAccessor(&CollectivesApplication::m_networkFlowIds),
+					MakeBooleanChecker())
+				.AddAttribute(
+					"HonorNetDeps",
+					"Honor the XML netdepid/netdeps network dependences: hold a step until the "
+					"named step of the named threadblock has physically drained onto the wire. "
+					"These are what pace a time-indexed (TE-CCL) solve -- with them off, every "
+					"send whose buffer is ready fires immediately and a congestion-free schedule "
+					"is released as one burst. Off is an ablation, not a correctness hazard: "
+					"buffer readiness is enforced separately by depid/deps. Does not affect the "
+					"netgate/netwait mechanism, which is a separate knob.",
+					BooleanValue(true),
+					MakeBooleanAccessor(&CollectivesApplication::m_honorNetDeps),
 					MakeBooleanChecker());
 		return tid;
 	}
@@ -777,18 +851,19 @@ namespace ns3 {
 		if (cached != m_rdmaLaneCount.end()) return cached->second;
 
 		uint8_t lanes = 1;
-		if (m_mergeNics && IsRdmaPeer(peer)){
+		// Only NIC_MERGED opens more than one lane. NIC_SCHEDULED and NIC_ROUND_ROBIN both give a
+		// connection exactly one qp; they differ only in which NIC that qp lands on, which is
+		// SetupRdmaSendPeer's decision, not this one.
+		//
+		// There is deliberately no schedule-pin check here any more. It used to exist because
+		// pinning and merging could both be active at once -- pinning was a side effect of
+		// parsing the switch JSON rather than a mode -- and a pin on one end only would desync
+		// the lane counts. NicSelection is now a single mutually-exclusive choice made
+		// identically on every node, so the two can no longer overlap.
+		if (m_nicSelection == NIC_MERGED && IsRdmaPeer(peer)){
 			Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(peer));
 			Ptr<CollectivesApplication> peerApp =
 				DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
-			// A schedule-pinned connection is deliberately confined to one plane, the opposite
-			// of what merging does, so a pin wins and keeps the connection single-lane. Checked
-			// on BOTH ends: a pin on either side alone would otherwise leave one end striping
-			// over two lanes while the other expected one, desyncing the streams.
-			if (HasScheduledNicToward(peer) || peerApp->HasScheduledNicToward(static_cast<int16_t>(GetNode()->GetId()))){
-				m_rdmaLaneCount[peer] = 1;
-				return 1;
-			}
 			std::vector<int> mine, theirs;
 			GetRdmaDriver()->m_rdma->GetNicsToward(GetPeerIp(peer), mine);
 			peerApp->GetRdmaDriver()->m_rdma->GetNicsToward(GetMyIp(), theirs);
@@ -798,6 +873,32 @@ namespace ns3 {
 		}
 		m_rdmaLaneCount[peer] = lanes;
 		return lanes;
+	}
+
+	// True if this node's connection to `peer` on `chan` should carry MscclFlowIdHeader.
+	//
+	// The unit is the connection, not the step, because the receiver has to agree and it can
+	// only resolve an arriving packet down to its rx qp -- never to a step. There is also no
+	// spare in-band bit to mark presence with (see CustomHeader::SetMscclFlowIdPresent), so a
+	// per-step decision would be undecodable. Every schedule checked partitions cleanly anyway:
+	// a connection's steps either all name flow ids or none do, and the ones that do are exactly
+	// the fabric-crossing connections, so the intra-NVSwitch path drops out with no special case.
+	bool CollectivesApplication::ConnectionCarriesFlowIds(int16_t peer, int8_t chan){
+		if (!m_networkFlowIds) return false;
+		auto key = std::make_pair(peer, chan);
+		auto cached = m_connFlowIds.find(key);
+		if (cached != m_connFlowIds.end()) return cached->second;
+
+		bool carries = false;
+		for (int bid = 0; bid < m_algo->nBlocks && !carries; ++bid){
+			mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
+			if (tb->sendpeer != peer || tb->channelId != chan) continue;
+			for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+				if (tb->transfers[sid].mscclFlowId != MSCCL_FLOW_ID_NONE){ carries = true; break; }
+			}
+		}
+		m_connFlowIds[key] = carries;
+		return carries;
 	}
 
 	// True if AlgoTopology::ParseSwitchJson pinned this node's connection to `peer` on any
@@ -898,67 +999,92 @@ namespace ns3 {
 		mscclTransfer* tran = &tb->transfers[sid];
 		uint16_t sendPeer = tb->sendpeer;
 		uint16_t recvPeer = tb->recvpeer;
-		// This step moves only the current pipeline slice of each of its `count` chunks, not
-		// the whole chunk -- the kernel's `thisNelem = nelem * thisCount`. With pipelining off
-		// nelem == m_currChunkSize and this is the whole chunk exactly as before.
-		//
-		// The maxAllowedCount loop (`for c = 0; c < count; c += maxAllowedCount`) is not
-		// modeled yet, so a count>1 transfer is emitted as one contiguous message rather than
-		// as the kernel's separate strided sub-messages. That only diverges when m_nLoops > 1,
-		// which InterpretAlgo rejects for such a schedule.
 		const uint32_t iter = m_TBStates[bid].iter;
 		const uint32_t gridByteOff = GridByteOffsetForIter(iter);
-		uint32_t nElems = ((uint32_t) tran->count) * SliceElemsForIter(iter);
 		uint16_t srcbuf = tran->srcbuffer;
 		uint16_t dstbuf = tran->dstbuffer;
 		int16_t srcoff = tran->srcoffset;
 		int16_t dstoff = tran->dstoffset;
+
+		// The kernel runs the whole schedule once per pipeline slice (gridOffset) and, within a
+		// step, once per group of maxAllowedCount chunks. This step therefore moves the current
+		// slice of up to maxAllowedCount chunks per sub-transfer, `nParts` sub-transfers in all.
+		const uint16_t nParts = StepPartCount(tran);
+
+		const bool sendBearing =
+			tran->type == MSCCL_SEND || tran->type == MSCCL_RECV_COPY_SEND ||
+			tran->type == MSCCL_RECV_REDUCE_SEND || tran->type == MSCCL_RECV_REDUCE_COPY_SEND;
+		const bool rdmaSend = sendBearing && IsRdmaPeer((int16_t) sendPeer);
+
 		// Send-bearing ops produce a network completion later (MscclChannel::OnRdmaSendComplete).
 		// Capture the flag it should publish now, while (iter, global_step) still describe this
 		// step -- global_step is already the value StepCompletionCallback will publish as this
-		// step's `flag`, so netFlag and flag stay on the same numbering.
-		switch (tran->type){
-			case MSCCL_SEND:
-			case MSCCL_RECV_COPY_SEND:
-			case MSCCL_RECV_REDUCE_SEND:
-			case MSCCL_RECV_REDUCE_COPY_SEND:
-				if (IsRdmaPeer((int16_t) sendPeer)){
-					m_pendingNetFlag[bid].push(COMPUTE_FLAG(m_currWorkId, iter, m_TBStates[bid].global_step));
-				}
-				break;
-			default:
-				break;
+		// step's `flag`, so netFlag and flag stay on the same numbering. One entry per step, not
+		// per sub-transfer: BeginSendStep/EndSendStep collapse the sub-transfers' completions
+		// into the single step-level event that pops it.
+		if (rdmaSend){
+			m_pendingNetFlag[bid].push(COMPUTE_FLAG(m_currWorkId, iter, m_TBStates[bid].global_step));
+			chan->BeginSendStep(bid, sid, iter);
 		}
-		switch (tran->type){
-			case MSCCL_SEND:
-				chan->Send(bid, sid, sendPeer, nElems, srcbuf, srcoff, dstbuf, dstoff, tran->mscclFlowId, tran->rate, gridByteOff, iter);
-				break;
-			case MSCCL_RECV:
-				chan->Recv(bid, sid, recvPeer, nElems, dstbuf, dstoff, gridByteOff);
-				break;
-			case MSCCL_RECV_COPY_SEND:
-				chan->RecvCpSend(bid, sid, sendPeer, recvPeer, nElems);
-				break;
-			case MSCCL_RECV_REDUCE_SEND:
-				chan->RecvRedSend(bid, sid, sendPeer, recvPeer, nElems);
-				break;
-			case MSCCL_RECV_REDUCE_COPY:
-				chan->RecvRedCp(bid, sid, recvPeer, nElems, dstbuf, dstoff, gridByteOff);
-				break;
-			case MSCCL_RECV_REDUCE_COPY_SEND:
-				chan->RecvRedCpSend(bid, sid, sendPeer, recvPeer, nElems);
-				break;
-			case MSCCL_LOCAL_COPY:
-				NonTransferHandler(bid, sid, srcbuf, srcoff, dstbuf, dstoff, nElems, MSCCL_LOCAL_COPY, gridByteOff);
-				break;
-			case MSCCL_REDUCE:
-				// TODO: need to change if count loop implemented
-				m_TBStates[bid].global_step += tran->numReductions - 1;
-				NonTransferHandler(bid, sid, srcbuf, srcoff, dstbuf, dstoff, nElems, MSCCL_REDUCE, gridByteOff);
-				break;
-			default:
-				return;
+
+		// Reductions advance the step counter by their fused count once for the whole step, not
+		// once per sub-transfer -- the kernel's `if (c == 0) step += (numReductions-1)`.
+		if (tran->type == MSCCL_REDUCE){
+			m_TBStates[bid].global_step += tran->numReductions - 1;
 		}
+
+		// Seeded before anything is issued, so a sub-transfer that completes synchronously (a
+		// recv whose bytes already arrived claims them inline) cannot drive the counter to zero
+		// while later sub-transfers are still being posted.
+		if (nParts > 1) m_stepPartsLeft[std::make_pair(bid, sid)] = nParts;
+
+		if (nParts == 0){
+			// count == 0: the kernel's loop body never runs. Nothing to move, so the step is
+			// done; EndSendStep below still retires the netFlag entry pushed above.
+			Simulator::ScheduleNow(&CollectivesApplication::StepCompletionCallback, this, bid, sid);
+		}
+
+		for (uint16_t part = 0; part < nParts; ++part){
+			uint16_t chunkOff = 0;
+			uint32_t nElems = 0;
+			StepPart(tran, iter, part, chunkOff, nElems);
+			int16_t partSrcOff = (int16_t)(srcoff + chunkOff);
+			int16_t partDstOff = (int16_t)(dstoff + chunkOff);
+			switch (tran->type){
+				case MSCCL_SEND:
+					chan->Send(bid, sid, sendPeer, nElems, srcbuf, partSrcOff, dstbuf, partDstOff, tran->mscclFlowId, tran->rate, gridByteOff, iter, part);
+					break;
+				case MSCCL_RECV:
+					chan->Recv(bid, sid, recvPeer, nElems, dstbuf, partDstOff, gridByteOff, part);
+					break;
+				case MSCCL_RECV_COPY_SEND:
+					chan->RecvCpSend(bid, sid, sendPeer, recvPeer, nElems);
+					break;
+				case MSCCL_RECV_REDUCE_SEND:
+					chan->RecvRedSend(bid, sid, sendPeer, recvPeer, nElems);
+					break;
+				case MSCCL_RECV_REDUCE_COPY:
+					chan->RecvRedCp(bid, sid, recvPeer, nElems, dstbuf, partDstOff, gridByteOff, part);
+					break;
+				case MSCCL_RECV_REDUCE_COPY_SEND:
+					chan->RecvRedCpSend(bid, sid, sendPeer, recvPeer, nElems);
+					break;
+				case MSCCL_LOCAL_COPY:
+					NonTransferHandler(bid, sid, srcbuf, partSrcOff, dstbuf, partDstOff, nElems, MSCCL_LOCAL_COPY, gridByteOff);
+					break;
+				case MSCCL_REDUCE:
+					NonTransferHandler(bid, sid, srcbuf, partSrcOff, dstbuf, partDstOff, nElems, MSCCL_REDUCE, gridByteOff);
+					break;
+				default:
+					// Returning here would skip EndSendStep and strand the step's lane sentinel,
+					// hanging the threadblock rather than merely skipping the op. nop steps never
+					// reach this (the parser drops them), so an unhandled type is a real gap.
+					NS_FATAL_ERROR("Node " << GetNode()->GetId() << " TB " << (int)bid << " step " << sid
+						<< ": unhandled transfer type " << (int)tran->type << ".");
+			}
+		}
+
+		if (rdmaSend) chan->EndSendStep(bid, sid, iter);
 	}
 
 	void CollectivesApplication::OpenGate(int16_t gate, uint32_t iter){
@@ -1040,8 +1166,10 @@ namespace ns3 {
 		// check above: it must precede the data-dependency block, which mutates global_step on
 		// its success path. This is what paces a time-indexed schedule -- without it every send
 		// whose *buffer* is ready fires immediately, and a solve that was congestion-free by
-		// construction is released as one simultaneous burst.
-		if (tran->netDepBid != MSCCL_NETDEP_NONE){
+		// construction is released as one simultaneous burst -- which is exactly what the
+		// HonorNetDeps attribute ablates. Skipping is safe for correctness: these express wire
+		// ordering only, and buffer readiness is still enforced by the depid/deps block below.
+		if (m_honorNetDeps && tran->netDepBid != MSCCL_NETDEP_NONE){
 			TBState* netDepTB = &m_TBStates[tran->netDepBid];
 			// Same per-iteration step numbering as the data dependences below: the target names a
 			// step within this threadblock's own iteration, and COMPUTE_FLAG orders (iter, step)
@@ -1106,6 +1234,15 @@ namespace ns3 {
 	void CollectivesApplication::StepCompletionCallback(int16_t bid, int16_t sid){
 		// TransferState* tState = GetTransferState(bid, sid);
 		// mscclTransfer* trans = &m_algo->mscclTBs[bid].transfers[sid];
+		// A step the count loop split lands here once per sub-transfer; the threadblock may only
+		// advance after the last of them, which is what the kernel does too -- it publishes the
+		// step's flag after the whole loop, not once per iteration of it.
+		auto partKey = std::make_pair(bid, sid);
+		auto partIt = m_stepPartsLeft.find(partKey);
+		if (partIt != m_stepPartsLeft.end()){
+			if (--(partIt->second) > 0) return;
+			m_stepPartsLeft.erase(partIt);
+		}
 		// update TBState
 		TBState* tbState = &m_TBStates[bid];
 		tbState->busy = false;
@@ -1136,14 +1273,25 @@ namespace ns3 {
 	// mscclSetupCount: nLoops = ceil(nBytes / (nChunksPerLoop * chunkEffectiveSize)), which
 	// with sizePerMscclChunk = nBytes/nChunksPerLoop is just ceil(chunkBytes / protoChunkBytes).
 	//
-	// Note the invariant this leans on: mscclSetupCount also derives
-	// maxAllowedCount = max(1, chunkEffectiveSize / sizePerMscclChunk), so whenever a chunk is
-	// large enough to need more than one iteration, maxAllowedCount collapses to 1 and the
-	// count loop stops splitting anything. The two loops are therefore never both active, and
-	// not modeling the count loop only costs fidelity for schedules that use count > 1 in a
-	// regime where nLoops > 1 -- rejected below rather than silently mismodelled.
+	// Also derives maxAllowedCount, the cap on how many chunks one sub-transfer of the count
+	// loop may carry, from the same comparison mscclSetupCount uses:
+	// max(1, chunkEffectiveSize / sizePerMscclChunk). That shared comparison is what makes the
+	// two loops mutually exclusive -- a chunk large enough to need several iterations is by the
+	// same token too large for maxAllowedCount to exceed 1 -- which is the invariant asserted
+	// at the end of this function and relied on by StepPart.
 	void CollectivesApplication::DerivePipelining(){
 		const uint32_t elemSize = DataType::GetSizeBytes(m_dataType);
+		// mscclSetupCount's maxAllowedCount = max(1, chunkEffectiveSize / sizePerMscclChunk),
+		// capped below MSCCL_MAX_COUNT: how many whole chunks fit the transport's staging
+		// buffer, and so how many a single sub-transfer may carry. 0 means "no cap", which is
+		// what disabling pipelining selects -- a step then stays one message, exactly as before.
+		const uint64_t chunkBytes = (uint64_t) m_currChunkSize * elemSize;
+		if (m_protoChunkBytes == 0 || chunkBytes == 0){
+			m_maxAllowedCount = 0;
+		} else {
+			m_maxAllowedCount = std::max<uint32_t>(1, (uint32_t)(m_protoChunkBytes / chunkBytes));
+			m_maxAllowedCount = std::min<uint32_t>(m_maxAllowedCount, MSCCL_MAX_COUNT - 1);
+		}
 		if (m_protoChunkBytes == 0){
 			m_sliceElems = m_currChunkSize;
 			m_nLoops = 1;
@@ -1158,25 +1306,19 @@ namespace ns3 {
 		}
 		NS_LOG_INFO("GPU " << GetNode()->GetId() << ": pipelining chunk of " << m_currChunkSize
 			<< " elems into " << m_nLoops << " iteration(s) of " << m_sliceElems << " elems"
+			<< ", maxAllowedCount=" << m_maxAllowedCount
 			<< " (protoChunkBytes=" << m_protoChunkBytes << ")");
 
-		if (m_nLoops == 1) return;
-
-		// Without the maxAllowedCount loop a count>1 transfer is sent as one contiguous message.
-		// That matches the kernel only when the chunks really are contiguous, which holds only
-		// at nLoops == 1; here it would place bytes wrongly.
-		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
-			mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
-			for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
-				if (tb->transfers[sid].count > 1){
-					NS_FATAL_ERROR("Node " << GetNode()->GetId() << " TB " << (int)bid << " step " << sid
-						<< " has count=" << (int)tb->transfers[sid].count << " but pipelining is active"
-						<< " (nLoops=" << m_nLoops << "). The maxAllowedCount loop that splits such a"
-						<< " transfer into per-chunk sub-messages is not modeled yet, so its bytes would"
-						<< " be placed contiguously instead of strided. Set ProtoChunkBytes=0 to disable"
-						<< " pipelining.");
-				}
-			}
+		// The two loops are mutually exclusive by construction, which is what makes a
+		// sub-transfer's contiguity assumption safe (see StepPart): a chunk too big for the
+		// staging buffer forces nLoops > 1, and the same comparison forces maxAllowedCount to 1,
+		// so a sub-transfer is then a single chunk's slice at its own strided offset. Assert it
+		// rather than trust it -- if it ever failed, bytes would be placed wrongly and silently.
+		if (m_nLoops > 1 && m_maxAllowedCount != 1){
+			NS_FATAL_ERROR("Node " << GetNode()->GetId() << ": nLoops=" << m_nLoops
+				<< " with maxAllowedCount=" << m_maxAllowedCount << ". These must not both exceed 1:"
+				<< " a multi-chunk sub-transfer is emitted as one contiguous run, which is only"
+				<< " equivalent to the per-chunk slices when a slice is a whole chunk.");
 		}
 	}
 
@@ -1383,6 +1525,34 @@ namespace ns3 {
 		uint32_t gridOff = iter * m_sliceElems;
 		if (gridOff >= m_currChunkSize) return 0;
 		return std::min(m_sliceElems, m_currChunkSize - gridOff);
+	}
+
+	// The kernel's `for (c = 0; c < count; c += maxAllowedCount)`: a step moving `count` chunks
+	// is emitted as this many sub-transfers.
+	uint16_t CollectivesApplication::StepPartCount(const mscclTransfer* tran) const {
+		uint16_t count = (uint16_t) tran->count;
+		if (m_maxAllowedCount == 0 || count <= m_maxAllowedCount) return count == 0 ? 0 : 1;
+		return (uint16_t)((count + m_maxAllowedCount - 1) / m_maxAllowedCount);
+	}
+
+	// Geometry of sub-transfer `part`, mirroring the kernel body of that loop:
+	//   c          = part * maxAllowedCount
+	//   thisCount  = min(maxAllowedCount, count - c)
+	//   srcOffset  = gridOffset + (t->srcOffset + c) * sizePerMscclChunk
+	//   thisNelem  = nelem * thisCount
+	// `chunkOff` is the c to add to the step's srcoffset/dstoffset; the caller turns that into a
+	// byte address through GetBufferPtr, which already multiplies by the chunk size and adds the
+	// slice's gridOffset. Sending thisNelem contiguous elements from there is only equivalent to
+	// the union of the per-chunk slices when nelem == the whole chunk -- which is exactly when
+	// maxAllowedCount > 1, since anything smaller forces it to 1 and thisCount with it.
+	void CollectivesApplication::StepPart(const mscclTransfer* tran, uint32_t iter, uint16_t part,
+	                                      uint16_t& chunkOff, uint32_t& nElems) const {
+		uint16_t count = (uint16_t) tran->count;
+		uint16_t cap = (m_maxAllowedCount == 0) ? count : (uint16_t) m_maxAllowedCount;
+		uint16_t c = (uint16_t)(part * cap);
+		uint16_t thisCount = (uint16_t) std::min<uint32_t>(cap, count - c);
+		chunkOff = c;
+		nElems = (uint32_t) thisCount * SliceElemsForIter(iter);
 	}
 
 	uint32_t CollectivesApplication::GridByteOffsetForIter(uint32_t iter) const {

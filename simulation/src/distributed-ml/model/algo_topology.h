@@ -59,7 +59,18 @@ namespace ns3
 		const std::vector<int>& GetActiveGpuIds() const { return m_activeGpuIds; }
 
 		AlgoParseResult ParseAlgoXml(const char* xmlFilePath);
-		AlgoParseResult ParseSwitchJson(const char* jsonFilePath);
+		// Parses the switch JSON, which describes two independent things:
+		//
+		//   installSwitchRules -- the per-flow forwarding table, plus CustomFlowForwarding on each
+		//     switch it names, so those switches route by msccl flow id instead of hashing ECMP.
+		//   pinNics -- the egress NIC each RDMA connection should use, published onto the GPU
+		//     nodes for CollectivesApplication's NIC_SCHEDULED mode.
+		//
+		// They were fused when this took no flags, which made them impossible to ablate apart:
+		// asking for schedule-pinned NICs forced custom switch forwarding on, and turning custom
+		// forwarding off silently took the NIC pinning with it. Callers now choose each.
+		AlgoParseResult ParseSwitchJson(const char* jsonFilePath,
+			bool installSwitchRules = true, bool pinNics = true);
 
 		private:
 

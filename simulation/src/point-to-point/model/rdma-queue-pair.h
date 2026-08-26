@@ -23,6 +23,17 @@ public:
 	uint16_t sport, dport;
 	uint64_t m_size, m_init_size, m_tag; // m_size/m_init_size are informational (monitoring/print only) since the message queue below drives GetBytesLeft/IsFinished
 	uint32_t m_mscclFlowId; // app-level msccl flow id, carried on the wire via MscclFlowIdHeader; MscclFlowIdHeader::NO_FLOW_ID if unset
+	// Whether this connection's packets carry a MscclFlowIdHeader at all. Decided once, per
+	// connection, by MscclChannel::SetupRdmaSendPeer: true only when the feature is enabled AND
+	// this connection's schedule steps actually name flow ids. In every schedule written so far
+	// that predicate is exactly "this connection crosses the fabric" -- flow ids and
+	// intra-NVSwitch connections are disjoint, and no connection mixes labelled and unlabelled
+	// steps -- so intra-node RDMA traffic carries no custom header, as intended.
+	//
+	// Per-connection rather than per-step because the receiver has to agree, and it can only
+	// resolve a packet down to its rx qp, never to a step. The sender sets the matching bit on
+	// the peer's rx qp directly at setup, so the two cannot desync.
+	bool m_emitFlowIdHdr = false;
 	// sentinel: no NIC bound yet (m_pinnedNicIdx), and no NIC asked for (m_requestedNicIdx).
 	static constexpr uint32_t NIC_UNPINNED = 0xffffffff;
 	// The NIC the schedule asks this connection to use, or NIC_UNPINNED when nothing dictates
@@ -214,6 +225,11 @@ public:
 	// rx qp means callers get uniqueness for free from RdmaHw's own (senderIp,senderSport,pg)
 	// rx-qp key instead of needing a second, independently-derived key.
 	std::function<void(const uint8_t*, uint32_t, uint64_t)> m_perPktFn;
+	// Receiver's copy of RdmaQueuePair::m_emitFlowIdHdr for this connection, set by the *sender*
+	// at connection setup (MscclChannel::SetupRdmaSendPeer force-creates this rx qp and writes
+	// it right alongside m_perPktFn above). RdmaHw::ReceiveUdp needs it to size the payload,
+	// since the header cannot be detected from the wire. Defaults false, matching the tx side.
+	bool m_expectFlowIdHdr = false;
 
 	static TypeId GetTypeId (void);
 	RdmaRxQueuePair();

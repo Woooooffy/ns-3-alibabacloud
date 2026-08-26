@@ -339,11 +339,12 @@ uint32_t CustomHeader::GetAckSerializedSize(void){
 	return sizeof(ack.sport) + sizeof(ack.dport) + sizeof(ack.flags) + sizeof(ack.pg) + sizeof(ack.seq) + IntHeader::GetStaticSize();
 }
 
-uint32_t CustomHeader::GetUdpHeaderSize(void){
-	return 8 + sizeof(udp.pg) + sizeof(udp.seq) + IntHeader::GetStaticSize() + sizeof(udp.mscclFlowId);
+uint32_t CustomHeader::GetUdpHeaderSize(void) const{
+	return 8 + sizeof(udp.pg) + sizeof(udp.seq) + IntHeader::GetStaticSize()
+		+ (m_hasMscclFlowId ? sizeof(udp.mscclFlowId) : 0);
 }
 
-uint32_t CustomHeader::GetStaticWholeHeaderSize(void){
+uint32_t CustomHeader::GetStaticWholeHeaderSize(void) const{
 	return 14 + 20 + GetUdpHeaderSize();
 }
 
