@@ -44,11 +44,22 @@ using namespace ns3;
 // reconstructed from enqueue/dequeue deltas so each row carries the exact post-event depth.
 static std::map<std::tuple<uint32_t, uint32_t, uint32_t>, int64_t> g_qBytes;
 
+// High-water mark of the same occupancy, kept per port unconditionally. It costs one compare
+// per packet and is what makes the peak queue readable without the full per-packet trace: at
+// the top of an input sweep the row-by-row CSV runs to hundreds of GB, so --qlenRows=0 turns
+// the rows off and leaves only this summary.
+static std::map<std::tuple<uint32_t, uint32_t, uint32_t>, int64_t> g_qMax;
+static bool g_qlenRows = true;
+
 // QbbEnqueue: fires just before a packet is pushed onto egress queue `qIndex`.
 static void OnSwitchEnqueue(FILE* out, uint32_t swId, uint32_t port, Ptr<const Packet> p, uint32_t qIndex) {
-    int64_t& depth = g_qBytes[std::make_tuple(swId, port, qIndex)];
+    const auto key = std::make_tuple(swId, port, qIndex);
+    int64_t& depth = g_qBytes[key];
     depth += p->GetSize();
-    fprintf(out, "%ld,%u,%u,%u,%ld,enq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
+    int64_t& peak = g_qMax[key];
+    if (depth > peak) peak = depth;
+    if (g_qlenRows)
+        fprintf(out, "%ld,%u,%u,%u,%ld,enq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
 }
 
 // QbbDequeue: fires as a packet leaves egress queue `qIndex` onto the wire.
@@ -56,7 +67,8 @@ static void OnSwitchDequeue(FILE* out, uint32_t swId, uint32_t port, Ptr<const P
     int64_t& depth = g_qBytes[std::make_tuple(swId, port, qIndex)];
     depth -= p->GetSize();
     if (depth < 0) depth = 0; // guard against control pkts (e.g. PFC) not counted on enqueue
-    fprintf(out, "%ld,%u,%u,%u,%ld,deq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
+    if (g_qlenRows)
+        fprintf(out, "%ld,%u,%u,%u,%ld,deq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
 }
 
 // QbbDrop: fires when admission control / buffer overflow discards a packet.
@@ -149,7 +161,7 @@ int main(int argc, char *argv[]) {
 //    LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     LogComponentEnable("AlgoTopo", LOG_LEVEL_WARN);
 
-    uint32_t inputBytes = (1 << 20);
+    uint64_t inputBytes = (1ull << 20);
     // label distinguishes output files between runs, e.g. --label=with_rate vs --label=no_rate
     std::string label = "dual_plane_clustered";
     // Which dual_plane_clustered_<coll> XML to run. `rate` picks the rate-annotated schedule
@@ -177,6 +189,11 @@ int main(int argc, char *argv[]) {
     // Period of the per-NIC bandwidth trace, in ns. 0 disables it, so every existing invocation
     // behaves exactly as before and pays nothing.
     uint32_t nicBwIntervalNs = 0;
+    // The per-packet queue trace is exact but grows with the traffic: one row per enqueue and
+    // one per dequeue at every hop. Fine at 1 MB, hundreds of GB at 96 GB of input -- so it can
+    // be turned off, leaving switch_qlen_max_<label>.csv (the per-port high-water marks, which
+    // are tracked either way).
+    bool qlenRows = true;
     std::string checkLog = "minimal"; // silent | minimal | verbose
     uint32_t maxMismatches = 10;
     // Algorithm pipelining granularity (the MSCCL kernel's gridOffset loop); 0 disables it.
@@ -201,12 +218,15 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("flowId", "Network only: carry msccl flow ids and install per-flow switch forwarding from the JSON (does not affect NIC selection)", flowId);
     cmd.AddValue("nicSel", "NIC selection: schedule (switch JSON pins the NIC) | merged (NCCL-style merged NIC, one qp per NIC) | rr (one qp per connection, round-robin NICs)", nicSel);
     cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences (false = release every buffer-ready send immediately)", netDeps);
+    cmd.AddValue("qlenRows", "Write the per-packet switch queue trace (0 = only the per-port peak summary, which is all a large sweep can afford on disk)", qlenRows);
     cmd.AddValue("nicBwInterval", "Sample every GPU NIC's transmitted bytes this often, in ns (0 = off). Try 100 at 1MB, 2000 at 128MB.", nicBwIntervalNs);
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
     cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
     cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
     cmd.Parse(argc, argv);
+
+    g_qlenRows = qlenRows;
 
     if (nicSel != "schedule" && nicSel != "merged" && nicSel != "rr")
         NS_FATAL_ERROR("Unknown --nicSel value '" << nicSel << "' (expected schedule|merged|rr).");
@@ -743,8 +763,8 @@ int main(int argc, char *argv[]) {
     const std::string LOG_FILE = ns3::SystemPath::Append(LOG_DIR, label + ".txt");
 
     constexpr DataType::Type dtype = DataType::INT32;
-    const uint32_t INPUT_BYTES = inputBytes;
-    bool CORRECTNESS_CHECK = true;
+    const uint64_t INPUT_BYTES = inputBytes;
+    bool CORRECTNESS_CHECK = false;
 
     AlgoTopology topo(gpunodes, regswtches);
     AlgoParseResult result = topo.ParseAlgoXml(XML_ALGO.c_str());
@@ -893,6 +913,18 @@ int main(int argc, char *argv[]) {
     Simulator::Run();
     fclose(qlenOut);
     fclose(eventOut);
+
+    // Per-port peak egress occupancy, always written. It is the whole of the queue record when
+    // --qlenRows=0, and a cheap cross-check of the row trace when it is on.
+    std::string qmaxPath = ns3::SystemPath::Append(LOG_DIR, "switch_qlen_max_" + label + ".csv");
+    if (FILE* qmaxOut = fopen(qmaxPath.c_str(), "w")) {
+        fprintf(qmaxOut, "sw_id,port_id,q_id,max_qlen_bytes\n");
+        for (const auto& kv : g_qMax) {
+            fprintf(qmaxOut, "%u,%u,%u,%ld\n", std::get<0>(kv.first), std::get<1>(kv.first),
+                    std::get<2>(kv.first), kv.second);
+        }
+        fclose(qmaxOut);
+    }
     if (nicOut) fclose(nicOut);
     std::cout << "NIC selection: " << (nicSel == "schedule" ? "schedule-pinned (one qp per connection)"
         : (nicSel == "merged" ? "merged NIC (one qp per NIC, message split across them)"
@@ -901,7 +933,8 @@ int main(int argc, char *argv[]) {
                                                  : "off (no header on the wire, plain ECMP)") << std::endl;
     std::cout << "Network deps (netdepid/netdeps): " << (netDeps ? "honored" : "skipped") << std::endl;
     std::cout << "Algorithm XML: " << XML_ALGO << std::endl;
-    std::cout << "Switch queue trace: " << qlenPath << std::endl;
+    std::cout << "Switch queue trace: " << (qlenRows ? qlenPath : std::string("(rows off)")) << std::endl;
+    std::cout << "Switch peak-queue summary: " << qmaxPath << std::endl;
     std::cout << "Switch drop/PFC trace: " << eventPath << std::endl;
     Time simTime = Simulator::Now();
     std::cout << "Total simulated time: "

@@ -33,10 +33,26 @@ def qlen(label):
     """Peak egress queue per port, split by link class -- imbalance shows up here."""
     path = os.path.join(LOG, f"switch_qlen_{label}.csv")
     peak = collections.Counter()
-    for row in csv.DictReader(open(path)):
-        k = (int(row["sw_id"]), int(row["port_id"]))
-        v = int(row["qlen_bytes"])
-        if v > peak[k]: peak[k] = v
+    if os.path.exists(path):
+        for row in csv.DictReader(open(path)):
+            k = (int(row["sw_id"]), int(row["port_id"]))
+            v = int(row["qlen_bytes"])
+            if v > peak[k]: peak[k] = v
+    if not peak:
+        # --qlenRows=0 (what a large sweep must use): the per-packet rows were never written,
+        # but the scratch always dumps the per-port high-water marks, which is exactly what
+        # this function reduces the rows to anyway.
+        path = os.path.join(LOG, f"switch_qlen_max_{label}.csv")
+        if not os.path.exists(path):
+            print(f"  peak egress queue: no switch_qlen_{label}.csv or switch_qlen_max_{label}.csv")
+            return
+        for row in csv.DictReader(open(path)):
+            k = (int(row["sw_id"]), int(row["port_id"]))
+            v = int(row["max_qlen_bytes"])
+            if v > peak[k]: peak[k] = v
+    if not peak:
+        print("  peak egress queue: no samples")
+        return
     groups = collections.defaultdict(list)
     for (sw, port), v in peak.items():
         leaf = sw < 102                     # node ids 96..101 are the 6 leaves
