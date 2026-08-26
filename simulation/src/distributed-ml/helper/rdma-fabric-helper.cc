@@ -71,6 +71,20 @@ std::unordered_map<uint32_t, RdmaFabricHelper::PathMetrics> RdmaFabricHelper::Bf
         uint32_t cur = q.front();
         q.pop();
         PathMetrics curMetrics = metrics[cur];
+        // A GPU is an endpoint, not a router: it has no forwarding table and silently
+        // discards anything addressed elsewhere. On a multi-homed GPU (one NVLink port plus
+        // one or more fabric ports) it is nonetheless a degree>1 node of this graph, so an
+        // unconstrained BFS happily relaxes *through* it and hands switches next hops that
+        // dead-end. Rail-optimized assignment makes those paths tie with the real ones
+        // exactly (leaf_j -> gpu(node n, rank j) -> nvswitch_n -> gpu(node n, rank k) is
+        // three hops, the same as leaf_j -> spine -> leaf_k -> gpu), so the ties are not
+        // rare -- they are universal. Stop the search at every GPU except the root, which
+        // makes the "GPUs are always leaves of the qbb subgraph" assumption below true
+        // instead of merely intended.
+        auto curIt = m_nodeById.find(cur);
+        if (cur != dstNodeId && curIt != m_nodeById.end() && DynamicCast<GPU>(curIt->second)) {
+            continue;
+        }
         auto it = m_adj.find(cur);
         if (it == m_adj.end()) {
             continue;
@@ -220,9 +234,18 @@ void RdmaFabricHelper::Build(NodeContainer gpus, NodeContainer switches, NodeCon
             std::vector<const QbbEdge*> nextHops;
             for (const QbbEdge& edge : m_adj[nodeId]) {
                 auto peerIt = metrics.find(edge.peer->GetId());
-                if (peerIt != metrics.end() && peerIt->second.hops == m.hops - 1) {
-                    nextHops.push_back(&edge);
+                if (peerIt == metrics.end() || peerIt->second.hops != m.hops - 1) {
+                    continue;
                 }
+                // Blocking transit in the BFS above is necessary but not sufficient: a
+                // non-destination GPU still *has* a distance (it is one hop off the NVSwitch
+                // that serves the destination), so without this it would still be selected
+                // here as an equal-cost next hop and would black-hole its share of the ECMP
+                // spread. A GPU is a legal next hop only when it is the destination itself.
+                if (edge.peer->GetId() != dstNodeId && DynamicCast<GPU>(edge.peer)) {
+                    continue;
+                }
+                nextHops.push_back(&edge);
             }
             if (nextHops.empty()) {
                 continue;
