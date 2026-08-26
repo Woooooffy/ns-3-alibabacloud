@@ -179,6 +179,18 @@ int main(int argc, char *argv[]) {
     uint32_t nicBwIntervalNs = 0;
     std::string checkLog = "minimal"; // silent | minimal | verbose
     uint32_t maxMismatches = 10;
+    // Algorithm pipelining granularity (the MSCCL kernel's gridOffset loop); 0 disables it.
+    // Note this is compared against the size of ONE chunk, which here is inputBytes/384 -- so
+    // at the default 1 MB input a chunk is ~2.7 KB and any sane value leaves both the gridOffset
+    // and maxAllowedCount loops inert. To exercise them, either raise inputBytes until a chunk
+    // approaches this, or set this below the chunk size: at 1 MB, protoChunkBytes=1024 gives 3
+    // slices per chunk and forces maxAllowedCount to 1, which also splits this schedule's cnt=4
+    // steps into 4 sub-transfers apiece.
+    uint32_t protoChunkBytes = 0;
+    // Transport pipelining depth (NCCL_STEPS analogue): how many messages a qp may have in
+    // flight before waiting for a completion. Inert while L2AckInterval is 0 below, since in
+    // no-ack mode the sender self-acknowledges and messages retire without a round trip.
+    uint32_t maxMsgsInFlight = 8;
 
     CommandLine cmd;
     cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
@@ -192,6 +204,8 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("nicBwInterval", "Sample every GPU NIC's transmitted bytes this often, in ns (0 = off). Try 100 at 1MB, 2000 at 128MB.", nicBwIntervalNs);
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
+    cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
+    cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
     cmd.Parse(argc, argv);
 
     if (nicSel != "schedule" && nicSel != "merged" && nicSel != "rr")
@@ -706,6 +720,7 @@ int main(int argc, char *argv[]) {
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
+    Config::SetDefault("ns3::RdmaHw::MaxMsgsInFlight", UintegerValue(maxMsgsInFlight));
 
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     RdmaFabricHelper rdmaFabric;
@@ -771,6 +786,7 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("DataType", EnumValue(dtype));
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
+    app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(protoChunkBytes));
     app_helper.SetAttribute("NicSelection", StringValue(
         nicSel == "schedule" ? "SCHEDULED" : (nicSel == "merged" ? "MERGED" : "ROUND_ROBIN")));
     app_helper.SetAttribute("NetworkFlowIds", BooleanValue(flowId));
