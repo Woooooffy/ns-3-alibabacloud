@@ -210,9 +210,15 @@ int main(int argc, char *argv[]) {
     // steps into 4 sub-transfers apiece.
     uint32_t protoChunkBytes = 0;
     // Transport pipelining depth (NCCL_STEPS analogue): how many messages a qp may have in
-    // flight before waiting for a completion. Inert while L2AckInterval is 0 below, since in
-    // no-ack mode the sender self-acknowledges and messages retire without a round trip.
+    // flight before waiting for a completion. It binds only when --l2Ack is nonzero: with acks
+    // off the sender self-acknowledges at send completion and messages retire without a round
+    // trip, so no depth of in-flight messages is ever reached.
     uint32_t maxMsgsInFlight = 8;
+    // Receiver ack cadence, in bytes, for RdmaHw::L2AckInterval; 0 is no-ack mode, where the
+    // sender infers completion from its own send completion and nothing waits a round trip.
+    // Not a cosmetic knob: it changes the transport under every other setting here, so runs
+    // that differ in it are not comparable with each other.
+    uint32_t l2AckInterval = 1;
 
     CommandLine cmd;
     cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
@@ -230,6 +236,7 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
     cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
     cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
+    cmd.AddValue("l2Ack", "Receiver ack interval in bytes (0 = no-ack mode, sender self-acknowledges at send completion)", l2AckInterval);
     cmd.Parse(argc, argv);
 
     g_qlenRows = qlenRows;
@@ -743,7 +750,7 @@ int main(int argc, char *argv[]) {
     NetDeviceContainer devs1_479 = link_helper1.Install(regswtches.Get(5), regswtches.Get(9));
     Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
     Config::SetDefault("ns3::RdmaHw::RateTargeting", BooleanValue(rateTargeting));
-    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
+    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(l2AckInterval));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
     Config::SetDefault("ns3::RdmaHw::MaxMsgsInFlight", UintegerValue(maxMsgsInFlight));

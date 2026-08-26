@@ -93,6 +93,25 @@ class Program:
         # 64-bit --inputBytes is what lets a sweep past 4 GB per rank mean anything; the older
         # uint32_t declaration wraps silently, which would look like a suspiciously fast run.
         self.wide_input = bool(re.search(r"uint64_t\s+inputBytes", src))
+        # L2AckInterval is a compile-time choice in these scratches, not a --flag, and it
+        # changes the transport underneath every configuration: with acks off the sender
+        # self-acknowledges at send completion, so nothing ever waits a round trip and
+        # --maxMsgsInFlight cannot bind. Runs from the two modes are therefore not comparable,
+        # and must not land in the same results.csv -- hence the suffix on every output path.
+        # Either a literal in the SetDefault, or -- once the scratch exposes --l2Ack -- the
+        # initialiser of the variable that SetDefault passes.
+        m = (re.search(r'"ns3::RdmaHw::L2AckInterval"\s*,\s*UintegerValue\((\d+)\)', src)
+             or re.search(r"uint32_t\s+l2AckInterval\s*=\s*(\d+)", src))
+        self.ack_default = int(m.group(1)) if m else 0
+
+    def slug(self, ack_interval):
+        """Output namespace for a sweep run in this ack mode.
+
+        No-ack keeps the bare name so earlier results stay where they are; acked runs get a
+        suffix, on the label as well as the directory, because the traces the scratch writes
+        into logs/ are keyed by label and would otherwise be overwritten in place.
+        """
+        return self.name + ("_ack" if ack_interval else "")
 
     @staticmethod
     def _resolve(spec):
@@ -194,7 +213,7 @@ def nic_interval_ns(input_bytes, prog, host_tx_gbps, target_samples=500):
 
 def run_one(pair_bytes, name, flags, args, prog, no_build):
     input_bytes = pair_bytes * prog.ranks
-    label = f"sweep_{prog.name}_{name}_{fmt_size(pair_bytes)}"
+    label = f"sweep_{prog.slug(args.l2ack)}_{name}_{fmt_size(pair_bytes)}"
     interval = nic_interval_ns(input_bytes, prog, args.host_tx_gbps)
     # The per-packet queue trace is one row per enqueue and per dequeue at every hop, so it
     # scales with the traffic and passes a gigabyte well before the top of this range. The
@@ -210,7 +229,7 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
             f"--protoChunkBytes={PROTO_CHUNK_BYTES}",
             f"--maxMsgsInFlight={MAX_MSGS_IN_FLIGHT}",
             f"--nicBwInterval={interval}", f"--qlenRows={qlen_rows}",
-            "--checkLog=silent"]
+            f"--l2Ack={args.l2ack}", "--checkLog=silent"]
     argv, dropped = prog.filter(argv)
     if dropped and not run_one.warned:
         print(f"  note: {prog.name} declares no " + ", ".join(f"--{d}" for d in sorted(set(dropped)))
@@ -460,6 +479,10 @@ def main():
                     help="largest per-GPU-pair message; sizes step by x{} from --start "
                          "(default 1GB)".format(STEP))
     ap.add_argument("--coll", default="alltoall", choices=["alltoall", "allgather"])
+    ap.add_argument("--l2ack", type=int, metavar="BYTES",
+                    help="receiver ack interval; 0 is no-ack mode (default: the scratch's own). "
+                         "Results land in a separate directory per mode, since it changes the "
+                         "transport under every configuration and the two are not comparable")
     ap.add_argument("--configs", default=",".join(CONFIGS),
                     help="comma-separated subset of: " + ",".join(CONFIGS))
     ap.add_argument("--ranks", type=int,
@@ -490,12 +513,17 @@ def main():
         raise SystemExit("--start is larger than --end")
 
     prog = Program(args.program, args.ranks)
+    if args.l2ack is None:
+        args.l2ack = prog.ack_default
+    elif "l2Ack" not in prog.flags:
+        raise SystemExit(f"{prog.name} has no --l2Ack; its ack interval is fixed at "
+                         f"{prog.ack_default} in the source.")
     if not prog.wide_input and args.end * prog.ranks > (1 << 32):
         raise SystemExit(f"{prog.name} declares --inputBytes as uint32_t, which wraps at 4 GB; "
                          f"{fmt_size(args.end)}/pair is {fmt_size(args.end * prog.ranks)}/rank. "
                          f"Widen it to uint64_t first.")
     if args.outdir is None:
-        args.outdir = os.path.join(HERE, "sweep_results", prog.name)
+        args.outdir = os.path.join(HERE, "sweep_results", prog.slug(args.l2ack))
 
     os.makedirs(args.outdir, exist_ok=True)
     results = os.path.join(args.outdir, "results.csv")
@@ -513,7 +541,9 @@ def main():
     done = load(results)
 
     if not args.tables_only:
-        print(f"{prog.name}: {prog.ranks} GPUs, {prog.nvswitches} NVSwitches")
+        print(f"{prog.name}: {prog.ranks} GPUs, {prog.nvswitches} NVSwitches, "
+              + (f"acks every {args.l2ack} B" if args.l2ack else "no-ack mode"))
+        print(f"output: {args.outdir}")
         print(f"{len(sweep)} sizes x {len(args.configs.split(','))} configs, "
               f"{fmt_size(args.start)}..{fmt_size(args.end)} per pair "
               f"({fmt_size(args.start * prog.ranks)}..{fmt_size(args.end * prog.ranks)} per rank)\n")

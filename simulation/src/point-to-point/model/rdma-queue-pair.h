@@ -66,6 +66,12 @@ public:
 	bool m_pacerAccumulate = false;
 	uint32_t wp; // current window of packets
 	uint32_t lastPktSize;
+	// The host-side pacing rate of the message the last packet belonged to, captured in
+	// RdmaHw::GetNxtPacket *before* snd_nxt advances past that packet. UpdateNextAvail runs
+	// after the advance, so asking GetCurRate() there names the NEXT message (or nothing at
+	// all, once the backlog is empty) rather than the one whose bytes just went out. 0 means
+	// the message carried no cap. See RdmaHw::UpdateNextAvail.
+	DataRate lastPktRate;
 	// true only once explicitly torn down via RdmaHw::CloseQueuePair/QpComplete -- the sole
 	// condition under which qbb-net-device's pacing sweep evicts this QP from its NIC's
 	// group. A QP with an empty message queue but m_closed==false (e.g. an MSCCL persistent

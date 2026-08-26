@@ -42,6 +42,7 @@ RdmaQueuePair::RdmaQueuePair(uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, ui
 	m_max_rate = 0;
 	m_var_win = false;
 	m_rate = 0;
+	lastPktRate = 0;
 	m_nextAvail = Time(0);
 	mlx.m_alpha = 1;
 	mlx.m_alpha_cnp_arrived = false;

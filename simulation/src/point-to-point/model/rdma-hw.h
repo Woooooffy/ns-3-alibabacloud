@@ -98,15 +98,16 @@ public:
 	struct PaceStats {
 		// Per packet, from UpdateNextAvail -- who set the gap that follows this packet. The
 		// four buckets are disjoint and together cover every paced packet.
-		uint64_t cappedPkts = 0,   cappedBytes = 0;    // the sending message's XML cap won
+		uint64_t cappedPkts = 0,   cappedBytes = 0;    // this packet's own message's XML cap won
 		uint64_t slackPkts = 0,    slackBytes = 0;     // cap present but the cc rate was already lower
-		uint64_t noCapPkts = 0,    noCapBytes = 0;     // sending message carried no cap
-		uint64_t tailPkts = 0,     tailBytes = 0;      // no sending message left: see the note in UpdateNextAvail
+		uint64_t noCapPkts = 0,    noCapBytes = 0;     // this packet's message carried no cap
+		uint64_t tailPkts = 0,     tailBytes = 0;      // uncapped, and nothing queued behind it
 		double   cappedSeconds = 0.0;                  // sum bytes*8/cap, for the byte-weighted mean applied cap
 		// Per message, from NotePacedMessage -- what the schedule asked for, before the
 		// transport got a chance to apply or ignore it.
 		uint64_t msgsWithRate = 0, msgsWithoutRate = 0;
-		uint64_t msgsSinglePkt = 0;                    // of msgsWithRate: <= one MTU, so unshapeable
+		uint64_t msgsSinglePkt = 0;                    // of msgsWithRate: <= one MTU, so all its
+		                                               // shaping is the gap after its one packet
 		uint64_t ratedBytes = 0;                       // bytes posted under a rate
 		double   ratedSeconds = 0.0;                   // sum bytes*8/rate over those, for their mean
 	};

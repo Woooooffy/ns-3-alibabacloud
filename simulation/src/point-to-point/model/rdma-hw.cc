@@ -847,6 +847,12 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	uint64_t payload_size = qp->GetBytesLeft();
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
+	// Remember the pacing rate of the message this packet is coming out of, while snd_nxt still
+	// points into it. UpdateNextAvail sets the gap that FOLLOWS this packet and runs after the
+	// advance below, by which point GetCurRate() no longer names this message -- see the note
+	// there. Every other qp->GetCur* call in this function has the same window and is likewise
+	// only correct because it happens before the advance.
+	qp->lastPktRate = qp->GetCurRate();
 	// source pointer, if any, belongs to the message snd_nxt is currently in -- which is not
 	// necessarily the front one, since the qp may be pipelining ahead of the oldest
 	// unacknowledged message -- and is indexed relative to that message's own start offset
@@ -915,20 +921,29 @@ void RdmaHw::PktSent(Ptr<RdmaQueuePair> qp, Ptr<Packet> pkt, Time interframeGap)
 
 void RdmaHw::UpdateNextAvail(Ptr<RdmaQueuePair> qp, Time interframeGap, uint32_t pkt_size){
 	DataRate paceRate = m_rateBound ? qp->m_rate : qp->m_max_rate;
-	// honor the host-side per-message pacing cap (MSCCL XML "rate", GB/s) if the message
-	// currently on the wire carries one -- never let this qp outrun the schedule's
-	// requested rate. A zero/unset cap leaves the congestion-controlled rate untouched.
-	DataRate msgRate = qp->GetCurRate();
+	// honor the host-side per-message pacing cap (MSCCL XML "rate", GB/s) if the message whose
+	// bytes just went out carries one -- never let this qp outrun the schedule's requested
+	// rate. A zero/unset cap leaves the congestion-controlled rate untouched.
+	//
+	// Read from qp->lastPktRate, stashed by GetNxtPacket, NOT from GetCurRate() here: this runs
+	// after GetNxtPacket advanced snd_nxt past the packet, so GetSendingMessage() has already
+	// walked on to the NEXT queued message -- and to nothing at all when that packet emptied
+	// the backlog. Asking now therefore charged the packet that ENDS a message the following
+	// message's rate, and the last packet of the last message the congestion-controlled rate,
+	// i.e. line rate. Pipelining hid that at interior boundaries (the next message's rate is
+	// the same one within a widened MSCCL segment), but the packet closing a segment got a
+	// line-rate gap, permanently: the rate-targeting branch below advances m_nextAvail from
+	// its own prior value, so a gap never charged is never recovered. The cost is one packet
+	// per segment, so it was invisible in large messages and dominant in small ones -- at one
+	// MTU per message every packet was a tail and the XML rate did nothing whatsoever.
+	DataRate msgRate = qp->lastPktRate;
 	const bool capped = msgRate.GetBitRate() > 0 && msgRate < paceRate;
 	if (capped)
 		paceRate = msgRate;
 
 	// Diagnostic only -- see RdmaHw::PaceStats. Classify who set the gap that follows this
-	// packet. The "tail" bucket is the interesting one: snd_nxt has already advanced past this
-	// packet inside GetNxtPacket, so the LAST packet of a message finds no sending message
-	// behind it and is charged the congestion-controlled rate rather than its own message's
-	// cap. For a message of one MTU that is every packet it has, which is why a schedule whose
-	// steps are smaller than the MTU is completely unaffected by its own rates.
+	// packet. Every bucket now speaks about the message the packet actually came out of, since
+	// that is what lastPktRate names.
 	if (capped){
 		m_paceStats.cappedPkts++;
 		m_paceStats.cappedBytes += pkt_size;
@@ -937,6 +952,11 @@ void RdmaHw::UpdateNextAvail(Ptr<RdmaQueuePair> qp, Time interframeGap, uint32_t
 		m_paceStats.slackPkts++;
 		m_paceStats.slackBytes += pkt_size;
 	} else if (qp->GetSendingMessage() == nullptr){
+		// Uncapped, and nothing queued behind it. This and noCap are both uncapped traffic
+		// (intra-NVSwitch connections, mainly) and differ only in whether more was queued, so
+		// on a fully rate-annotated schedule both should now read zero. They are the regression
+		// signal for this fix: a nonzero tail count beside a nonzero cappedPkts would mean
+		// lastPktRate is not reaching UpdateNextAvail.
 		m_paceStats.tailPkts++;
 		m_paceStats.tailBytes += pkt_size;
 	} else {
@@ -991,9 +1011,11 @@ void RdmaHw::NotePacedMessage(uint64_t bytes, DataRate rate){
 	m_paceStats.msgsWithRate++;
 	m_paceStats.ratedBytes += bytes;
 	m_paceStats.ratedSeconds += bytes * 8.0 / rate.GetBitRate();
-	// One MTU or less means the message is a single packet, so it has no inter-packet gap for
-	// the shaper to stretch and its rate can only ever be discarded. Counted separately from
-	// "the cap did not bind", which is a scheduling outcome rather than a representability one.
+	// One MTU or less means the message is a single packet, so its rate is expressed entirely
+	// in the gap AFTER that packet -- there is no inter-packet gap inside it. That gap is now
+	// charged correctly (UpdateNextAvail reads qp->lastPktRate), so such a message is shaped
+	// like any other; it is still worth counting, because all of its shaping rides on the one
+	// deferral and none of it on the message's own transmission.
 	if (bytes <= m_mtu)
 		m_paceStats.msgsSinglePkt++;
 }
@@ -1023,7 +1045,7 @@ void RdmaHw::PrintPaceStats(std::ostream& os){
 	   << "  with a rate: " << st.msgsWithRate << " (" << pct(st.msgsWithRate, msgs) << "%)"
 	   << "  without: " << st.msgsWithoutRate << std::endl;
 	if (st.msgsWithRate > 0){
-		os << "    of those, one MTU or less (rate unshapeable): " << st.msgsSinglePkt
+		os << "    of those, one MTU or less (shaped only by the gap after): " << st.msgsSinglePkt
 		   << " (" << pct(st.msgsSinglePkt, st.msgsWithRate) << "%)" << std::endl;
 		os << "    requested rate, byte-weighted mean: "
 		   << (st.ratedSeconds > 0 ? st.ratedBytes * 8.0 / st.ratedSeconds / 1e9 : 0.0)
