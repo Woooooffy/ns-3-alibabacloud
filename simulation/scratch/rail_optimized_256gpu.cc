@@ -197,6 +197,11 @@ int main(int argc, char *argv[]) {
     //   merged   -> NCCL_IB_MERGE_NICS: one qp per NIC, every message split across them
     //   rr       -> one qp per connection, NICs handed out round-robin
     std::string nicSel = "schedule";
+    // Overrides the derived XML filename (not the path) so an alternative schedule for the
+    // same collective can be run without touching this file: --coll stays "alltoall", which
+    // is what the tester and the switch JSON name are keyed on, while the algorithm itself is
+    // swapped. Empty means "derive it from --coll and --rate", the original behaviour.
+    std::string xmlName = "";
     // Period of the per-NIC bandwidth trace, in ns. 0 disables it, so every existing invocation
     // behaves exactly as before and pays nothing.
     uint32_t nicBwIntervalNs = 0;
@@ -225,6 +230,7 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("rate", "Use the rate-annotated XML (false = the _no_rate ablation)", rate);
     cmd.AddValue("rateTargeting", "Treat per-flow XML rates as targets, not just caps", rateTargeting);
     cmd.AddValue("flowId", "Network only: carry msccl flow ids and install per-flow switch forwarding from the JSON (does not affect NIC selection)", flowId);
+    cmd.AddValue("xml", "XML schedule filename inside scratch/xml_input, overriding the one derived from --coll/--rate (empty = derive)", xmlName);
     cmd.AddValue("nicSel", "NIC selection: schedule (switch JSON pins the NIC) | merged (NCCL-style merged NIC, one qp per NIC) | rr (one qp per connection, round-robin NICs)", nicSel);
     cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences (false = release every buffer-ready send immediately)", netDeps);
     cmd.AddValue("qlenRows", "Write the per-packet switch queue trace (0 = only the per-port peak summary, which is all a large sweep can afford on disk)", qlenRows);
@@ -1046,7 +1052,9 @@ int main(int argc, char *argv[]) {
     // Algorithm + per-flow forwarding table. The switch JSON's switch_id_map (0..11 -> TE-CCL
     // ids) matches the regswtches declaration order above (0-7 = leaf0..leaf7; 8-11 = spine0..spine3); there is one
     // JSON per collective, shared by the rate and _no_rate XMLs since routing is identical.
-    const std::string XML_NAME = "rail_optimized_256gpu_" + coll + (rate ? "" : "_no_rate") + ".xml";
+    const std::string XML_NAME = xmlName.empty()
+        ? "rail_optimized_256gpu_" + coll + (rate ? "" : "_no_rate") + ".xml"
+        : xmlName;
     std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
                                                   "../../scratch/xml_input/" + XML_NAME);
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),

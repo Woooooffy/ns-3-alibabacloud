@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""Sweep dual_plane_hetero's feature ablations over a range of alltoall message sizes.
+"""Sweep a dual-plane collective scratch's feature ablations over a range of message sizes.
 
-Sizes on the command line are PER GPU PAIR: every rank sends that much to each of the 96
-ranks, so the scratch's --inputBytes (one rank's total input) is 96x the pair size, and the
-top of the range -- 1 GB per pair -- is 96 GB per rank, 9.2 TB moved. Start small.
+The program to sweep is the first argument: a scratch name, or a path to its .cc.
 
-    ./sweep_dual_plane_features.py --start 1KB --end 64KB          # a quick shakeout
-    ./sweep_dual_plane_features.py --start 1KB --end 1GB           # the real thing
+    ./sweep_dual_plane_features.py dual_plane_hetero --start 1KB --end 64KB
+    ./sweep_dual_plane_features.py rail_optimized_256gpu_dual_plane --start 1KB --end 1GB
+
+Sizes on the command line are PER GPU PAIR: every rank sends that much to each rank, so the
+scratch's --inputBytes (one rank's total input) is <ranks>x the pair size -- 1 GB per pair is
+96 GB per rank on a 96-GPU scratch. The rank count is read out of the source, as is the set of
+--flags the program actually accepts, so a scratch missing one of the ablation knobs still
+sweeps (that knob is simply left at its own default). Start small.
 
 Seven configurations per size: a baseline with every feature off, one run per feature turned
 on alone (flow ids paired with schedule-pinned NICs, since routing by flow id says nothing
 useful about connections injected on whichever NIC), one with everything on except the rate
 annotations, and one with all of them on (the scratch's own defaults).
 
-Results are appended to results.csv in the output directory and re-read on startup, so an
-interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are (re)printed
-from that file at the end, and also written to tables.md.
+Results are appended to results.csv under a per-program output directory and re-read on
+startup, so an interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are
+(re)printed from that file at the end, and also written to tables.md.
 """
 import argparse, collections, csv, os, re, subprocess, sys, time
 
@@ -23,13 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NS3_DIR = os.path.dirname(HERE)                    # simulation/
 LOG = os.path.join(HERE, "logs")
 
-# 96 GPUs in dual_plane_hetero, so a rank's total input is 96x the per-pair message.
-RANKS = 96
-# Fraction of a rank's input that leaves the host: 88 of its 96 peers are off-node (the other
-# 8 share its NVSwitch). Used only to guess a run's duration when picking a sampling period.
-OFF_NODE = 88.0 / 96.0
-# Two 400G fabric NICs per GPU.
-HOST_TX_BPS = 2 * 400e9
+SCRATCH_DIR = HERE                                  # simulation/scratch, where ns3 finds targets
 
 # name -> the flags that differ from the scratch's own defaults.
 # baseline is everything off; each feature run turns one feature back on, and "all" is the
@@ -62,6 +60,84 @@ FIELDS = ["pair_bytes", "config", "input_bytes", "sim_time_ns", "algbw_gbps",
           "paced_pct", "unshapeable_pct", "nic_interval_ns", "qlen_rows", "wall_s"]
 
 
+# ---- the program under test -------------------------------------------------------------
+
+class Program:
+    """Everything the sweep needs to know about the scratch it is driving.
+
+    All of it is read out of the source rather than hard-coded, because the point of the
+    argument is to run this against scratches with different rank counts and different
+    subsets of the ablation knobs.
+    """
+
+    def __init__(self, spec, ranks=None):
+        self.path = self._resolve(spec)
+        self.name = os.path.splitext(os.path.basename(self.path))[0]
+        self.target = f"scratch/{self.name}"
+        src = open(self.path, encoding="utf-8", errors="replace").read()
+
+        self.flags = set(re.findall(r'cmd\.AddValue\(\s*"([A-Za-z0-9_]+)"', src))
+        if "inputBytes" not in self.flags:
+            raise SystemExit(
+                f"{self.path} has no --inputBytes (no CommandLine at all, in the case of the\n"
+                f"generated topology/output skeletons -- those build a topology and call\n"
+                f"Simulator::Run with no collective installed). There is nothing to sweep.")
+
+        self.ranks = ranks or self._count(src, "gpunodes")
+        if not self.ranks:
+            raise SystemExit(f"cannot find the GPU count in {self.path}; pass --ranks")
+        self.nvswitches = self._count(src, "nvswtches") or 1
+        # 64-bit --inputBytes is what lets a sweep past 4 GB per rank mean anything; the older
+        # uint32_t declaration wraps silently, which would look like a suspiciously fast run.
+        self.wide_input = bool(re.search(r"uint64_t\s+inputBytes", src))
+
+    @staticmethod
+    def _resolve(spec):
+        cands = [spec] if os.sep in spec or spec.endswith(".cc") else []
+        cands += [os.path.join(SCRATCH_DIR, spec + ".cc"), os.path.join(SCRATCH_DIR, spec)]
+        for c in cands:
+            if os.path.isfile(c):
+                path = os.path.abspath(c)
+                break
+        else:
+            raise SystemExit(f"cannot find a source for {spec!r} (looked in {SCRATCH_DIR})")
+        # ns3 only builds targets under simulation/scratch, so a source living anywhere else
+        # (topology/output, say) has to be copied in before it can be run at all.
+        if os.path.dirname(path) != SCRATCH_DIR:
+            twin = os.path.join(SCRATCH_DIR, os.path.basename(path))
+            hint = f"\nA copy already exists at {twin} -- sweep that instead." \
+                if os.path.isfile(twin) else \
+                f"\nCopy it to {SCRATCH_DIR} first, then sweep it by name."
+            raise SystemExit(f"{path} is not under {SCRATCH_DIR}, so ns3 has no target for it."
+                             + hint)
+        return path
+
+    @staticmethod
+    def _count(src, container):
+        m = re.search(r"i\s*<\s*(\d+)\s*;.*?\b" + container + r"\.Add\(", src)
+        return int(m.group(1)) if m else 0
+
+    def off_node_fraction(self):
+        """Share of a rank's input that leaves the host, for the duration estimate only.
+
+        Peers sharing a rank's NVSwitch are reached over NVLink and never touch the fabric.
+        Domains are not always equal-sized, but this only picks a sampling period.
+        """
+        per_domain = max(1, self.ranks // self.nvswitches)
+        return max(0.1, (self.ranks - per_domain) / self.ranks)
+
+    def filter(self, argv):
+        """Drop --flags this program does not declare, so a leaner scratch still sweeps."""
+        keep, dropped = [], []
+        for a in argv:
+            flag = a[2:].split("=")[0] if a.startswith("--") else None
+            if flag and flag not in self.flags:
+                dropped.append(flag)
+            else:
+                keep.append(a)
+        return keep, dropped
+
+
 # ---- sizes -------------------------------------------------------------------------------
 
 def parse_size(text):
@@ -87,15 +163,15 @@ def sizes(start, end):
     return out
 
 
-def nic_interval_ns(input_bytes, target_samples=500):
+def nic_interval_ns(input_bytes, prog, host_tx_gbps, target_samples=500):
     """Sampling period for --nicBwInterval, scaled to the run's expected length.
 
     A fixed period cannot serve a range this wide: 100 ns is right for a run that lasts a few
     microseconds and would emit tens of millions of rows for one that lasts a second. Estimate
-    the duration from the wire bound (a rank's off-node bytes over its two 400G NICs), aim for
-    a few hundred samples per NIC, and snap to a 1/2/5 step.
+    the duration from the wire bound (a rank's off-node bytes over its fabric NICs), aim for a
+    few hundred samples per NIC, and snap to a 1/2/5 step.
     """
-    est_ns = input_bytes * OFF_NODE / HOST_TX_BPS * 8 * 1e9
+    est_ns = input_bytes * prog.off_node_fraction() / (host_tx_gbps * 1e9) * 8 * 1e9
     raw = max(100.0, est_ns / target_samples)
     mag = 10 ** int(len(str(int(raw))) - 1)
     for step in (1, 2, 5, 10):
@@ -106,16 +182,18 @@ def nic_interval_ns(input_bytes, target_samples=500):
 
 # ---- running -----------------------------------------------------------------------------
 
-def run_one(pair_bytes, name, flags, args):
-    input_bytes = pair_bytes * RANKS
-    label = f"sweep_{name}_{fmt_size(pair_bytes)}"
-    interval = nic_interval_ns(input_bytes)
+def run_one(pair_bytes, name, flags, args, prog):
+    input_bytes = pair_bytes * prog.ranks
+    label = f"sweep_{prog.name}_{name}_{fmt_size(pair_bytes)}"
+    interval = nic_interval_ns(input_bytes, prog, args.host_tx_gbps)
     # The per-packet queue trace is one row per enqueue and per dequeue at every hop, so it
     # scales with the traffic and passes a gigabyte well before the top of this range. The
     # scratch tracks the per-port high-water marks either way, which is all the table needs.
     qlen_rows = 1 if input_bytes <= args.qlen_rows_max_bytes else 0
+    if "qlenRows" not in prog.flags:
+        qlen_rows = 1          # no knob to turn them off; the rows are written regardless
 
-    argv = [f"scratch/dual_plane_hetero",
+    argv = [prog.target,
             f"--inputBytes={input_bytes}", f"--label={label}", f"--coll={args.coll}",
             f"--rate={flags['rate']}", f"--netDeps={flags['netDeps']}",
             f"--flowId={flags['flowId']}", f"--nicSel={flags['nicSel']}",
@@ -123,6 +201,11 @@ def run_one(pair_bytes, name, flags, args):
             f"--maxMsgsInFlight={MAX_MSGS_IN_FLIGHT}",
             f"--nicBwInterval={interval}", f"--qlenRows={qlen_rows}",
             "--checkLog=silent"]
+    argv, dropped = prog.filter(argv)
+    if dropped and not run_one.warned:
+        print(f"  note: {prog.name} declares no " + ", ".join(f"--{d}" for d in sorted(set(dropped)))
+              + " -- left at the program's own default", flush=True)
+        run_one.warned = True
     cmd = ["./ns3", "run", " ".join(argv)]
 
     print(f"  [{name:8s}] {' '.join(argv[1:])}", flush=True)
@@ -152,6 +235,9 @@ def run_one(pair_bytes, name, flags, args):
     row.update(pace_stats(out))
     row.update(read_traces(label, args))
     return row
+
+
+run_one.warned = False
 
 
 def pace_stats(out):
@@ -277,7 +363,7 @@ def num(row, key):
         return None
 
 
-def tables(done, sweep_sizes, out):
+def tables(done, sweep_sizes, out, line_gbps):
     names = list(CONFIGS)
     lines = []
 
@@ -339,7 +425,7 @@ def tables(done, sweep_sizes, out):
           "stretch. A 0 on the left means the run is identical to one with `rate` off.", paced)
     table("GPU fabric NIC bandwidth (Gbps, mean / peak per NIC)",
           "Mean is per fabric NIC over the window in which any NIC was transmitting; peak is "
-          "the busiest single sample. Line rate is 400.", bw)
+          f"the busiest single sample. Line rate is {line_gbps:g}.", bw)
 
     text = "\n".join(lines)
     print(text)
@@ -352,6 +438,8 @@ def tables(done, sweep_sizes, out):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("program",
+                    help="scratch to sweep: a name under simulation/scratch, or a path to a .cc")
     ap.add_argument("--start", type=parse_size, default="1KB",
                     help="smallest per-GPU-pair message (default 1KB)")
     ap.add_argument("--end", type=parse_size, default="1GB",
@@ -359,7 +447,15 @@ def main():
     ap.add_argument("--coll", default="alltoall", choices=["alltoall", "allgather"])
     ap.add_argument("--configs", default=",".join(CONFIGS),
                     help="comma-separated subset of: " + ",".join(CONFIGS))
-    ap.add_argument("--outdir", default=os.path.join(HERE, "sweep_results"))
+    ap.add_argument("--ranks", type=int,
+                    help="GPUs in the topology (default: read from the source)")
+    ap.add_argument("--host-tx-gbps", type=float, default=800.0,
+                    help="a GPU's total fabric egress, used only to size the --nicBwInterval "
+                         "sampling period (default 800 = two 400G NICs)")
+    ap.add_argument("--nic-line-gbps", type=float, default=400.0,
+                    help="per-NIC line rate, quoted in the bandwidth table's caption")
+    ap.add_argument("--outdir",
+                    help="default: sweep_results/<program> next to this script")
     ap.add_argument("--qlen-rows-max-bytes", type=parse_size, default="16MB",
                     help="keep the per-packet queue trace only while --inputBytes is at most "
                          "this (default 16MB); above it only the peak summary is written")
@@ -375,6 +471,14 @@ def main():
             raise SystemExit(f"unknown config {n!r}; pick from {','.join(CONFIGS)}")
     if args.start > args.end:
         raise SystemExit("--start is larger than --end")
+
+    prog = Program(args.program, args.ranks)
+    if not prog.wide_input and args.end * prog.ranks > (1 << 32):
+        raise SystemExit(f"{prog.name} declares --inputBytes as uint32_t, which wraps at 4 GB; "
+                         f"{fmt_size(args.end)}/pair is {fmt_size(args.end * prog.ranks)}/rank. "
+                         f"Widen it to uint64_t first.")
+    if args.outdir is None:
+        args.outdir = os.path.join(HERE, "sweep_results", prog.name)
 
     os.makedirs(args.outdir, exist_ok=True)
     results = os.path.join(args.outdir, "results.csv")
@@ -392,16 +496,17 @@ def main():
     done = load(results)
 
     if not args.tables_only:
+        print(f"{prog.name}: {prog.ranks} GPUs, {prog.nvswitches} NVSwitches")
         print(f"{len(sweep)} sizes x {len(args.configs.split(','))} configs, "
               f"{fmt_size(args.start)}..{fmt_size(args.end)} per pair "
-              f"({fmt_size(args.start * RANKS)}..{fmt_size(args.end * RANKS)} per rank)\n")
+              f"({fmt_size(args.start * prog.ranks)}..{fmt_size(args.end * prog.ranks)} per rank)\n")
         for s in sweep:
-            print(f"{fmt_size(s)}/pair -> --inputBytes={s * RANKS}")
+            print(f"{fmt_size(s)}/pair -> --inputBytes={s * prog.ranks}")
             for name in args.configs.split(","):
                 if (s, name) in done and not args.force:
                     print(f"  [{name:8s}] already in results.csv, skipping")
                     continue
-                row = run_one(s, name, CONFIGS[name], args)
+                row = run_one(s, name, CONFIGS[name], args, prog)
                 if row is None:
                     continue
                 append(results, row)
@@ -416,7 +521,7 @@ def main():
 
     print()
     tables(done, [s for s in sweep if any((s, n) in done for n in CONFIGS)],
-           os.path.join(args.outdir, "tables.md"))
+           os.path.join(args.outdir, "tables.md"), args.nic_line_gbps)
     print(f"\nresults.csv, per-run logs and check_congestion reports in {args.outdir}")
 
 
