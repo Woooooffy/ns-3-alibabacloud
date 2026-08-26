@@ -158,11 +158,18 @@ def fmt_size(n):
     return f"{n}B"
 
 
+# Each size is 4x the last. A 1KB..1GB range is 11 points on this ladder rather than 21, which
+# matters because the cost of a point grows with the size: the top two points alone dominate
+# either sweep's wall clock, so the extra x2 points buy resolution mostly where it is cheapest
+# and least interesting.
+STEP = 4
+
+
 def sizes(start, end):
     out, s = [], start
     while s <= end:
         out.append(s)
-        s *= 2
+        s *= STEP
     return out
 
 
@@ -450,7 +457,8 @@ def main():
     ap.add_argument("--start", type=parse_size, default="1KB",
                     help="smallest per-GPU-pair message (default 1KB)")
     ap.add_argument("--end", type=parse_size, default="1GB",
-                    help="largest per-GPU-pair message, doubling from --start (default 1GB)")
+                    help="largest per-GPU-pair message; sizes step by x{} from --start "
+                         "(default 1GB)".format(STEP))
     ap.add_argument("--coll", default="alltoall", choices=["alltoall", "allgather"])
     ap.add_argument("--configs", default=",".join(CONFIGS),
                     help="comma-separated subset of: " + ",".join(CONFIGS))

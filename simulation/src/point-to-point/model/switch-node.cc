@@ -8,6 +8,7 @@
 #include "ns3/uinteger.h"
 #include "ns3/double.h"
 #include "switch-node.h"
+#include <set>
 #include "qbb-net-device.h"
 #include "ppp-header.h"
 #include "ns3/int-header.h"
@@ -174,6 +175,18 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		m_devices[idx]->SwitchSend(qIndex, p, ch);
 	}else
 	{
+		// No routing-table entry for this destination. This is a black hole: the packet is
+		// gone, the receiver sees a sequence gap, and in no-ack mode (L2AckInterval=0) the
+		// resulting NACK surfaces only as RdmaHw's "shouldn't receive ack". Silence here cost
+		// a long diagnosis once; say it out loud, but once per (switch, destination) so a
+		// systematic hole does not drown the run in output.
+		static std::set<std::pair<uint32_t, uint32_t>> reported;
+		if (reported.insert(std::make_pair(m_id, ch.dip)).second){
+			printf("%lu %u Drop: no route to %u.%u.%u.%u (dropped at switch, black hole)\n",
+				Simulator::Now().GetTimeStep(), m_id,
+				(ch.dip >> 24) & 0xff, (ch.dip >> 16) & 0xff, (ch.dip >> 8) & 0xff, ch.dip & 0xff);
+			fflush(stdout);
+		}
 		return; // Drop
 	}
 }

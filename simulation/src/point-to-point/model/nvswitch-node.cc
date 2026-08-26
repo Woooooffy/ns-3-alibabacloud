@@ -7,6 +7,7 @@
 #include "ns3/uinteger.h"
 #include "ns3/double.h"
 #include "nvswitch-node.h"
+#include <set>
 #include "qbb-net-device.h"
 #include "ppp-header.h"
 #include "ns3/int-header.h"
@@ -109,6 +110,14 @@ void NVSwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		m_devices[idx]->SwitchSend(qIndex, p, ch);
 	}else
 	{
+		// Same black hole as SwitchNode::SendToDev; see the note there.
+		static std::set<std::pair<uint32_t, uint32_t>> reported;
+		if (reported.insert(std::make_pair(m_id, ch.dip)).second){
+			printf("%lu %u Drop: no route to %u.%u.%u.%u (dropped at nvswitch, black hole)\n",
+				Simulator::Now().GetTimeStep(), m_id,
+				(ch.dip >> 24) & 0xff, (ch.dip >> 16) & 0xff, (ch.dip >> 8) & 0xff, ch.dip & 0xff);
+			fflush(stdout);
+		}
 		return; // Drop
 	}
 }
