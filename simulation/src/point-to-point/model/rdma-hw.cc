@@ -1,5 +1,6 @@
 #include <ns3/simulator.h>
 #include <algorithm>
+#include <iomanip>
 #include <functional>
 #include <vector>
 #include <ns3/simple-seq-ts-header.h>
@@ -918,8 +919,31 @@ void RdmaHw::UpdateNextAvail(Ptr<RdmaQueuePair> qp, Time interframeGap, uint32_t
 	// currently on the wire carries one -- never let this qp outrun the schedule's
 	// requested rate. A zero/unset cap leaves the congestion-controlled rate untouched.
 	DataRate msgRate = qp->GetCurRate();
-	if (msgRate.GetBitRate() > 0 && msgRate < paceRate)
+	const bool capped = msgRate.GetBitRate() > 0 && msgRate < paceRate;
+	if (capped)
 		paceRate = msgRate;
+
+	// Diagnostic only -- see RdmaHw::PaceStats. Classify who set the gap that follows this
+	// packet. The "tail" bucket is the interesting one: snd_nxt has already advanced past this
+	// packet inside GetNxtPacket, so the LAST packet of a message finds no sending message
+	// behind it and is charged the congestion-controlled rate rather than its own message's
+	// cap. For a message of one MTU that is every packet it has, which is why a schedule whose
+	// steps are smaller than the MTU is completely unaffected by its own rates.
+	if (capped){
+		m_paceStats.cappedPkts++;
+		m_paceStats.cappedBytes += pkt_size;
+		m_paceStats.cappedSeconds += pkt_size * 8.0 / msgRate.GetBitRate();
+	} else if (msgRate.GetBitRate() > 0){
+		m_paceStats.slackPkts++;
+		m_paceStats.slackBytes += pkt_size;
+	} else if (qp->GetSendingMessage() == nullptr){
+		m_paceStats.tailPkts++;
+		m_paceStats.tailBytes += pkt_size;
+	} else {
+		m_paceStats.noCapPkts++;
+		m_paceStats.noCapBytes += pkt_size;
+	}
+
 	Time sendingTime = interframeGap + paceRate.CalculateBytesTxTime(pkt_size);
 	if (m_rateTargeting){
 		// Token-bucket shaper: advance the qp's next-eligible time from its PRIOR deadline
@@ -955,6 +979,69 @@ void RdmaHw::ChangeRate(Ptr<RdmaQueuePair> qp, DataRate new_rate){
 	// change to new rate
 	qp->m_rate = new_rate;
 }
+
+// ---- pacing diagnostic (see RdmaHw::PaceStats) --------------------------------------------
+RdmaHw::PaceStats RdmaHw::m_paceStats;
+
+void RdmaHw::NotePacedMessage(uint64_t bytes, DataRate rate){
+	if (rate.GetBitRate() == 0){
+		m_paceStats.msgsWithoutRate++;
+		return;
+	}
+	m_paceStats.msgsWithRate++;
+	m_paceStats.ratedBytes += bytes;
+	m_paceStats.ratedSeconds += bytes * 8.0 / rate.GetBitRate();
+	// One MTU or less means the message is a single packet, so it has no inter-packet gap for
+	// the shaper to stretch and its rate can only ever be discarded. Counted separately from
+	// "the cap did not bind", which is a scheduling outcome rather than a representability one.
+	if (bytes <= m_mtu)
+		m_paceStats.msgsSinglePkt++;
+}
+
+void RdmaHw::PrintPaceStats(std::ostream& os){
+	const PaceStats& st = m_paceStats;
+	// Restored before returning: this stream is the scratch's own std::cout in every caller.
+	const std::ios_base::fmtflags flags = os.flags();
+	const std::streamsize prec = os.precision();
+	os << std::fixed << std::setprecision(1);
+	struct Restore {
+		std::ostream& os; std::ios_base::fmtflags f; std::streamsize p;
+		~Restore(){ os.flags(f); os.precision(p); }
+	} restore{os, flags, prec};
+	if (st.msgsWithRate == 0 && st.msgsWithoutRate == 0){
+		os << "Pacing diagnostic: no RDMA messages were posted through NotePacedMessage." << std::endl;
+		return;
+	}
+	const uint64_t msgs = st.msgsWithRate + st.msgsWithoutRate;
+	const uint64_t pkts = st.cappedPkts + st.slackPkts + st.noCapPkts + st.tailPkts;
+	const uint64_t pktBytes = st.cappedBytes + st.slackBytes + st.noCapBytes + st.tailBytes;
+	auto pct = [](uint64_t a, uint64_t b){ return b ? 100.0 * a / b : 0.0; };
+	auto mb  = [](uint64_t b){ return b / 1048576.0; };
+
+	os << "Pacing diagnostic (MSCCL XML \"rate\" -> host shaper)" << std::endl;
+	os << "  messages posted: " << msgs
+	   << "  with a rate: " << st.msgsWithRate << " (" << pct(st.msgsWithRate, msgs) << "%)"
+	   << "  without: " << st.msgsWithoutRate << std::endl;
+	if (st.msgsWithRate > 0){
+		os << "    of those, one MTU or less (rate unshapeable): " << st.msgsSinglePkt
+		   << " (" << pct(st.msgsSinglePkt, st.msgsWithRate) << "%)" << std::endl;
+		os << "    requested rate, byte-weighted mean: "
+		   << (st.ratedSeconds > 0 ? st.ratedBytes * 8.0 / st.ratedSeconds / 1e9 : 0.0)
+		   << " Gbps over " << mb(st.ratedBytes) << " MB" << std::endl;
+	}
+	os << "  packets paced: " << pkts << " (" << mb(pktBytes) << " MB), gap set by:" << std::endl;
+	os << "    the message's cap:      " << st.cappedPkts << " (" << pct(st.cappedPkts, pkts) << "%)"
+	   << ", " << mb(st.cappedBytes) << " MB";
+	if (st.cappedSeconds > 0)
+		os << ", applied cap " << st.cappedBytes * 8.0 / st.cappedSeconds / 1e9 << " Gbps";
+	os << std::endl;
+	os << "    cc rate (cap slack):    " << st.slackPkts << " (" << pct(st.slackPkts, pkts) << "%)" << std::endl;
+	os << "    cc rate (no cap):       " << st.noCapPkts << " (" << pct(st.noCapPkts, pkts) << "%)" << std::endl;
+	os << "    cc rate (message tail): " << st.tailPkts << " (" << pct(st.tailPkts, pkts) << "%)" << std::endl;
+	os << "  bytes shaped by the XML rate: " << mb(st.cappedBytes) << " of " << mb(pktBytes)
+	   << " MB (" << pct(st.cappedBytes, pktBytes) << "%)" << std::endl;
+}
+
 /**
  * when nic send a packet, update the bytes it has sent
 */

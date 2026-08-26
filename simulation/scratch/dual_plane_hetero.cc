@@ -959,6 +959,12 @@ int main(int argc, char *argv[]) {
         std::cout << std::endl;
     }
 
+    // The same question for the other half of the schedule: --rate selects a rate-annotated XML,
+    // but a cap that never reaches the shaper, one that never binds, and one the shaper cannot
+    // express (a message of a single MTU has no inter-packet gap to stretch) all produce runs
+    // indistinguishable from --rate=0. This says which of those happened. See RdmaHw::PaceStats.
+    RdmaHw::PrintPaceStats(std::cout);
+
     // algorithm bandwidth: total data moved per rank / time
     std::cout << coll << " algorithm bandwidth: "
         << (double) INPUT_BYTES * N_NODES / simTime.GetSeconds() / 1e9 << " GB/s" << std::endl;

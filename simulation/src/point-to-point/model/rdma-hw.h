@@ -8,6 +8,7 @@
 #include "qbb-net-device.h"
 #include <unordered_map>
 #include <functional>
+#include <ostream>
 #include <set>
 #include "pint.h"
 
@@ -84,6 +85,37 @@ public:
 	void PrintHostBW(FILE* bw_output, uint32_t bw_mon_interval);
 	void PrintQPRate(FILE* rate_output);
 	void PrintQPCnpNumber(FILE* cnp_output);
+
+	// ---- pacing diagnostic ----------------------------------------------------------------
+	// Answers the one question an ablation that flips the MSCCL XML "rate" on and off cannot
+	// answer from completion time alone: was the cap ever actually applied? A cap that never
+	// reaches the shaper and a cap that reaches it but never binds produce byte-identical runs,
+	// and so does a cap the shaper structurally cannot express -- a message of a single MTU has
+	// no inter-packet gap to stretch, so its requested rate is silently discarded.
+	//
+	// Static (job-global) rather than per-RdmaHw: every field here is only ever reported summed
+	// over all nodes, and one copy avoids walking the node list to collect it.
+	struct PaceStats {
+		// Per packet, from UpdateNextAvail -- who set the gap that follows this packet. The
+		// four buckets are disjoint and together cover every paced packet.
+		uint64_t cappedPkts = 0,   cappedBytes = 0;    // the sending message's XML cap won
+		uint64_t slackPkts = 0,    slackBytes = 0;     // cap present but the cc rate was already lower
+		uint64_t noCapPkts = 0,    noCapBytes = 0;     // sending message carried no cap
+		uint64_t tailPkts = 0,     tailBytes = 0;      // no sending message left: see the note in UpdateNextAvail
+		double   cappedSeconds = 0.0;                  // sum bytes*8/cap, for the byte-weighted mean applied cap
+		// Per message, from NotePacedMessage -- what the schedule asked for, before the
+		// transport got a chance to apply or ignore it.
+		uint64_t msgsWithRate = 0, msgsWithoutRate = 0;
+		uint64_t msgsSinglePkt = 0;                    // of msgsWithRate: <= one MTU, so unshapeable
+		uint64_t ratedBytes = 0;                       // bytes posted under a rate
+		double   ratedSeconds = 0.0;                   // sum bytes*8/rate over those, for their mean
+	};
+	static PaceStats m_paceStats;
+	// Records the rate the schedule asked for on one message as it is posted. Called by
+	// MscclChannel::SendRdma next to PushMessage; rate 0 means the step carried no "rate".
+	void NotePacedMessage(uint64_t bytes, DataRate rate);
+	// The whole diagnostic as a short block on `os`, or one line if no rate was ever requested.
+	static void PrintPaceStats(std::ostream& os);
 
 	// nvls
 	void enable_nvls();

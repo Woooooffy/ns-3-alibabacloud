@@ -59,7 +59,7 @@ MAX_MSGS_IN_FLIGHT = 8
 
 FIELDS = ["pair_bytes", "config", "input_bytes", "sim_time_ns", "algbw_gbps",
           "pause", "resume", "max_qlen_bytes", "nic_mean_gbps", "nic_peak_gbps",
-          "nic_interval_ns", "qlen_rows", "wall_s"]
+          "paced_pct", "unshapeable_pct", "nic_interval_ns", "qlen_rows", "wall_s"]
 
 
 # ---- sizes -------------------------------------------------------------------------------
@@ -149,8 +149,25 @@ def run_one(pair_bytes, name, flags, args):
                sim_time_ns=int(sim.group(1)),
                algbw_gbps=float(algbw.group(1)) if algbw else "",
                nic_interval_ns=interval, qlen_rows=qlen_rows, wall_s=round(wall, 1))
+    row.update(pace_stats(out))
     row.update(read_traces(label, args))
     return row
+
+
+def pace_stats(out):
+    """RdmaHw::PrintPaceStats, reduced to the two numbers the ablation turns on.
+
+    paced_pct is the share of transmitted bytes whose inter-packet gap the schedule's XML rate
+    actually set; it is what makes a --rate run different from a --rate=0 one, and 0 here means
+    the two are the same simulation no matter what the latency column shows. unshapeable_pct is
+    the share of rate-carrying messages that fit in one MTU -- those have no inter-packet gap to
+    stretch, so their rate can only ever be discarded, which is the expected failure mode when a
+    schedule solved for large messages is replayed at small ones.
+    """
+    m = re.search(r"bytes shaped by the XML rate:\s*[0-9.]+ of [0-9.]+ MB \(([0-9.]+)%\)", out)
+    u = re.search(r"one MTU or less \(rate unshapeable\):\s*\d+ \(([0-9.]+)%\)", out)
+    return dict(paced_pct=float(m.group(1)) if m else "",
+                unshapeable_pct=float(u.group(1)) if u else "")
 
 
 # ---- trace reduction ---------------------------------------------------------------------
@@ -310,6 +327,16 @@ def tables(done, sweep_sizes, out):
     table("Peak queue depth (KB)",
           "Deepest egress queue reached on any switch port, at any instant, anywhere in the "
           "network.", qmax)
+    def paced(row, _):
+        p, u = num(row, "paced_pct"), num(row, "unshapeable_pct")
+        if p is None:
+            return "-"
+        return f"{p:.1f}" if u is None else f"{p:.1f} / {u:.0f}"
+
+    table("Bytes shaped by the XML rate (%, paced / unshapeable messages)",
+          "Left: share of transmitted bytes whose gap the schedule's `rate` actually set. Right: "
+          "share of rate-carrying messages that fit in one MTU, which have no inter-packet gap to "
+          "stretch. A 0 on the left means the run is identical to one with `rate` off.", paced)
     table("GPU fabric NIC bandwidth (Gbps, mean / peak per NIC)",
           "Mean is per fabric NIC over the window in which any NIC was transmitting; peak is "
           "the busiest single sample. Line rate is 400.", bw)
@@ -351,6 +378,16 @@ def main():
 
     os.makedirs(args.outdir, exist_ok=True)
     results = os.path.join(args.outdir, "results.csv")
+    # Appending rows under a header from an older FIELDS would write each row's columns against
+    # the wrong names, silently corrupting every earlier point too. Refuse instead.
+    if os.path.exists(results):
+        with open(results) as f:
+            header = next(csv.reader(f), [])
+        if header != FIELDS:
+            raise SystemExit(
+                f"{results} was written with different columns ({','.join(header)}).\n"
+                f"Expected: {','.join(FIELDS)}\n"
+                "Delete it or pass a fresh --outdir; the old points have to be re-run anyway.")
     sweep = sizes(args.start, args.end)
     done = load(results)
 

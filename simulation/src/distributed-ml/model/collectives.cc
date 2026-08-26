@@ -605,6 +605,10 @@ namespace ns3 {
 
 			qps[lane]->PushMessage(laneBytes, srcDataPtr ? srcDataPtr + laneOff : nullptr,
 				mscclFlowId, finishCb, Callback<void>(), paceRate);
+			// Diagnostic only: record what the schedule asked for at the moment it is asked
+			// for, so a run can report whether its rates were applied, ignored, or (for a
+			// message of a single MTU) not expressible at all. See RdmaHw::PaceStats.
+			m_app->GetRdmaDriver()->m_rdma->NotePacedMessage(laneBytes, paceRate);
 			// PushMessage only enqueues onto the qp; unlike AddQueuePair (which calls NewQp once
 			// at bootstrap for this persistent qp's creation), it doesn't wake up the NIC. Without
 			// this, a qp that had drained to idle between Send() calls never gets re-polled and
