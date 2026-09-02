@@ -177,18 +177,18 @@ def fmt_size(n):
     return f"{n}B"
 
 
-# Each size is 4x the last. A 1KB..1GB range is 11 points on this ladder rather than 21, which
-# matters because the cost of a point grows with the size: the top two points alone dominate
-# either sweep's wall clock, so the extra x2 points buy resolution mostly where it is cheapest
-# and least interesting.
+# Each size is --step x the last, 4 by default. A 1KB..1GB range is 11 points on that ladder
+# rather than 21, which matters because the cost of a point grows with the size: the top two
+# points alone dominate either sweep's wall clock, so the extra x2 points would buy resolution
+# mostly where it is cheapest and least interesting.
 STEP = 4
 
 
-def sizes(start, end):
-    out, s = [], start
-    while s <= end:
-        out.append(s)
-        s *= STEP
+def sizes(start, end, step=STEP):
+    out, s = [], float(start)
+    while int(s) <= end:
+        out.append(int(s))
+        s *= step
     return out
 
 
@@ -214,7 +214,11 @@ def nic_interval_ns(input_bytes, prog, host_tx_gbps, target_samples=500):
 def run_one(pair_bytes, name, flags, args, prog, no_build):
     input_bytes = pair_bytes * prog.ranks
     label = f"sweep_{prog.slug(args.l2ack)}_{name}_{fmt_size(pair_bytes)}"
-    interval = nic_interval_ns(input_bytes, prog, args.host_tx_gbps)
+    # The NIC bandwidth trace is a periodic event per NIC for the whole run -- a few hundred
+    # samples x every GPU NIC, all of it scheduler work the collective does not need. 0 turns
+    # the sampling off in the scratch, which is what --no-nic-bw is for when only the latency
+    # and PFC columns are wanted.
+    interval = 0 if args.no_nic_bw else nic_interval_ns(input_bytes, prog, args.host_tx_gbps)
     # The per-packet queue trace is one row per enqueue and per dequeue at every hop, so it
     # scales with the traffic and passes a gigabyte well before the top of this range. The
     # scratch tracks the per-port high-water marks either way, which is all the table needs.
@@ -266,7 +270,7 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
                algbw_gbps=float(algbw.group(1)) if algbw else "",
                nic_interval_ns=interval, qlen_rows=qlen_rows, wall_s=round(wall, 1))
     row.update(pace_stats(out))
-    row.update(read_traces(label, args))
+    row.update(read_traces(label, args, nic=interval > 0))
     return row
 
 
@@ -291,12 +295,12 @@ def pace_stats(out):
 
 # ---- trace reduction ---------------------------------------------------------------------
 
-def read_traces(label, args):
+def read_traces(label, args, nic=True):
     """The three trace-derived columns, plus check_congestion.py's own report for the record."""
     m = {}
     m.update(pfc_counts(label))
     m["max_qlen_bytes"] = peak_qlen(label)
-    m.update(nic_bw(label))
+    m.update(nic_bw(label) if nic else dict(nic_mean_gbps="", nic_peak_gbps=""))
 
     # Run the shipped classifier too, so each sweep point keeps the human-readable breakdown
     # (which link class paused, how lopsided the NIC pair was) next to the reduced numbers.
@@ -476,8 +480,11 @@ def main():
     ap.add_argument("--start", type=parse_size, default="1KB",
                     help="smallest per-GPU-pair message (default 1KB)")
     ap.add_argument("--end", type=parse_size, default="1GB",
-                    help="largest per-GPU-pair message; sizes step by x{} from --start "
-                         "(default 1GB)".format(STEP))
+                    help="largest per-GPU-pair message; sizes step by x--step from --start "
+                         "(default 1GB)")
+    ap.add_argument("--step", type=float, default=STEP, metavar="X",
+                    help=f"multiplicative gap between consecutive sizes (default {STEP}); "
+                         "2 doubles the number of points, 8 quarters it")
     ap.add_argument("--coll", default="alltoall", choices=["alltoall", "allgather"])
     ap.add_argument("--l2ack", type=int, metavar="BYTES",
                     help="receiver ack interval; 0 is no-ack mode (default: the scratch's own). "
@@ -497,6 +504,10 @@ def main():
     ap.add_argument("--qlen-rows-max-bytes", type=parse_size, default="16MB",
                     help="keep the per-packet queue trace only while --inputBytes is at most "
                          "this (default 16MB); above it only the peak summary is written")
+    ap.add_argument("--no-nic-bw", action="store_true",
+                    help="skip the per-NIC bandwidth sampling (--nicBwInterval=0): drops the "
+                         "periodic trace events from every run, so it goes faster, at the cost "
+                         "of the bandwidth table (its cells read '-')")
     ap.add_argument("--keep-traces", action="store_true",
                     help="keep the raw per-run CSVs instead of deleting them once reduced")
     ap.add_argument("--skip-build", action="store_true",
@@ -511,6 +522,9 @@ def main():
             raise SystemExit(f"unknown config {n!r}; pick from {','.join(CONFIGS)}")
     if args.start > args.end:
         raise SystemExit("--start is larger than --end")
+    # A step of 1 or less never advances past --start, so the size loop would not terminate.
+    if args.step <= 1:
+        raise SystemExit("--step must be greater than 1")
 
     prog = Program(args.program, args.ranks)
     if args.l2ack is None:
@@ -537,7 +551,7 @@ def main():
                 f"{results} was written with different columns ({','.join(header)}).\n"
                 f"Expected: {','.join(FIELDS)}\n"
                 "Delete it or pass a fresh --outdir; the old points have to be re-run anyway.")
-    sweep = sizes(args.start, args.end)
+    sweep = sizes(args.start, args.end, args.step)
     done = load(results)
 
     if not args.tables_only:
