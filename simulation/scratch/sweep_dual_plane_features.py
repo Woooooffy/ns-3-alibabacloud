@@ -12,10 +12,11 @@ scratch's --inputBytes (one rank's total input) is <ranks>x the pair size -- 1 G
 --flags the program actually accepts, so a scratch missing one of the ablation knobs still
 sweeps (that knob is simply left at its own default). Start small.
 
-Seven configurations per size: a baseline with every feature off, one run per feature turned
+Eight configurations per size: a baseline with every feature off, one run per feature turned
 on alone (flow ids paired with schedule-pinned NICs, since routing by flow id says nothing
-useful about connections injected on whichever NIC), one with everything on except the rate
-annotations, and one with all of them on (the scratch's own defaults).
+useful about connections injected on whichever NIC), two subtractions from the full set
+(everything except the rate annotations, and everything except the netDeps edges -- dropping
+both at once is the flowId+nic run), and one with all of them on (the scratch's own defaults).
 
 Results are appended to results.csv under a per-program output directory and re-read on
 startup, so an interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are
@@ -47,6 +48,10 @@ CONFIGS = collections.OrderedDict([
     # Everything on except the rate-annotated XML: isolates what the schedule's per-flow rates
     # buy once the rest of the machinery is already in force.
     ("noRate",     dict(rate=0, netDeps=1, flowId=1, nicSel="schedule")),
+    # The same subtraction for the schedule's cross-rank dependencies. Dropping netDeps AND
+    # rate together needs no config of its own: with only four knobs that is exactly the
+    # flowId+nic run above.
+    ("noNetDeps",  dict(rate=1, netDeps=0, flowId=1, nicSel="schedule")),
     ("all",        dict(rate=1, netDeps=1, flowId=1, nicSel="schedule")),
 ])
 BASELINE = "baseline"
