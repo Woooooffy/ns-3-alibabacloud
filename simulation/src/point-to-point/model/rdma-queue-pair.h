@@ -222,7 +222,13 @@ public:
 	uint16_t m_ipid;
 	uint64_t ReceiverNextExpectedSeq;
 	Time m_nackTimer;
-	int32_t m_milestone_rx;
+	// Packets received in order since the last Ack this qp generated. The ack cadence is a
+	// packet count (RdmaHw::AckEveryNPackets), not a byte milestone: coalescing in a real HCA
+	// counts packets, and a byte threshold cannot land on a packet boundary in general -- the
+	// old `ReceiverNextExpectedSeq % L2ChunkSize` trigger fired on an arithmetic beat (every
+	// 125th packet at MTU 4096 / chunk 4000) with no physical meaning, and a byte milestone
+	// could skip a message's final bytes entirely, leaving it forever unacknowledged.
+	uint32_t m_pktsSinceAck;
 	uint32_t m_lastNACK;
 	EventId QcnTimerEvent; // if destroy this rxQp, remember to cancel this timer
 	// per-flow rx-side byte-arrival notification, set once (eagerly, at connection setup --

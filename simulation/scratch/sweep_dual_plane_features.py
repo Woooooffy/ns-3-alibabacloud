@@ -1,10 +1,19 @@
 #!/usr/bin/env python3
-"""Sweep a dual-plane collective scratch's feature ablations over a range of message sizes.
+"""Sweep a collective scratch's feature ablations over a range of message sizes.
 
-The program to sweep is the first argument: a scratch name, or a path to its .cc.
+The programs to sweep are the leading arguments: scratch names, or paths to their .cc. Give
+several and each is swept in turn into its own output directory.
 
     ./sweep_dual_plane_features.py dual_plane_hetero --start 1KB --end 64KB
     ./sweep_dual_plane_features.py rail_optimized_256gpu_dual_plane --start 1KB --end 1GB
+    ./sweep_dual_plane_features.py mini --start 4KB --end 4MB
+
+`mini` is an alias for the three small controlled-set topologies (mini_1gpu_1nic,
+mini_2gpu_1nic, mini_2gpu_2nic), which share one 100Gbps 2:1-tapered leaf-spine fabric and
+differ only in the host interior. They carry their own line-rate defaults, so the bandwidth
+table's caption and the --nicBwInterval sizing are right without passing --host-tx-gbps or
+--nic-line-gbps. They are small enough to sweep end to end in minutes, which makes them the
+place to check that an ablation does what it claims before spending hours at 256 GPUs.
 
 Sizes on the command line are PER GPU PAIR: every rank sends that much to each rank, so the
 scratch's --inputBytes (one rank's total input) is <ranks>x the pair size -- 1 GB per pair is
@@ -59,10 +68,35 @@ BASELINE = "baseline"
 # Constant across every run, per the sweep's terms.
 PROTO_CHUNK_BYTES = 2 * 1024 * 1024
 MAX_MSGS_IN_FLIGHT = 8
+# Mid-message ack coalescing, in packets. Sized against the BDP window rather than the message
+# size -- a rail-local 400G hop pair gives a ~148 KB window, ~36 packets at a 4096 B MTU, and a
+# quarter of that keeps the ack sawtooth clear of the window edge. Constant across the sweep for
+# that reason: it is a property of the network, not of the size axis.
+ACK_EVERY_N_PKTS = 8
 
 FIELDS = ["pair_bytes", "config", "input_bytes", "sim_time_ns", "algbw_gbps",
           "pause", "resume", "max_qlen_bytes", "nic_mean_gbps", "nic_peak_gbps",
           "paced_pct", "unshapeable_pct", "nic_interval_ns", "qlen_rows", "wall_s"]
+
+# The three small controlled-set topologies, swept together under the name "mini". Same
+# fabric in all three (2 hosts per leaf, 100Gbps links, 2:1 tapered uplinks); only the host
+# interior differs, which is exactly what makes them a set.
+MINI_PROGRAMS = ["mini_1gpu_1nic", "mini_2gpu_1nic", "mini_2gpu_2nic"]
+GROUPS = {"mini": MINI_PROGRAMS}
+
+# Per-program overrides for the two numbers the sweep cannot read out of the source: a host's
+# total fabric egress (which only sizes the --nicBwInterval sampling period) and the per-NIC
+# line rate (quoted in the bandwidth table's caption). Both default to the 400G dual-plane
+# numbers; anything listed here says otherwise. An explicit --host-tx-gbps / --nic-line-gbps
+# still wins, so a preset never silently overrides what was asked for.
+PROGRAM_DEFAULTS = {
+    # 1 GPU, 1 x 100Gbps NIC per host.
+    "mini_1gpu_1nic": dict(host_tx_gbps=100.0, nic_line_gbps=100.0),
+    # 2 GPUs sharing ONE 100Gbps NIC off the root complex -- the funnel variant.
+    "mini_2gpu_1nic": dict(host_tx_gbps=100.0, nic_line_gbps=100.0),
+    # 2 GPUs, one 100Gbps NIC each, so the host presents 200Gbps.
+    "mini_2gpu_2nic": dict(host_tx_gbps=200.0, nic_line_gbps=100.0),
+}
 
 
 # ---- the program under test -------------------------------------------------------------
@@ -82,7 +116,7 @@ class Program:
         # take this: build passes its argument to a regex expecting an already-built path, so
         # only the run path knows how to turn scratch/<name> into a target.
         self.target = f"scratch/{self.name}"
-        src = open(self.path, encoding="utf-8", errors="replace").read()
+        src = self._read_with_local_headers(self.path)
 
         self.flags = set(re.findall(r'cmd\.AddValue\(\s*"([A-Za-z0-9_]+)"', src))
         if "inputBytes" not in self.flags:
@@ -94,17 +128,21 @@ class Program:
         self.ranks = ranks or self._count(src, "gpunodes")
         if not self.ranks:
             raise SystemExit(f"cannot find the GPU count in {self.path}; pass --ranks")
-        self.nvswitches = self._count(src, "nvswtches") or 1
+        # 0 is a real answer, not a missing one: mini_1gpu_1nic has no host tier at all.
+        # off_node_fraction reads it that way, so do not coerce it to 1 here.
+        self.nvswitches = self._count(src, "nvswtches")
         # 64-bit --inputBytes is what lets a sweep past 4 GB per rank mean anything; the older
         # uint32_t declaration wraps silently, which would look like a suspiciously fast run.
         self.wide_input = bool(re.search(r"uint64_t\s+inputBytes", src))
-        # L2AckInterval is a compile-time choice in these scratches, not a --flag, and it
-        # changes the transport underneath every configuration: with acks off the sender
-        # self-acknowledges at send completion, so nothing ever waits a round trip and
-        # --maxMsgsInFlight cannot bind. Runs from the two modes are therefore not comparable,
-        # and must not land in the same results.csv -- hence the suffix on every output path.
-        # Either a literal in the SetDefault, or -- once the scratch exposes --l2Ack -- the
-        # initialiser of the variable that SetDefault passes.
+        # L2AckInterval selects the ack mode, and it changes the transport underneath every
+        # configuration: with acks off the sender self-acknowledges at send completion, so
+        # nothing ever waits a round trip and --maxMsgsInFlight cannot bind. Runs from the two
+        # modes are therefore not comparable, and must not land in the same results.csv --
+        # hence the suffix on every output path. Either a literal in the SetDefault, or --
+        # once the scratch exposes --l2Ack -- the initialiser of the variable that SetDefault
+        # passes. Note this is now a mode, not a byte cadence: the cadence moved to
+        # AckEveryNPackets, so a scratch predating that change is NOT comparable with one after
+        # it even at the same --l2ack. Use a fresh --outdir across that boundary.
         m = (re.search(r'"ns3::RdmaHw::L2AckInterval"\s*,\s*UintegerValue\((\d+)\)', src)
              or re.search(r"uint32_t\s+l2AckInterval\s*=\s*(\d+)", src))
         self.ack_default = int(m.group(1)) if m else 0
@@ -117,6 +155,26 @@ class Program:
         into logs/ are keyed by label and would otherwise be overwritten in place.
         """
         return self.name + ("_ack" if ack_interval else "")
+
+    @staticmethod
+    def _read_with_local_headers(path):
+        """The scratch's source, with any local "..." headers it includes appended.
+
+        Everything this class knows it reads out of the source, and the mini_* scratches keep
+        their whole harness -- the CommandLine, the uint64_t --inputBytes, the L2AckInterval
+        default -- in mini_harness.h, leaving only the generated topology in the .cc. Reading
+        the .cc alone would therefore find no --inputBytes at all and refuse to sweep them.
+        One level deep is enough: these headers include only ns3/... umbrellas, which are not
+        local and hold nothing this scans for.
+        """
+        text = open(path, encoding="utf-8", errors="replace").read()
+        here = os.path.dirname(path)
+        parts = [text]
+        for inc in re.findall(r'^\s*#include\s+"([^"/]+\.h)"', text, re.M):
+            hdr = os.path.join(here, inc)
+            if os.path.isfile(hdr):
+                parts.append(open(hdr, encoding="utf-8", errors="replace").read())
+        return "\n".join(parts)
 
     @staticmethod
     def _resolve(spec):
@@ -149,8 +207,11 @@ class Program:
 
         Peers sharing a rank's NVSwitch are reached over NVLink and never touch the fabric.
         Domains are not always equal-sized, but this only picks a sampling period.
+
+        With no host tier (mini_1gpu_1nic) every rank is alone on its host, so everything but
+        a rank's own share crosses the fabric.
         """
-        per_domain = max(1, self.ranks // self.nvswitches)
+        per_domain = 1 if not self.nvswitches else max(1, self.ranks // self.nvswitches)
         return max(0.1, (self.ranks - per_domain) / self.ranks)
 
     def filter(self, argv):
@@ -238,7 +299,14 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
             f"--protoChunkBytes={PROTO_CHUNK_BYTES}",
             f"--maxMsgsInFlight={MAX_MSGS_IN_FLIGHT}",
             f"--nicBwInterval={interval}", f"--qlenRows={qlen_rows}",
-            f"--l2Ack={args.l2ack}", "--checkLog=silent"]
+            f"--l2Ack={args.l2ack}", f"--ackEveryNPkts={args.ack_every_n_pkts}",
+            # Off for the sweep even on scratches whose own default is on (the mini_* set):
+            # the tester allocates each rank's full expected output, which at the top of a
+            # size range is the largest allocation in the run, and it measures nothing this
+            # table reports. Verify once with a single run, then sweep. Dropped silently for
+            # scratches that do not declare the flag.
+            "--correctness=0",
+            "--checkLog=silent"]
     argv, dropped = prog.filter(argv)
     if dropped and not run_one.warned:
         print(f"  note: {prog.name} declares no " + ", ".join(f"--{d}" for d in sorted(set(dropped)))
@@ -480,8 +548,10 @@ def tables(done, sweep_sizes, out, line_gbps):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("program",
-                    help="scratch to sweep: a name under simulation/scratch, or a path to a .cc")
+    ap.add_argument("program", nargs="+",
+                    help="scratch(es) to sweep: names under simulation/scratch, paths to .cc "
+                         "files, or the group name " + "/".join(GROUPS) + ". Each program is "
+                         "swept in turn into its own output directory")
     ap.add_argument("--start", type=parse_size, default="1KB",
                     help="smallest per-GPU-pair message (default 1KB)")
     ap.add_argument("--end", type=parse_size, default="1GB",
@@ -491,21 +561,28 @@ def main():
                     help=f"multiplicative gap between consecutive sizes (default {STEP}); "
                          "2 doubles the number of points, 8 quarters it")
     ap.add_argument("--coll", default="alltoall", choices=["alltoall", "allgather"])
-    ap.add_argument("--l2ack", type=int, metavar="BYTES",
-                    help="receiver ack interval; 0 is no-ack mode (default: the scratch's own). "
-                         "Results land in a separate directory per mode, since it changes the "
-                         "transport under every configuration and the two are not comparable")
+    ap.add_argument("--l2ack", type=int, metavar="0|1",
+                    help="ack mode: 0 is no-ack, nonzero turns acks on (default: the scratch's "
+                         "own). Results land in a separate directory per mode, since it changes "
+                         "the transport under every configuration and the two are not comparable")
+    ap.add_argument("--ack-every-n-pkts", type=int, default=ACK_EVERY_N_PKTS, metavar="N",
+                    help=f"mid-message ack coalescing in packets (default {ACK_EVERY_N_PKTS}); "
+                         "packets closing a message are acknowledged regardless. Bound by the "
+                         "BDP window, not by the message size, so it does not scale with --end")
     ap.add_argument("--configs", default=",".join(CONFIGS),
                     help="comma-separated subset of: " + ",".join(CONFIGS))
     ap.add_argument("--ranks", type=int,
                     help="GPUs in the topology (default: read from the source)")
-    ap.add_argument("--host-tx-gbps", type=float, default=800.0,
+    ap.add_argument("--host-tx-gbps", type=float,
                     help="a GPU's total fabric egress, used only to size the --nicBwInterval "
-                         "sampling period (default 800 = two 400G NICs)")
-    ap.add_argument("--nic-line-gbps", type=float, default=400.0,
-                    help="per-NIC line rate, quoted in the bandwidth table's caption")
+                         "sampling period (default 800 = two 400G NICs, or the program's own "
+                         "entry in PROGRAM_DEFAULTS)")
+    ap.add_argument("--nic-line-gbps", type=float,
+                    help="per-NIC line rate, quoted in the bandwidth table's caption (default "
+                         "400, or the program's own entry in PROGRAM_DEFAULTS)")
     ap.add_argument("--outdir",
-                    help="default: sweep_results/<program> next to this script")
+                    help="default: sweep_results/<program> next to this script. With more than "
+                         "one program, each program's slug is appended so they cannot collide")
     ap.add_argument("--qlen-rows-max-bytes", type=parse_size, default="16MB",
                     help="keep the per-packet queue trace only while --inputBytes is at most "
                          "this (default 16MB); above it only the peak summary is written")
@@ -531,19 +608,55 @@ def main():
     if args.step <= 1:
         raise SystemExit("--step must be greater than 1")
 
-    prog = Program(args.program, args.ranks)
-    if args.l2ack is None:
-        args.l2ack = prog.ack_default
-    elif "l2Ack" not in prog.flags:
-        raise SystemExit(f"{prog.name} has no --l2Ack; its ack interval is fixed at "
-                         f"{prog.ack_default} in the source.")
-    if not prog.wide_input and args.end * prog.ranks > (1 << 32):
-        raise SystemExit(f"{prog.name} declares --inputBytes as uint32_t, which wraps at 4 GB; "
-                         f"{fmt_size(args.end)}/pair is {fmt_size(args.end * prog.ranks)}/rank. "
-                         f"Widen it to uint64_t first.")
-    if args.outdir is None:
-        args.outdir = os.path.join(HERE, "sweep_results", prog.slug(args.l2ack))
+    specs = []
+    for spec in args.program:
+        specs.extend(GROUPS.get(spec, [spec]))
+    if args.ranks and len(specs) > 1:
+        raise SystemExit("--ranks names one topology's GPU count, so it cannot apply to "
+                         f"{len(specs)} programs at once; sweep them one at a time.")
 
+    # Read every program before running any of them. A bad name in the third position should
+    # not surface an hour into the first sweep.
+    progs = [Program(spec, args.ranks) for spec in specs]
+
+    # The ack mode and the two link-rate numbers are per program, but argparse holds one of
+    # each. Resolve them per program and hand sweep_one its own copy rather than mutating the
+    # shared namespace, which would leak the first program's defaults into the second.
+    base_outdir, base_l2ack = args.outdir, args.l2ack
+    for i, prog in enumerate(progs):
+        if len(progs) > 1:
+            print(("\n" if i else "") + "=" * 78)
+            print(f"[{i + 1}/{len(progs)}] {prog.name}")
+            print("=" * 78)
+        pa = argparse.Namespace(**vars(args))
+        defaults = PROGRAM_DEFAULTS.get(prog.name, {})
+        if pa.host_tx_gbps is None:
+            pa.host_tx_gbps = defaults.get("host_tx_gbps", 800.0)
+        if pa.nic_line_gbps is None:
+            pa.nic_line_gbps = defaults.get("nic_line_gbps", 400.0)
+        pa.l2ack = base_l2ack
+        if pa.l2ack is None:
+            pa.l2ack = prog.ack_default
+        elif "l2Ack" not in prog.flags:
+            raise SystemExit(f"{prog.name} has no --l2Ack; its ack interval is fixed at "
+                             f"{prog.ack_default} in the source.")
+        if not prog.wide_input and pa.end * prog.ranks > (1 << 32):
+            raise SystemExit(f"{prog.name} declares --inputBytes as uint32_t, which wraps at 4 GB; "
+                             f"{fmt_size(pa.end)}/pair is {fmt_size(pa.end * prog.ranks)}/rank. "
+                             f"Widen it to uint64_t first.")
+        if base_outdir is None:
+            pa.outdir = os.path.join(HERE, "sweep_results", prog.slug(pa.l2ack))
+        elif len(progs) > 1:
+            # One --outdir over several programs would have them append to each other's
+            # results.csv under incompatible rank counts. Give each its own subdirectory.
+            pa.outdir = os.path.join(base_outdir, prog.slug(pa.l2ack))
+        else:
+            pa.outdir = base_outdir
+        sweep_one(prog, pa)
+
+
+def sweep_one(prog, args):
+    """One program's whole sweep: run the missing points, then (re)print its tables."""
     os.makedirs(args.outdir, exist_ok=True)
     results = os.path.join(args.outdir, "results.csv")
     # Appending rows under a header from an older FIELDS would write each row's columns against
@@ -558,15 +671,19 @@ def main():
                 "Delete it or pass a fresh --outdir; the old points have to be re-run anyway.")
     sweep = sizes(args.start, args.end, args.step)
     done = load(results)
+    # Per program, not per process: which --flags a scratch is missing is a fact about that
+    # scratch, so the note has to be allowed to print again for the next one.
+    run_one.warned = False
 
     if not args.tables_only:
         print(f"{prog.name}: {prog.ranks} GPUs, {prog.nvswitches} NVSwitches, "
-              + (f"acks every {args.l2ack} B" if args.l2ack else "no-ack mode"))
+              + (f"acks on (mode {args.l2ack})" if args.l2ack else "no-ack mode"))
         print(f"output: {args.outdir}")
         print(f"{len(sweep)} sizes x {len(args.configs.split(','))} configs, "
               f"{fmt_size(args.start)}..{fmt_size(args.end)} per pair "
               f"({fmt_size(args.start * prog.ranks)}..{fmt_size(args.end * prog.ranks)} per rank)\n")
-        # The first run to actually execute carries the build; the rest never rebuild.
+        # The first run to actually execute carries the build; the rest never rebuild. Each
+        # program needs its own build, since each is a separate cmake target.
         built = args.skip_build
         print("build: " + ("assumed current (--skip-build), every run is --no-build"
                            if built else "on the first run only, then --no-build") + "\n")

@@ -106,6 +106,12 @@ public:
 		  uint16_t payload_size;
 		  // SeqTsHeader
 		  uint16_t pg;
+		  // Requester-set "please acknowledge this packet" flag, the analogue of the
+		  // InfiniBand BTH AckReq bit. It rides in bit 15 of the on-wire pg field (real
+		  // priority groups are single digits) so it costs no wire bytes and shifts no
+		  // byte offset any switch relies on. Deserialize masks it out of `pg` before
+		  // anyone sees it, so every existing pg consumer is unaffected.
+		  uint8_t ackReq;
 		  uint64_t seq;
 		  IntHeader ih;
 		  // MscclFlowIdHeader, innermost (right after the INT header)

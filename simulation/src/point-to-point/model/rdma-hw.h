@@ -38,6 +38,7 @@ public:
 	double m_nack_interval;
 	uint32_t m_chunk;
 	uint32_t m_ack_interval;
+	uint32_t m_ackEveryNPkts;
 	bool m_backto0;
 	bool m_var_win, m_fast_react;
 	bool m_rateBound;
@@ -176,7 +177,7 @@ public:
 	bool enable_pcie_pause; 
 
 	void CheckandSendQCN(Ptr<RdmaRxQueuePair> q);
-	int ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size);
+	int ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size, bool ackReq);
 	void AddHeader (Ptr<Packet> p, uint16_t protocolNumber);
 	static uint16_t EtherToPpp (uint16_t protocol);
 

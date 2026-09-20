@@ -54,6 +54,17 @@ public:
   void SetPG (uint16_t pg);
   uint16_t GetPG () const;
 
+  /**
+   * Requester's "acknowledge this packet" flag -- the InfiniBand BTH AckReq bit.
+   *
+   * Stored in bit 15 of the pg field rather than in a field of its own: priority groups are
+   * single digits, so the bit is free, and adding a byte here would shift the MscclFlowIdHeader
+   * and INT-header offsets that switches reach by fixed displacement. SetPG preserves it and
+   * GetPG masks it off, so the two accessors are independent and order-insensitive.
+   */
+  void SetAckReq (bool ackReq);
+  bool GetAckReq () const;
+
   static TypeId GetTypeId (void);
   virtual TypeId GetInstanceTypeId (void) const;
   virtual void Print (std::ostream &os) const;

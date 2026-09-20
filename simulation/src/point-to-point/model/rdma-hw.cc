@@ -52,14 +52,34 @@ TypeId RdmaHw::GetTypeId (void)
 				MakeDoubleAccessor(&RdmaHw::m_nack_interval),
 				MakeDoubleChecker<double>())
 		.AddAttribute("L2ChunkSize",
-				"Layer 2 chunk size. Disable chunk mode if equals to 0.",
+				"Go-back-N rewind quantum, in bytes, used only when L2BackToZero is set: a "
+				"loss rewinds both ends to a multiple of this rather than to the exact "
+				"cumulative sequence number. 0 disables chunk mode. It no longer has any "
+				"bearing on ack generation -- see AckEveryNPackets. If you do enable it, make "
+				"it a multiple of the MTU, or the rewind lands mid-packet.",
 				UintegerValue(0),
 				MakeUintegerAccessor(&RdmaHw::m_chunk),
 				MakeUintegerChecker<uint32_t>())
 		.AddAttribute("L2AckInterval",
-				"Layer 2 Ack intervals. Disable ack if equals to 0.",
+				"Acknowledgement mode: 0 disables acks entirely (the sender then infers "
+				"completion from its own send completion). Any nonzero value enables them. "
+				"This used to be a byte cadence as well; that role now belongs to "
+				"AckEveryNPackets, because coalescing counts packets in real hardware and a "
+				"byte threshold need not land on a packet -- or on a message -- boundary.",
 				UintegerValue(0),
 				MakeUintegerAccessor(&RdmaHw::m_ack_interval),
+				MakeUintegerChecker<uint32_t>())
+		.AddAttribute("AckEveryNPackets",
+				"Mid-message ack coalescing: acknowledge at least every N in-order packets. "
+				"The analogue of an HCA setting the BTH AckReq bit periodically inside a long "
+				"message, and it exists for one reason -- to keep the sender's unacknowledged "
+				"bytes under its window (RdmaQueuePair::IsWinBound), since snd_una only "
+				"advances on an ack. Size it against the BDP that window is built from: "
+				"N <= win/(4*MTU) leaves the ack sawtooth comfortably inside the window. "
+				"Acks at message boundaries are unconditional and independent of this (see "
+				"RdmaHw::GetNxtPacket); 0 leaves only those. Ignored when L2AckInterval is 0.",
+				UintegerValue(8),
+				MakeUintegerAccessor(&RdmaHw::m_ackEveryNPkts),
 				MakeUintegerChecker<uint32_t>())
 		.AddAttribute("L2BackToZero",
 				"Layer 2 go back to zero transmission.",
@@ -545,9 +565,8 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 		rxQp->m_ecn_source.qfb++;
 	}
 	rxQp->m_ecn_source.total++;
-	rxQp->m_milestone_rx = m_ack_interval;
 
-	int x = ReceiverCheckSeq(ch.udp.seq, rxQp, payload_size);
+	int x = ReceiverCheckSeq(ch.udp.seq, rxQp, payload_size, ch.udp.ackReq != 0);
 
 	// rx-flow completion: fire per-packet copy callback and count down bytes. Registered
 	// directly on this rx qp (eagerly, at connection setup -- see
@@ -722,7 +741,22 @@ int RdmaHw::Receive(Ptr<Packet> p, CustomHeader &ch){
 	return 0;
 }
 
-int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size){
+// Two independent reasons to acknowledge, mirroring the two cases in which an InfiniBand
+// requester sets the BTH AckReq bit.
+//
+// `ackReq` is the mandatory one: the sender marks the packet that closes a message, and that
+// ack is what retires the message. Retirement is load-bearing three times over -- it advances
+// snd_una (window credit), it frees a slot against m_maxMsgsInFlight (RdmaQueuePair::
+// GetSendingMessage returns nullptr once the scan reaches the limit, so the qp goes ineligible
+// until something retires), and it fires notifyAppFinish, which is how the collective makes
+// progress. A cadence alone cannot cover it: if the cadence exceeds what m_maxMsgsInFlight
+// messages are worth, the sender fills every slot before the receiver ever reaches it, nothing
+// retires, no further bytes are sent, and so no ack is ever provoked -- a deadlock, not a
+// slowdown. This is exactly why the spec makes AckReq-on-last-packet mandatory.
+//
+// The packet counter is the discretionary one, and its only job is to stop snd_una lagging far
+// enough behind snd_nxt inside one long message that the window gates. See AckEveryNPackets.
+int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size, bool ackReq){
 	uint64_t expected = q->ReceiverNextExpectedSeq;
 	if (seq == expected){
 		q->ReceiverNextExpectedSeq = expected + size;
@@ -731,19 +765,20 @@ int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size
 			// completion locally from its own send completion instead.
 			return 5;
 		}
-		if (q->ReceiverNextExpectedSeq >= q->m_milestone_rx){
-			q->m_milestone_rx += m_ack_interval;
+		q->m_pktsSinceAck++;
+		if (ackReq || (m_ackEveryNPkts > 0 && q->m_pktsSinceAck >= m_ackEveryNPkts)){
+			q->m_pktsSinceAck = 0;
 			return 1; //Generate ACK
-		}else if (q->ReceiverNextExpectedSeq % m_chunk == 0){
-			return 1;
-		}else {
-			return 5;
 		}
+		return 5;
 	} else if (seq > expected) {
 		// Generate NACK
 		if (Simulator::Now() >= q->m_nackTimer || q->m_lastNACK != expected){
 			q->m_nackTimer = Simulator::Now() + MicroSeconds(m_nack_interval);
 			q->m_lastNACK = expected;
+			// A NACK carries the cumulative sequence number just as an Ack does, so it
+			// resets the coalescing counter for the same reason returning 1 does.
+			q->m_pktsSinceAck = 0;
 			if (m_backto0){
 				q->ReceiverNextExpectedSeq = q->ReceiverNextExpectedSeq / m_chunk*m_chunk;
 			}
@@ -844,9 +879,16 @@ void RdmaHw::RedistributeQp(){
 }
 
 Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
-	uint64_t payload_size = qp->GetBytesLeft();
+	const uint64_t bytesLeftInMsg = qp->GetBytesLeft();
+	uint64_t payload_size = bytesLeftInMsg;
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
+	// AckReq (InfiniBand BTH bit A): does this packet close the message it belongs to?
+	// GetBytesLeft is deliberately capped at the *sending* message's end, so a packet never
+	// straddles a boundary and this comparison is exact. The receiver must acknowledge such a
+	// packet -- that ack is what retires the message, releasing window credit, an in-flight
+	// message slot, and the application's completion callback. See ReceiverCheckSeq.
+	const bool lastPktOfMsg = (payload_size == bytesLeftInMsg);
 	// Remember the pacing rate of the message this packet is coming out of, while snd_nxt still
 	// points into it. UpdateNextAvail sets the gap that FOLLOWS this packet and runs after the
 	// advance below, by which point GetCurRate() no longer names this message -- see the note
@@ -882,6 +924,7 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	SimpleSeqTsHeader seqTs;
 	seqTs.SetSeq (qp->snd_nxt);
 	seqTs.SetPG (qp->m_pg);
+	seqTs.SetAckReq (lastPktOfMsg);
 	p->AddHeader (seqTs);
 	// add udp header
 	UdpHeader udpHeader;

@@ -160,7 +160,7 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
 		  i.WriteHtonU16 (0);
 		  // SeqTsHeader
 		  i.WriteHtonU64 (udp.seq);
-		  i.WriteHtonU16 (udp.pg);
+		  i.WriteHtonU16 (udp.pg | (udp.ackReq ? 0x8000 : 0));
 		  udp.ih.Serialize(i);
 		  // MscclFlowIdHeader
 		  i.WriteHtonU32 (udp.mscclFlowId);
@@ -295,6 +295,11 @@ CustomHeader::Deserialize (Buffer::Iterator start)
 		  // SeqTsHeader
 		  udp.seq = i.ReadNtohU64 ();
 		  udp.pg =  i.ReadNtohU16 ();
+		  // Split the AckReq flag back out of the pg field it travels in, so that every
+		  // downstream reader of udp.pg (switch qIndex, rx-qp key, ack echo) sees the
+		  // plain priority group exactly as before.
+		  udp.ackReq = (udp.pg >> 15) & 1;
+		  udp.pg &= 0x7fff;
 		  if (getInt)
 			  udp.ih.Deserialize(i);
 		  else
