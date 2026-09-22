@@ -1247,6 +1247,7 @@ namespace ns3 {
 			if (--(partIt->second) > 0) return;
 			m_stepPartsLeft.erase(partIt);
 		}
+		m_lastStepTime = Simulator::Now();
 		// update TBState
 		TBState* tbState = &m_TBStates[bid];
 		tbState->busy = false;

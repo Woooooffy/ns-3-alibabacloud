@@ -32,6 +32,7 @@
 #include "ns3/rdma-hw.h"
 #include "ns3/qbb-channel.h"
 #include "ns3/nvswitch-node.h"
+#include "ns3/custom-header.h"
 
 #include <sys/stat.h>
 #include <cstdio>
@@ -43,6 +44,8 @@
 #include <array>
 #include <map>
 #include <tuple>
+#include <algorithm>
+#include <utility>
 
 using namespace ns3;
 
@@ -64,6 +67,29 @@ static std::map<std::tuple<uint32_t, uint32_t, uint32_t>, int64_t> g_qBytes;
 static std::map<std::tuple<uint32_t, uint32_t, uint32_t>, int64_t> g_qMax;
 static bool g_qlenRows = true;
 
+// Per-port egress accounting, keyed (switch id, port ifIndex), fed from the same dequeue hook.
+// SwitchNode::m_txBytes already counts bytes per port, but it lumps ACK/NACK/CNP/PFC in with
+// the RDMA data, and it's the data split across a leaf's uplinks that says whether ECMP or the
+// flow-id rules balanced the load. first/last are the dequeue times of the port's first and
+// last data packet, which gives each port its own busy window and gives the run an end time
+// independent of the NIC sampler's interval-rounded Simulator::Now().
+struct PortStat {
+    uint64_t dataBytes = 0;
+    uint64_t ctrlBytes = 0;
+    uint64_t dataPkts = 0;
+    int64_t firstNs = -1;
+    int64_t lastNs = -1;
+};
+static std::map<std::pair<uint32_t, uint32_t>, PortStat> g_portStats;
+
+// What each switch port is attached to. Filled once when the traces are connected.
+struct PortInfo {
+    uint32_t peerId;
+    bool peerIsSwitch;
+    uint64_t rateBps;
+};
+static std::map<std::pair<uint32_t, uint32_t>, PortInfo> g_portInfo;
+
 // QbbEnqueue: fires just before a packet is pushed onto egress queue `qIndex`.
 static void OnSwitchEnqueue(FILE* out, uint32_t swId, uint32_t port, Ptr<const Packet> p, uint32_t qIndex) {
     const auto key = std::make_tuple(swId, port, qIndex);
@@ -80,6 +106,20 @@ static void OnSwitchDequeue(FILE* out, uint32_t swId, uint32_t port, Ptr<const P
     int64_t& depth = g_qBytes[std::make_tuple(swId, port, qIndex)];
     depth -= p->GetSize();
     if (depth < 0) depth = 0; // guard against control pkts (e.g. PFC) not counted on enqueue
+    const int64_t now = Simulator::Now().GetNanoSeconds();
+    PortStat& ps = g_portStats[std::make_pair(swId, port)];
+    // Split by protocol, not queue: with SwitchNode::AckHighPrio at its default of 0, ACK and
+    // NACK share the data queue, so queue 0 alone would count them as data. RDMA data is UDP.
+    CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header);
+    p->PeekHeader(ch);
+    if (ch.l3Prot != 0x11) {
+        ps.ctrlBytes += p->GetSize();
+    } else {
+        ps.dataBytes += p->GetSize();
+        ++ps.dataPkts;
+        if (ps.firstNs < 0) ps.firstNs = now;
+        ps.lastNs = now;
+    }
     if (g_qlenRows)
         fprintf(out, "%ld,%u,%u,%u,%ld,deq\n", Simulator::Now().GetNanoSeconds(), swId, port, qIndex, depth);
 }
@@ -1445,6 +1485,12 @@ int main(int argc, char *argv[]) {
             Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(sw->GetDevice(d));
             if (!dev) continue; // skip any non-Qbb (e.g. loopback) device
             uint32_t port = dev->GetIfIndex();
+            if (Ptr<QbbChannel> ch = DynamicCast<QbbChannel>(dev->GetChannel())) {
+                Ptr<NetDevice> other = (ch->GetDevice(0) == dev) ? ch->GetDevice(1) : ch->GetDevice(0);
+                g_portInfo[std::make_pair(swId, port)] = PortInfo{
+                    other->GetNode()->GetId(), (bool) DynamicCast<SwitchNode>(other->GetNode()),
+                    dev->GetDataRate().GetBitRate()};
+            }
             dev->TraceConnectWithoutContext("QbbEnqueue", MakeBoundCallback(&OnSwitchEnqueue, qlenOut, swId, port));
             dev->TraceConnectWithoutContext("QbbDequeue", MakeBoundCallback(&OnSwitchDequeue, qlenOut, swId, port));
             dev->TraceConnectWithoutContext("QbbDrop",    MakeBoundCallback(&OnSwitchDrop, eventOut, swId, port));
@@ -1518,6 +1564,41 @@ int main(int argc, char *argv[]) {
         fclose(qmaxOut);
     }
     if (nicOut) fclose(nicOut);
+
+    // Per-port egress utilization, always written; one row per switch port including idle ones,
+    // since an unused uplink is the imbalance. busy_ns is the time the port's data needed at
+    // line rate, so busy_ns / fabric_end is its utilization over the run and the largest busy_ns
+    // anywhere is the lower bound the network put on the run. fabric_end is the last data dequeue
+    // anywhere, not Simulator::Now(), which the NIC sampler rounds up to its interval.
+    std::string portPath = ns3::SystemPath::Append(LOG_DIR, "switch_port_util_" + label + ".csv");
+    int64_t fabricEnd = 0;
+    for (const auto& kv : g_portStats) fabricEnd = std::max(fabricEnd, kv.second.lastNs);
+    struct Busiest { uint32_t sw = 0, port = 0, peer = 0; double busyNs = 0; } busiest;
+    std::vector<uint64_t> s2sBytes; // data bytes on every switch->switch port
+    if (FILE* portOut = fopen(portPath.c_str(), "w")) {
+        fprintf(portOut, "sw_id,port_id,peer_id,peer_kind,rate_gbps,data_bytes,ctrl_bytes,data_pkts,"
+                         "first_ns,last_ns,busy_ns,util_run,util_active\n");
+        for (const auto& kv : g_portInfo) {
+            const PortInfo& pi = kv.second;
+            const auto it = g_portStats.find(kv.first);
+            const PortStat ps = (it == g_portStats.end()) ? PortStat() : it->second;
+            const double busyNs = pi.rateBps ? ps.dataBytes * 8.0 / pi.rateBps * 1e9 : 0;
+            // Dequeue times mark a packet's start on the wire, so the window gets the average
+            // packet's serialization time added back to cover the last one.
+            const double windowNs = ps.dataPkts
+                ? (ps.lastNs - ps.firstNs) + busyNs / ps.dataPkts : 0;
+            fprintf(portOut, "%u,%u,%u,%s,%.3f,%llu,%llu,%llu,%ld,%ld,%.1f,%.4f,%.4f\n",
+                    kv.first.first, kv.first.second, pi.peerId, pi.peerIsSwitch ? "switch" : "host",
+                    pi.rateBps / 1e9, (unsigned long long) ps.dataBytes,
+                    (unsigned long long) ps.ctrlBytes, (unsigned long long) ps.dataPkts,
+                    ps.firstNs, ps.lastNs, busyNs,
+                    fabricEnd ? busyNs / fabricEnd : 0.0, windowNs ? busyNs / windowNs : 0.0);
+            if (pi.peerIsSwitch) s2sBytes.push_back(ps.dataBytes);
+            if (busyNs > busiest.busyNs)
+                busiest = Busiest{kv.first.first, kv.first.second, pi.peerId, busyNs};
+        }
+        fclose(portOut);
+    }
     std::cout << "NIC selection: " << (nicSel == "schedule" ? "schedule-pinned (one qp per connection)"
         : (nicSel == "merged" ? "merged NIC (one qp per NIC, message split across them)"
                               : "round-robin (one qp per connection)")) << std::endl;
@@ -1528,9 +1609,35 @@ int main(int argc, char *argv[]) {
     std::cout << "Switch queue trace: " << (qlenRows ? qlenPath : std::string("(rows off)")) << std::endl;
     std::cout << "Switch peak-queue summary: " << qmaxPath << std::endl;
     std::cout << "Switch drop/PFC trace: " << eventPath << std::endl;
-    Time simTime = Simulator::Now();
-    std::cout << "Total simulated time: "
-        << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
+    // The collective's runtime is when its last step completed on any rank. Simulator::Now() is
+    // the last event of any kind, which with --nicBwInterval is the sampler tick after the run
+    // ended, so it overstates the runtime by up to one interval. Both are printed; the sweep
+    // reads "Total simulated time", and algbw uses the same number.
+    Time simTime;
+    for (uint32_t i = 0; i < apps.GetN(); ++i) {
+        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i)))
+            simTime = std::max(simTime, app->GetLastStepTime());
+    }
+    std::cout << "Total simulated time: " << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
+    std::cout << "Simulator end (last event of any kind): " << Simulator::Now().GetNanoSeconds()
+              << " nanoseconds" << std::endl;
+
+    std::cout << "Switch port utilization: " << portPath << std::endl;
+    std::cout << "Fabric end (last switch data dequeue): " << fabricEnd << " ns" << std::endl;
+    if (!s2sBytes.empty()) {
+        uint64_t sum = 0, mx = 0, mn = UINT64_MAX;
+        for (uint64_t b : s2sBytes) { sum += b; mx = std::max(mx, b); mn = std::min(mn, b); }
+        const double mean = (double) sum / s2sBytes.size();
+        std::cout << "Switch-to-switch data bytes over " << s2sBytes.size() << " ports: min "
+                  << mn << " / mean " << (uint64_t) mean << " / max " << mx
+                  << " (max/mean " << (mean > 0 ? mx / mean : 0.0) << ")" << std::endl;
+    }
+    if (busiest.busyNs > 0) {
+        std::cout << "Busiest switch port: sw " << busiest.sw << " port " << busiest.port
+                  << " -> node " << busiest.peer << ", " << (uint64_t) busiest.busyNs
+                  << " ns of data at line rate (" << 100.0 * busiest.busyNs / fabricEnd
+                  << "% of fabric end)" << std::endl;
+    }
 
     // How much of the traffic the switch JSON actually steered. A miss means a flow-id-carrying
     // packet reached a switch holding no rule for it and fell back to ECMP, i.e. the schedule

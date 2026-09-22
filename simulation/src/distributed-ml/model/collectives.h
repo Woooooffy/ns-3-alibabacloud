@@ -375,6 +375,11 @@ namespace ns3 {
 			// correct: unlabelled steps send MSCCL_FLOW_ID_NONE and switches fall through to ECMP.
 			bool ConnectionCarriesFlowIds(int16_t peer, int8_t chan);
 			bool GetHonorNetDeps() const { return m_honorNetDeps; }
+			// When this rank's most recent step completed. After Simulator::Run() it is the
+			// rank's collective finish time; the max over ranks is the collective's runtime,
+			// unlike Simulator::Now(), which also counts whatever event ran last (a periodic
+			// trace sampler, trailing acks).
+			Time GetLastStepTime() const { return m_lastStepTime; }
 			#ifdef FLOW_ID_TEST
 			// void SetFlowIdTableForChannel(std::map<std::pair<int, int>, uint32_t>*, int channel);
 			// void SetFlowIdTableForAllChannels(std::map<std::pair<int, int>, uint32_t>* table);
@@ -491,6 +496,7 @@ namespace ns3 {
 			bool m_networkFlowIds = true;    // NetworkFlowIds attribute; see ConnectionCarriesFlowIds
 			std::map<std::pair<int16_t, int8_t>, bool> m_connFlowIds; // memoized ConnectionCarriesFlowIds
 			bool m_honorNetDeps = true;      // HonorNetDeps attribute; see TryScheduleNextStep
+			Time m_lastStepTime;             // see GetLastStepTime
 			// Network gate state (see mscclTransfer::netGate/netWait), indexed [iter][gate]. Both
 			// vectors are sized at InterpretAlgo from m_nLoops and mscclAlgorithm::maxNetGate, so
 			// there is no MSCCL_MAX_GATES to tune.
