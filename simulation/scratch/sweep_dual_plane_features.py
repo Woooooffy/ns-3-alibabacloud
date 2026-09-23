@@ -21,11 +21,20 @@ scratch's --inputBytes (one rank's total input) is <ranks>x the pair size -- 1 G
 --flags the program actually accepts, so a scratch missing one of the ablation knobs still
 sweeps (that knob is simply left at its own default). Start small.
 
-Eight configurations per size: a baseline with every feature off, one run per feature turned
+Eight configurations per size by default: a baseline with every feature off, one run per feature turned
 on alone (flow ids paired with schedule-pinned NICs, since routing by flow id says nothing
 useful about connections injected on whichever NIC), two subtractions from the full set
 (everything except the rate annotations, and everything except the netDeps edges -- dropping
 both at once is the flowId+nic run), and one with all of them on (the scratch's own defaults).
+
+A ninth, `milp`, is opt-in via --configs: the baseline flags run against a schedule VARIANT
+(--sched=milp) that fixes one chunk per src-dst GPU pair, so the algorithm makes no multipath
+decision either. That is the floor -- direct traffic, ECMP forwarding, no pacing, no netdeps --
+that the `baseline` column is itself measured against. Only mini_1gpu_1nic has such a solve on
+disk today; a program without one is skipped with a note rather than re-run as a duplicate
+baseline. It appends to the same results.csv, so it can be added to a finished sweep:
+
+    ./sweep_dual_plane_features.py mini_1gpu_1nic --configs=milp --start 4KB --end 4MB
 
 Results are appended to results.csv under a per-program output directory and re-read on
 startup, so an interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are
@@ -62,8 +71,21 @@ CONFIGS = collections.OrderedDict([
     # flowId+nic run above.
     ("noNetDeps",  dict(rate=1, netDeps=0, flowId=1, nicSel="schedule")),
     ("all",        dict(rate=1, netDeps=1, flowId=1, nicSel="schedule")),
+    # The "baseline baseline": the same flags as baseline, but against a schedule variant
+    # (--sched) that fixes strictly one chunk per src-dst GPU pair, so the algorithm itself
+    # makes no multipath decision -- direct point-to-point traffic, ECMP-forwarded, unpaced,
+    # with none of the dynamism control features in force. It is what the baseline column is
+    # measured against in turn: baseline still runs a solve that splits pairs across paths.
+    #
+    # Opt-in rather than part of the default set: it needs both the --sched knob and a
+    # <stem>_<coll>_milp solve on disk (today only mini_1gpu_1nic has one), and a program
+    # missing either is skipped with a note rather than run as a duplicate baseline.
+    ("milp",       dict(rate=0, netDeps=0, flowId=0, nicSel="merged", sched="milp")),
 ])
 BASELINE = "baseline"
+# Run unless --configs says otherwise. Everything with a `sched` is a different schedule, not an
+# ablation of the sweep's own one, so it does not belong in the default ablation table.
+DEFAULT_CONFIGS = [n for n, f in CONFIGS.items() if not f.get("sched")]
 
 # Constant across every run, per the sweep's terms.
 PROTO_CHUNK_BYTES = 2 * 1024 * 1024
@@ -146,6 +168,23 @@ class Program:
         m = (re.search(r'"ns3::RdmaHw::L2AckInterval"\s*,\s*UintegerValue\((\d+)\)', src)
              or re.search(r"uint32_t\s+l2AckInterval\s*=\s*(\d+)", src))
         self.ack_default = int(m.group(1)) if m else 0
+        # The stem its schedule files are named after (mini::Options::For("mini_1g1n", 4)),
+        # which is what lets has_sched() below check for a variant solve on disk.
+        m = re.search(r'Options::For\(\s*"([A-Za-z0-9_]+)"', src)
+        self.stem = m.group(1) if m else None
+
+    def has_sched(self, sched, coll):
+        """Is there a <stem>_<coll>_<sched>.xml schedule variant for this program?
+
+        The scratch would NS_FATAL_ERROR on the missing file, but only after building and
+        starting the run -- and, in a multi-program sweep, only after the earlier programs had
+        finished. Cheaper to answer here.
+        """
+        if not self.stem:
+            return False
+        suffix = "ag" if coll == "allgather" else "a2a"
+        return os.path.isfile(os.path.join(
+            SCRATCH_DIR, "xml_input", f"{self.stem}_{suffix}_{sched}.xml"))
 
     def slug(self, ack_interval):
         """Output namespace for a sweep run in this ack mode.
@@ -296,6 +335,7 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
             f"--inputBytes={input_bytes}", f"--label={label}", f"--coll={args.coll}",
             f"--rate={flags['rate']}", f"--netDeps={flags['netDeps']}",
             f"--flowId={flags['flowId']}", f"--nicSel={flags['nicSel']}",
+            f"--sched={flags.get('sched', '')}",
             f"--protoChunkBytes={PROTO_CHUNK_BYTES}",
             f"--maxMsgsInFlight={MAX_MSGS_IN_FLIGHT}",
             f"--nicBwInterval={interval}", f"--qlenRows={qlen_rows}",
@@ -474,7 +514,9 @@ def num(row, key):
 
 
 def tables(done, sweep_sizes, out, line_gbps):
-    names = list(CONFIGS)
+    # Only the configs this results.csv actually holds. Listing every known config would give
+    # the opt-in ones (milp) a column of dashes in every sweep that did not ask for them.
+    names = [n for n in CONFIGS if any((s, n) in done for s in sweep_sizes)]
     lines = []
 
     def table(title, note, cell):
@@ -569,8 +611,10 @@ def main():
                     help=f"mid-message ack coalescing in packets (default {ACK_EVERY_N_PKTS}); "
                          "packets closing a message are acknowledged regardless. Bound by the "
                          "BDP window, not by the message size, so it does not scale with --end")
-    ap.add_argument("--configs", default=",".join(CONFIGS),
-                    help="comma-separated subset of: " + ",".join(CONFIGS))
+    ap.add_argument("--configs", default=",".join(DEFAULT_CONFIGS),
+                    help="comma-separated subset of: " + ",".join(CONFIGS)
+                         + f" (default: {','.join(DEFAULT_CONFIGS)}; the rest are opt-in "
+                           "because they need a schedule variant the program may not have)")
     ap.add_argument("--ranks", type=int,
                     help="GPUs in the topology (default: read from the source)")
     ap.add_argument("--host-tx-gbps", type=float,
@@ -674,6 +718,7 @@ def sweep_one(prog, args):
     # Per program, not per process: which --flags a scratch is missing is a fact about that
     # scratch, so the note has to be allowed to print again for the next one.
     run_one.warned = False
+    skipped_sched = set()
 
     if not args.tables_only:
         print(f"{prog.name}: {prog.ranks} GPUs, {prog.nvswitches} NVSwitches, "
@@ -690,6 +735,16 @@ def sweep_one(prog, args):
         for s in sweep:
             print(f"{fmt_size(s)}/pair -> --inputBytes={s * prog.ranks}")
             for name in args.configs.split(","):
+                sched = CONFIGS[name].get("sched")
+                if sched and not ("sched" in prog.flags and prog.has_sched(sched, args.coll)):
+                    if name not in skipped_sched:
+                        why = ("declares no --sched, so running it would silently repeat the "
+                               "baseline" if "sched" not in prog.flags else
+                               f"has no xml_input/{prog.stem}_"
+                               f"{'ag' if args.coll == 'allgather' else 'a2a'}_{sched}.xml")
+                        print(f"  [{name:8s}] skipped: {prog.name} {why}")
+                        skipped_sched.add(name)
+                    continue
                 if (s, name) in done and not args.force:
                     print(f"  [{name:8s}] already in results.csv, skipping")
                     continue

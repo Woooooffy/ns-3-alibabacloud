@@ -227,6 +227,20 @@ struct Options {
     // Overrides the derived XML filename (not the path) so an alternative schedule for the
     // same collective can be run without touching the scratch. Empty = derive from stem/coll.
     std::string xmlName = "";
+    // A schedule VARIANT of the same topology and collective: solved differently, but against
+    // the same fabric, so it is selected by suffixing both input stems rather than by naming
+    // files. `--sched=milp` reads xml_input/<stem>_<coll>_milp[_no_rate].xml alongside
+    // json_input/<stem>_<coll>_milp.json. Empty = the topology's own default solve.
+    //
+    // This is what makes a "baseline baseline" possible: the mini_1g1n milp solve fixes
+    // strictly one chunk per (src, dst) GPU pair, so it takes exactly one path per pair and
+    // makes no multipath decision at all. Run it with every dynamism knob off
+    // (--rate=0 --netDeps=0 --flowId=0 --nicSel=merged) and what is left is direct,
+    // ECMP-forwarded, unpaced point-to-point traffic -- the floor the ablations are measured
+    // against. Note the variant may carry a different nchunksperloop than the default solve
+    // (4 vs 8 on mini_1g1n); --inputBytes is a rank's whole input either way, so the bytes
+    // per GPU pair -- and hence the comparison -- are unchanged.
+    std::string sched = "";
     // Period of the per-NIC bandwidth trace, in ns. 0 disables it and costs nothing.
     uint32_t nicBwIntervalNs = 0;
     // The per-packet queue trace is exact but grows with the traffic: one row per enqueue and
@@ -279,6 +293,7 @@ struct Options {
         cmd.AddValue("rateTargeting", "Treat per-flow XML rates as targets, not just caps", rateTargeting);
         cmd.AddValue("flowId", "Network only: carry msccl flow ids and install per-flow switch forwarding from the JSON (does not affect NIC selection)", flowId);
         cmd.AddValue("xml", "XML schedule filename inside scratch/xml_input, overriding the one derived from --coll/--rate (empty = derive)", xmlName);
+        cmd.AddValue("sched", "Schedule variant suffix applied to BOTH input stems, e.g. milp -> <stem>_<coll>_milp[_no_rate].xml and <stem>_<coll>_milp.json (empty = the topology's default solve)", sched);
         cmd.AddValue("nicSel", "NIC selection: schedule (switch JSON pins the NIC) | merged (NCCL-style merged NIC, one qp per NIC) | rr (one qp per connection, round-robin NICs)", nicSel);
         cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences (false = release every buffer-ready send immediately)", netDeps);
         cmd.AddValue("qlenRows", "Write the per-packet switch queue trace (0 = only the per-port peak summary)", qlenRows);
@@ -334,13 +349,17 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     // The switch JSON's switch_id_map (0..N -> TE-CCL ids) matches the regswtches declaration
     // order in each scratch, which is the order the DSL emitted; one JSON per schedule, shared
     // by the rate and _no_rate XMLs since routing is identical between them.
+    // --sched names a variant solve of the same topology/collective and suffixes both stems;
+    // an explicit --xml still overrides the XML half, so the two can be combined.
+    const std::string STEM = opt.stem + "_" + opt.CollSuffix()
+                           + (opt.sched.empty() ? "" : "_" + opt.sched);
     const std::string XML_NAME = opt.xmlName.empty()
-        ? opt.stem + "_" + opt.CollSuffix() + (opt.rate ? "" : "_no_rate") + ".xml"
+        ? STEM + (opt.rate ? "" : "_no_rate") + ".xml"
         : opt.xmlName;
     std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
                                                    "../../scratch/xml_input/" + XML_NAME);
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
-                                                      "../../scratch/json_input/" + opt.stem + "_" + opt.CollSuffix() + ".json");
+                                                      "../../scratch/json_input/" + STEM + ".json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.

@@ -17,6 +17,13 @@
 // than editing the link list by hand; the harness lives in mini_harness.h.
 //
 // Inputs: scratch/xml_input/mini_1g1n_a2a.xml and scratch/json_input/mini_1g1n_a2a.json.
+//
+// --sched=milp swaps in the variant solve (xml_input/mini_1g1n_a2a_milp[_no_rate].xml plus
+// json_input/mini_1g1n_a2a_milp.json), which fixes strictly one chunk per (src, dst) GPU pair
+// and so takes exactly one path per pair. With every dynamism knob off it is the "baseline
+// baseline": a direct, ECMP-forwarded, unpaced schedule that makes no multipath decision --
+//     ./ns3 run "scratch/mini_1gpu_1nic --sched=milp --rate=0 --netDeps=0 --flowId=0 --nicSel=merged"
+// The taper means this is expected to be SLOWER than the default solve; that gap is the point.
 
 #include "mini_harness.h"
 
