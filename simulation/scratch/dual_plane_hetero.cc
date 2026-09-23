@@ -259,6 +259,11 @@ int main(int argc, char *argv[]) {
     // Not a cosmetic knob: it changes the transport under every other setting here, so runs
     // that differ in it are not comparable with each other.
     uint32_t l2AckInterval = 1;
+    // Mid-message ack coalescing for RdmaHw::AckEveryNPackets: acknowledge at least every N
+    // in-order packets so snd_una keeps up with snd_nxt inside one long message and the window
+    // (RdmaQueuePair::IsWinBound) does not gate. Packets closing a message are acknowledged
+    // regardless, and 0 leaves only those. Inert when --l2Ack is 0.
+    uint32_t ackEveryNPkts = 8;
 
     CommandLine cmd;
     cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
@@ -277,6 +282,7 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
     cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
     cmd.AddValue("l2Ack", "Receiver ack interval in bytes (0 = no-ack mode, sender self-acknowledges at send completion)", l2AckInterval);
+    cmd.AddValue("ackEveryNPkts", "Mid-message ack coalescing in packets (0 = only message-closing acks); ignored when --l2Ack is 0", ackEveryNPkts);
     cmd.Parse(argc, argv);
 
     g_qlenRows = qlenRows;
@@ -791,6 +797,7 @@ int main(int argc, char *argv[]) {
     Config::SetDefault("ns3::RdmaHw::CcMode", UintegerValue(12));
     Config::SetDefault("ns3::RdmaHw::RateTargeting", BooleanValue(rateTargeting));
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(l2AckInterval));
+    Config::SetDefault("ns3::RdmaHw::AckEveryNPackets", UintegerValue(ackEveryNPkts));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
     Config::SetDefault("ns3::RdmaHw::MaxMsgsInFlight", UintegerValue(maxMsgsInFlight));
