@@ -1,0 +1,22 @@
+<algo name="taccl" nchannels="1" nchunksperloop="2" proto="Simple" maxBytes="9223372036854775807" minBytes="0" coll="alltoall" inplace="0" outofplace="1" redop="nop" ngpus="4">
+  <gpu id="0" i_chunks="2" o_chunks="2" s_chunks="0">
+    <copy i_off="0" o_off="0"/>
+    <tb id="0" send="-1" recv="2" chan="0">
+      <step s="0" type="r" srcbuf="i" srcoff="0" dstbuf="o" dstoff="1" cnt="1" depid="-1" deps="-1" hasdep="0" mscclflowid="0"/>
+    </tb>
+    <tb id="1" send="2" recv="-1" chan="0">
+      <step s="0" type="s" srcbuf="i" srcoff="1" dstbuf="o" dstoff="0" cnt="1" depid="-1" deps="-1" hasdep="0" mscclflowid="1"/>
+    </tb>
+  </gpu>
+  <gpu id="1" i_chunks="0" o_chunks="0" s_chunks="0"/>
+  <gpu id="2" i_chunks="2" o_chunks="2" s_chunks="0">
+    <copy i_off="1" o_off="1"/>
+    <tb id="0" send="-1" recv="0" chan="0">
+      <step s="0" type="r" srcbuf="i" srcoff="1" dstbuf="o" dstoff="0" cnt="1" depid="-1" deps="-1" hasdep="0" mscclflowid="1"/>
+    </tb>
+    <tb id="1" send="0" recv="-1" chan="0">
+      <step s="0" type="s" srcbuf="i" srcoff="0" dstbuf="o" dstoff="1" cnt="1" depid="-1" deps="-1" hasdep="0" mscclflowid="0"/>
+    </tb>
+  </gpu>
+  <gpu id="3" i_chunks="0" o_chunks="0" s_chunks="0"/>
+</algo>

@@ -1,0 +1,298 @@
+{
+  "switch_id_map": {
+    "0": 12,
+    "1": 13,
+    "2": 14,
+    "3": 15
+  },
+  "switches": {
+    "0": {
+      "0": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 0,
+        "src_gpu": 5,
+        "dst_gpu": 0
+      },
+      "1": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 0,
+        "src_gpu": 5,
+        "dst_gpu": 0
+      },
+      "2": {
+        "port": 1,
+        "next_hop_type": "gpu",
+        "next_hop": 2,
+        "src_gpu": 0,
+        "dst_gpu": 2
+      },
+      "5": {
+        "port": 2,
+        "next_hop_type": "switch",
+        "next_hop": 2,
+        "src_gpu": 2,
+        "dst_gpu": 5
+      },
+      "6": {
+        "port": 3,
+        "next_hop_type": "switch",
+        "next_hop": 3,
+        "src_gpu": 2,
+        "dst_gpu": 5
+      },
+      "7": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 0,
+        "src_gpu": 2,
+        "dst_gpu": 0
+      },
+      "8": {
+        "port": 1,
+        "next_hop_type": "gpu",
+        "next_hop": 2,
+        "src_gpu": 5,
+        "dst_gpu": 2
+      },
+      "9": {
+        "port": 1,
+        "next_hop_type": "gpu",
+        "next_hop": 2,
+        "src_gpu": 5,
+        "dst_gpu": 2
+      },
+      "10": {
+        "port": 2,
+        "next_hop_type": "switch",
+        "next_hop": 2,
+        "src_gpu": 0,
+        "dst_gpu": 5
+      },
+      "11": {
+        "port": 3,
+        "next_hop_type": "switch",
+        "next_hop": 3,
+        "src_gpu": 0,
+        "dst_gpu": 5
+      },
+      "12": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 0,
+        "src_gpu": 3,
+        "dst_gpu": 0
+      },
+      "13": {
+        "port": 1,
+        "next_hop_type": "gpu",
+        "next_hop": 3,
+        "src_gpu": 0,
+        "dst_gpu": 3
+      },
+      "14": {
+        "port": 1,
+        "next_hop_type": "gpu",
+        "next_hop": 3,
+        "src_gpu": 5,
+        "dst_gpu": 3
+      },
+      "15": {
+        "port": 1,
+        "next_hop_type": "gpu",
+        "next_hop": 3,
+        "src_gpu": 5,
+        "dst_gpu": 3
+      },
+      "16": {
+        "port": 2,
+        "next_hop_type": "switch",
+        "next_hop": 2,
+        "src_gpu": 3,
+        "dst_gpu": 5
+      },
+      "17": {
+        "port": 3,
+        "next_hop_type": "switch",
+        "next_hop": 3,
+        "src_gpu": 3,
+        "dst_gpu": 5
+      }
+    },
+    "1": {
+      "0": {
+        "port": 2,
+        "next_hop_type": "switch",
+        "next_hop": 2,
+        "src_gpu": 5,
+        "dst_gpu": 0
+      },
+      "1": {
+        "port": 3,
+        "next_hop_type": "switch",
+        "next_hop": 3,
+        "src_gpu": 5,
+        "dst_gpu": 0
+      },
+      "5": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 5,
+        "src_gpu": 2,
+        "dst_gpu": 5
+      },
+      "6": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 5,
+        "src_gpu": 2,
+        "dst_gpu": 5
+      },
+      "8": {
+        "port": 2,
+        "next_hop_type": "switch",
+        "next_hop": 2,
+        "src_gpu": 5,
+        "dst_gpu": 2
+      },
+      "9": {
+        "port": 3,
+        "next_hop_type": "switch",
+        "next_hop": 3,
+        "src_gpu": 5,
+        "dst_gpu": 2
+      },
+      "10": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 5,
+        "src_gpu": 0,
+        "dst_gpu": 5
+      },
+      "11": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 5,
+        "src_gpu": 0,
+        "dst_gpu": 5
+      },
+      "14": {
+        "port": 2,
+        "next_hop_type": "switch",
+        "next_hop": 2,
+        "src_gpu": 5,
+        "dst_gpu": 3
+      },
+      "15": {
+        "port": 3,
+        "next_hop_type": "switch",
+        "next_hop": 3,
+        "src_gpu": 5,
+        "dst_gpu": 3
+      },
+      "16": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 5,
+        "src_gpu": 3,
+        "dst_gpu": 5
+      },
+      "17": {
+        "port": 0,
+        "next_hop_type": "gpu",
+        "next_hop": 5,
+        "src_gpu": 3,
+        "dst_gpu": 5
+      }
+    },
+    "2": {
+      "0": {
+        "port": 0,
+        "next_hop_type": "switch",
+        "next_hop": 0,
+        "src_gpu": 5,
+        "dst_gpu": 0
+      },
+      "5": {
+        "port": 1,
+        "next_hop_type": "switch",
+        "next_hop": 1,
+        "src_gpu": 2,
+        "dst_gpu": 5
+      },
+      "8": {
+        "port": 0,
+        "next_hop_type": "switch",
+        "next_hop": 0,
+        "src_gpu": 5,
+        "dst_gpu": 2
+      },
+      "10": {
+        "port": 1,
+        "next_hop_type": "switch",
+        "next_hop": 1,
+        "src_gpu": 0,
+        "dst_gpu": 5
+      },
+      "14": {
+        "port": 0,
+        "next_hop_type": "switch",
+        "next_hop": 0,
+        "src_gpu": 5,
+        "dst_gpu": 3
+      },
+      "16": {
+        "port": 1,
+        "next_hop_type": "switch",
+        "next_hop": 1,
+        "src_gpu": 3,
+        "dst_gpu": 5
+      }
+    },
+    "3": {
+      "1": {
+        "port": 0,
+        "next_hop_type": "switch",
+        "next_hop": 0,
+        "src_gpu": 5,
+        "dst_gpu": 0
+      },
+      "6": {
+        "port": 1,
+        "next_hop_type": "switch",
+        "next_hop": 1,
+        "src_gpu": 2,
+        "dst_gpu": 5
+      },
+      "9": {
+        "port": 0,
+        "next_hop_type": "switch",
+        "next_hop": 0,
+        "src_gpu": 5,
+        "dst_gpu": 2
+      },
+      "11": {
+        "port": 1,
+        "next_hop_type": "switch",
+        "next_hop": 1,
+        "src_gpu": 0,
+        "dst_gpu": 5
+      },
+      "15": {
+        "port": 0,
+        "next_hop_type": "switch",
+        "next_hop": 0,
+        "src_gpu": 5,
+        "dst_gpu": 3
+      },
+      "17": {
+        "port": 1,
+        "next_hop_type": "switch",
+        "next_hop": 1,
+        "src_gpu": 3,
+        "dst_gpu": 5
+      }
+    }
+  }
+}
