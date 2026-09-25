@@ -27,14 +27,31 @@ useful about connections injected on whichever NIC), two subtractions from the f
 (everything except the rate annotations, and everything except the netDeps edges -- dropping
 both at once is the flowId+nic run), and one with all of them on (the scratch's own defaults).
 
-A ninth, `milp`, is opt-in via --configs: the baseline flags run against a schedule VARIANT
-(--sched=milp) that fixes one chunk per src-dst GPU pair, so the algorithm makes no multipath
-decision either. That is the floor -- direct traffic, ECMP forwarding, no pacing, no netdeps --
-that the `baseline` column is itself measured against. Only mini_1gpu_1nic has such a solve on
-disk today; a program without one is skipped with a note rather than re-run as a duplicate
-baseline. It appends to the same results.csv, so it can be added to a finished sweep:
+A ninth, `milp`, is opt-in via --configs: EXACTLY the baseline flags, run against a schedule
+VARIANT (--sched=milp) that fixes one chunk per src-dst GPU pair, so the algorithm makes no
+multipath decision either. Everything else -- rate off, netDeps off, flowId off, merged NICs --
+is identical to `baseline` on purpose: the two columns differ only in the schedule, which is
+what makes their difference attributable to the solve rather than to a feature flag. It is the
+floor the `baseline` column is itself measured against, since baseline still runs a solve that
+splits a pair across paths. A program or scenario with no such solve on disk is SKIPPED WITH A
+WARNING rather than re-run as a duplicate baseline. It appends to the same results.csv, so it
+can be added to a finished sweep:
 
     ./sweep_dual_plane_features.py mini_1gpu_1nic --configs=milp --start 4KB --end 4MB
+
+PARTIAL-PARTICIPATION SCENARIOS. A scenario tag (1A, 2B, 2C, 3A -- or the group `partial`) is
+itself a program spec: it names one of the mini topologies plus a solve in which only a subset
+of its GPUs carries data, selected through the scratch's --scenario knob.
+
+    ./sweep_dual_plane_features.py partial --start 4KB --end 64MB
+    ./sweep_dual_plane_features.py 2B --configs=baseline,milp --start 4KB --end 4MB
+
+Their results land in sweep_results/<TAG>, named by the tag rather than by the program, since
+2B and 2C are the same scratch and would otherwise share a results.csv. Every other flag means
+what it always did. Two things are scenario-aware: sizes on the size axis divide by the
+scenario's PARTICIPANT count (not the topology's GPU count), so a point means the same bytes
+per pair in all four; and `milp` looks for <stem>_<TAG>_<coll>_milp.xml. 2C and 3A have no
+milp solve yet, so asking for that config on them warns and drops the column.
 
 Results are appended to results.csv under a per-program output directory and re-read on
 startup, so an interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are
@@ -104,7 +121,35 @@ FIELDS = ["pair_bytes", "config", "input_bytes", "sim_time_ns", "algbw_gbps",
 # fabric in all three (2 hosts per leaf, 100Gbps links, 2:1 tapered uplinks); only the host
 # interior differs, which is exactly what makes them a set.
 MINI_PROGRAMS = ["mini_1gpu_1nic", "mini_2gpu_1nic", "mini_2gpu_2nic"]
-GROUPS = {"mini": MINI_PROGRAMS}
+
+# PARTIAL-PARTICIPATION scenarios: the same three topologies, but with a solve in which only a
+# subset of the GPUs carries a slice of the collective. Named by tag, and a tag IS a program
+# spec -- `./sweep_dual_plane_features.py 2B` sweeps mini_2gpu_1nic with --scenario=2B.
+#
+# The subsets are chosen so the number of flows a leaf must spread over its two equal-cost
+# uplinks is ODD, which pins ECMP's best possible split at ceil(K/2):floor(K/2) -- lopsided
+# whatever the hash does. The default (`lp`) solve answers that by splitting each pair's chunk
+# over several channels so a pair occupies more than one 5-tuple; the `milp` variant keeps
+# strictly one chunk per pair and therefore one hash, one uplink. That pair of solves, run
+# under identical flags, is the measurement.
+#
+# `participants` is the number of GPUs that actually carry data, and it is what the per-pair
+# size axis divides by: --inputBytes is one rank's whole input, split into one partition per
+# participant, so bytes-per-pair is inputBytes/participants regardless of how many GPUs the
+# topology has. Using the topology's rank count would make a 4-participant scenario carry
+# twice the bytes per pair of an 8-participant one at the same point on the axis.
+SCENARIOS = collections.OrderedDict([
+    ("1A", dict(program="mini_1gpu_1nic", participants=2,
+                note="{g0,g2}: 1 cross-leaf flow per direction, so ECMP cannot use the 2nd spine at all")),
+    ("2B", dict(program="mini_2gpu_1nic", participants=4,
+                note="{g0,g2,g3,g5}: 3x1 = 3 flows per direction")),
+    ("2C", dict(program="mini_2gpu_1nic", participants=6,
+                note="{g0,g2,g3,g4,g5,g6}: 3x3 = 9 flows per direction")),
+    ("3A", dict(program="mini_2gpu_2nic", participants=6,
+                note="{g0,g2,g3,g4,g5,g6}: 3x3 = 9 flows per direction, per-GPU NICs")),
+])
+
+GROUPS = {"mini": MINI_PROGRAMS, "partial": list(SCENARIOS)}
 
 # Per-program overrides for the two numbers the sweep cannot read out of the source: a host's
 # total fabric egress (which only sizes the --nicBwInterval sampling period) and the per-NIC
@@ -131,7 +176,13 @@ class Program:
     subsets of the ablation knobs.
     """
 
-    def __init__(self, spec, ranks=None):
+    def __init__(self, spec, ranks=None, scenario=None):
+        # A partial-participation scenario is the same scratch driven at a different schedule,
+        # so it is a property of the run, not a different program. It changes three things:
+        # the --scenario the run is given, the participant count the size axis divides by, and
+        # the slug (two scenarios of one scratch must not share trace files or a results.csv).
+        self.scenario = scenario
+        self.participants = SCENARIOS[scenario]["participants"] if scenario else None
         self.path = self._resolve(spec)
         self.name = os.path.splitext(os.path.basename(self.path))[0]
         # The shortcut ./ns3 run resolves to a real cmake target. Note that ./ns3 build cannot
@@ -173,18 +224,32 @@ class Program:
         m = re.search(r'Options::For\(\s*"([A-Za-z0-9_]+)"', src)
         self.stem = m.group(1) if m else None
 
-    def has_sched(self, sched, coll):
-        """Is there a <stem>_<coll>_<sched>.xml schedule variant for this program?
+    @property
+    def pair_ranks(self):
+        """What one rank's --inputBytes is divided into: the collective's participant count.
 
-        The scratch would NS_FATAL_ERROR on the missing file, but only after building and
-        starting the run -- and, in a multi-program sweep, only after the earlier programs had
-        finished. Cheaper to answer here.
+        The topology's rank count for a whole-topology solve; the scenario's data-carrying
+        subset for a partial one. This is the denominator that keeps "size per GPU pair"
+        meaning the same thing across scenarios with different participant counts.
         """
+        return self.participants or self.ranks
+
+    def sched_xml(self, sched, coll):
+        """Filename mini_harness.h will derive for a schedule variant of this run.
+
+        Mirrors the STEM assembly in mini_harness.h exactly:
+        <stem>[_<scenario>]_<coll>[_<sched>].xml -- so a missing solve is caught here rather
+        than as an NS_FATAL_ERROR after the build, which in a multi-program sweep would only
+        surface once the earlier programs had finished.
+        """
+        suffix = "ag" if coll == "allgather" else "a2a"
+        stem = self.stem + (f"_{self.scenario}" if self.scenario else "")
+        return f"{stem}_{suffix}" + (f"_{sched}" if sched else "") + ".xml"
+
+    def has_sched(self, sched, coll):
         if not self.stem:
             return False
-        suffix = "ag" if coll == "allgather" else "a2a"
-        return os.path.isfile(os.path.join(
-            SCRATCH_DIR, "xml_input", f"{self.stem}_{suffix}_{sched}.xml"))
+        return os.path.isfile(os.path.join(SCRATCH_DIR, "xml_input", self.sched_xml(sched, coll)))
 
     def slug(self, ack_interval):
         """Output namespace for a sweep run in this ack mode.
@@ -193,7 +258,8 @@ class Program:
         suffix, on the label as well as the directory, because the traces the scratch writes
         into logs/ are keyed by label and would otherwise be overwritten in place.
         """
-        return self.name + ("_ack" if ack_interval else "")
+        return (self.name + (f"_{self.scenario}" if self.scenario else "")
+                + ("_ack" if ack_interval else ""))
 
     @staticmethod
     def _read_with_local_headers(path):
@@ -317,7 +383,7 @@ def nic_interval_ns(input_bytes, prog, host_tx_gbps, target_samples=500):
 # ---- running -----------------------------------------------------------------------------
 
 def run_one(pair_bytes, name, flags, args, prog, no_build):
-    input_bytes = pair_bytes * prog.ranks
+    input_bytes = pair_bytes * prog.pair_ranks
     label = f"sweep_{prog.slug(args.l2ack)}_{name}_{fmt_size(pair_bytes)}"
     # The NIC bandwidth trace is a periodic event per NIC for the whole run -- a few hundred
     # samples x every GPU NIC, all of it scheduler work the collective does not need. 0 turns
@@ -336,6 +402,7 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
             f"--rate={flags['rate']}", f"--netDeps={flags['netDeps']}",
             f"--flowId={flags['flowId']}", f"--nicSel={flags['nicSel']}",
             f"--sched={flags.get('sched', '')}",
+            f"--scenario={prog.scenario or ''}",
             f"--protoChunkBytes={PROTO_CHUNK_BYTES}",
             f"--maxMsgsInFlight={MAX_MSGS_IN_FLIGHT}",
             f"--nicBwInterval={interval}", f"--qlenRows={qlen_rows}",
@@ -591,9 +658,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("program", nargs="+",
-                    help="scratch(es) to sweep: names under simulation/scratch, paths to .cc "
-                         "files, or the group name " + "/".join(GROUPS) + ". Each program is "
-                         "swept in turn into its own output directory")
+                    help="what to sweep: scratch names under simulation/scratch, paths to .cc "
+                         "files, a partial-participation scenario tag (" + ",".join(SCENARIOS)
+                         + "), or a group name (" + "/".join(GROUPS) + "). Each is swept in "
+                         "turn into its own output directory")
     ap.add_argument("--start", type=parse_size, default="1KB",
                     help="smallest per-GPU-pair message (default 1KB)")
     ap.add_argument("--end", type=parse_size, default="1GB",
@@ -659,9 +727,19 @@ def main():
         raise SystemExit("--ranks names one topology's GPU count, so it cannot apply to "
                          f"{len(specs)} programs at once; sweep them one at a time.")
 
+    # A scenario tag stands in for its program plus a --scenario: `2B` means mini_2gpu_1nic
+    # driven at the 2B partial solve. Resolving it here keeps the tag out of Program._resolve,
+    # which is only about finding a .cc.
+    resolved = []
+    for spec in specs:
+        if spec in SCENARIOS:
+            resolved.append((SCENARIOS[spec]["program"], spec))
+        else:
+            resolved.append((spec, None))
+
     # Read every program before running any of them. A bad name in the third position should
     # not surface an hour into the first sweep.
-    progs = [Program(spec, args.ranks) for spec in specs]
+    progs = [Program(spec, args.ranks, scenario) for spec, scenario in resolved]
 
     # The ack mode and the two link-rate numbers are per program, but argparse holds one of
     # each. Resolve them per program and hand sweep_one its own copy rather than mutating the
@@ -670,7 +748,8 @@ def main():
     for i, prog in enumerate(progs):
         if len(progs) > 1:
             print(("\n" if i else "") + "=" * 78)
-            print(f"[{i + 1}/{len(progs)}] {prog.name}")
+            title = f"{prog.scenario} -- {prog.name}" if prog.scenario else prog.name
+            print(f"[{i + 1}/{len(progs)}] {title}")
             print("=" * 78)
         pa = argparse.Namespace(**vars(args))
         defaults = PROGRAM_DEFAULTS.get(prog.name, {})
@@ -684,12 +763,18 @@ def main():
         elif "l2Ack" not in prog.flags:
             raise SystemExit(f"{prog.name} has no --l2Ack; its ack interval is fixed at "
                              f"{prog.ack_default} in the source.")
-        if not prog.wide_input and pa.end * prog.ranks > (1 << 32):
+        if not prog.wide_input and pa.end * prog.pair_ranks > (1 << 32):
             raise SystemExit(f"{prog.name} declares --inputBytes as uint32_t, which wraps at 4 GB; "
-                             f"{fmt_size(pa.end)}/pair is {fmt_size(pa.end * prog.ranks)}/rank. "
+                             f"{fmt_size(pa.end)}/pair is {fmt_size(pa.end * prog.pair_ranks)}/rank. "
                              f"Widen it to uint64_t first.")
         if base_outdir is None:
-            pa.outdir = os.path.join(HERE, "sweep_results", prog.slug(pa.l2ack))
+            # A scenario's results go in a directory named after the TAG, since the tag is what
+            # identifies the experiment (2B and 2C are the same scratch and would otherwise
+            # collide). The ack suffix stays, for the same reason it exists elsewhere: the two
+            # ack modes are not comparable and must not share a results.csv.
+            pa.outdir = os.path.join(HERE, "sweep_results",
+                                     (prog.scenario + ("_ack" if pa.l2ack else ""))
+                                     if prog.scenario else prog.slug(pa.l2ack))
         elif len(progs) > 1:
             # One --outdir over several programs would have them append to each other's
             # results.csv under incompatible rank counts. Give each its own subdirectory.
@@ -723,26 +808,37 @@ def sweep_one(prog, args):
     if not args.tables_only:
         print(f"{prog.name}: {prog.ranks} GPUs, {prog.nvswitches} NVSwitches, "
               + (f"acks on (mode {args.l2ack})" if args.l2ack else "no-ack mode"))
+        if prog.scenario:
+            print(f"scenario {prog.scenario}: {prog.participants} participating GPUs "
+                  f"-- {SCENARIOS[prog.scenario]['note']}")
         print(f"output: {args.outdir}")
         print(f"{len(sweep)} sizes x {len(args.configs.split(','))} configs, "
               f"{fmt_size(args.start)}..{fmt_size(args.end)} per pair "
-              f"({fmt_size(args.start * prog.ranks)}..{fmt_size(args.end * prog.ranks)} per rank)\n")
+              f"({fmt_size(args.start * prog.pair_ranks)}..{fmt_size(args.end * prog.pair_ranks)} "
+              f"per rank, over {prog.pair_ranks} participants)\n")
         # The first run to actually execute carries the build; the rest never rebuild. Each
         # program needs its own build, since each is a separate cmake target.
         built = args.skip_build
         print("build: " + ("assumed current (--skip-build), every run is --no-build"
                            if built else "on the first run only, then --no-build") + "\n")
         for s in sweep:
-            print(f"{fmt_size(s)}/pair -> --inputBytes={s * prog.ranks}")
+            print(f"{fmt_size(s)}/pair -> --inputBytes={s * prog.pair_ranks}")
             for name in args.configs.split(","):
                 sched = CONFIGS[name].get("sched")
                 if sched and not ("sched" in prog.flags and prog.has_sched(sched, args.coll)):
                     if name not in skipped_sched:
+                        # A warning, not a note: asking for `milp` and silently getting a table
+                        # with no milp column is the failure mode worth being loud about. It is
+                        # not fatal, because the rest of the sweep is still valid and the solve
+                        # can be dropped in and the sweep resumed (results.csv is append-only).
+                        who = prog.scenario or prog.name
                         why = ("declares no --sched, so running it would silently repeat the "
                                "baseline" if "sched" not in prog.flags else
-                               f"has no xml_input/{prog.stem}_"
-                               f"{'ag' if args.coll == 'allgather' else 'a2a'}_{sched}.xml")
-                        print(f"  [{name:8s}] skipped: {prog.name} {why}")
+                               f"has no xml_input/{prog.sched_xml(sched, args.coll)}")
+                        print(f"  [{name:8s}] SKIPPED -- see warning below", flush=True)
+                        sys.stderr.write(
+                            f"WARNING: {who} {why}; its `{name}` column will be absent from the "
+                            f"tables. Solve it and re-run this sweep to fill it in.\n")
                         skipped_sched.add(name)
                     continue
                 if (s, name) in done and not args.force:

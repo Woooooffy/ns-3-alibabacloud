@@ -59,6 +59,21 @@ namespace ns3{
 			// letting one tester object sweep several subsets over the same topology.
 			void SetPassiveGpus(const std::vector<int>& passiveGpus);
 
+			// App indices that RUN the algorithm but hold no slice of the collective: a solver
+			// on a partial-participation problem routes chunks through GPUs that are not
+			// participants, and those relays execute send/recv steps staging through scratch.
+			//
+			// They differ from passive GPUs in exactly one way, and it is the way that matters:
+			// a passive GPU never touches a buffer, so it needs none, whereas a relay's steps
+			// read and write its scratch on every hop. Relays are therefore excluded from the
+			// participant ranks (they own no input or output slice, and there is nothing on
+			// them to verify) but ARE given buffers by Setup*, sized like everyone else's.
+			// Marking a relay merely passive leaves it running steps against an unallocated
+			// scratch buffer.
+			//
+			// Each index is added to the passive set as well, so callers need only one call.
+			void SetRelayGpus(const std::vector<int>& relayGpus);
+
 			void SetLogMode(CollectiveLogMode mode){ m_mode = mode; }
 			CollectiveLogMode GetLogMode() const { return m_mode; }
 			// Mismatch lines printed in MINIMAL mode before verification gives up and returns.
@@ -109,6 +124,11 @@ namespace ns3{
 			int m_n_apps;
 			std::ostream& m_log;
 			std::set<int> m_passive;             // app indices sitting idle this run
+			std::set<int> m_relays;              // passive, but still need buffers -- see SetRelayGpus
+			// Gives every relay the same buffers a participant gets (zeroed input and output,
+			// scratch sized to the algorithm's s_chunks) so its staging steps have somewhere to
+			// land. Called at the end of each Setup*, after the participant loop.
+			void AllocateRelayBuffers(size_t input_elts, size_t output_elts, size_t scratch_elts);
 			std::vector<int> m_participants;     // active app indices, ascending; vector index == participant rank
 			int m_nParticipants;
 	}; // collective tester

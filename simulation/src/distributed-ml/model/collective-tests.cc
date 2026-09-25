@@ -41,6 +41,39 @@ namespace ns3{
 		ComputeParticipants();
 	}
 
+	void CollectiveTester::SetRelayGpus(const std::vector<int>& relayGpus){
+		// Drop the previous call's relays out of m_passive before recording the new ones, so
+		// reusing one tester across schedules cannot leave a GPU passive because an earlier
+		// solve happened to relay through it.
+		for (int idx : m_relays) m_passive.erase(idx);
+		m_relays.clear();
+		for (int idx : relayGpus){
+			NS_ASSERT_MSG(idx >= 0 && idx < m_n_apps, "Relay GPU index " << idx << " out of range [0, " << m_n_apps << ").");
+			m_relays.insert(idx);
+			// A relay is passive by definition -- it owns no participant rank. Folding it into
+			// m_passive here rather than making the caller do it is what keeps the two sets from
+			// disagreeing, which would put a relay in the middle of the rank numbering.
+			m_passive.insert(idx);
+		}
+		ComputeParticipants();
+	}
+
+	void CollectiveTester::AllocateRelayBuffers(size_t input_elts, size_t output_elts, size_t scratch_elts){
+		for (int idx : m_relays){
+			Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(m_apps.Get(idx));
+			// Zeroed, not value-encoded: a relay contributes nothing of its own, and anything it
+			// forwards is written into scratch by an incoming step before it is read back out.
+			// Its input and output exist only so that a step naming 'i' or 'o' (a solver emits
+			// nop steps against them) has a valid buffer to point at.
+			app->AllocBuffer(input_elts, app->GetSrcBuffer());
+			app->AllocBuffer(output_elts, app->GetDstBuffer());
+			app->AllocBuffer(scratch_elts, app->GetScratchBuffer());
+			memset(app->GetSrcBuffer()->dataBuffer, 0, input_elts * sizeof(int32_t));
+			memset(app->GetDstBuffer()->dataBuffer, 0, output_elts * sizeof(int32_t));
+			memset(app->GetScratchBuffer()->dataBuffer, 0, scratch_elts * sizeof(int32_t));
+		}
+	}
+
 	void CollectiveTester::ComputeParticipants(){
 		m_participants.clear();
 		for (int i = 0; i < m_n_apps; ++i){
@@ -79,6 +112,7 @@ namespace ns3{
 			}
 			DumpIfVerbose(app, app->GetSrcBuffer());
 		}
+		AllocateRelayBuffers(input_elts, output_elts, scratch_elts);
 	}
 
 	CollectiveTestResult CollectiveTester::VerifyAllgather(size_t input_elts, int n_chunks){
@@ -129,7 +163,25 @@ namespace ns3{
 		return CollectiveTestResult::TEST_FAILED;
 	}
 
+	// Relay app indices for a tester whose ApplicationContainer came from
+	// CollectivesApplicationHelper::Install(AlgoTopology&). That helper installs on
+	// GetActiveGpuIds() in ascending order, so an app's container index is its gpu id's
+	// position in that list -- which is the translation from the topology's gpu ids to the
+	// app indices SetRelayGpus takes. Doing it here rather than in every caller is what makes
+	// relay handling automatic on the topo-driven path: a solve that routes through a
+	// non-participant would otherwise silently misnumber every participant rank.
+	static std::vector<int> RelayAppIndices(AlgoTopology& topo){
+		const std::vector<int>& active = topo.GetActiveGpuIds();
+		std::vector<int> idx;
+		for (int gpuId : topo.GetRelayGpuIds()){
+			auto it = std::find(active.begin(), active.end(), gpuId);
+			if (it != active.end()) idx.push_back((int)(it - active.begin()));
+		}
+		return idx;
+	}
+
 	void CollectiveTester::SetupAllgather(AlgoTopology& topo, size_t input_elts){
+		SetRelayGpus(RelayAppIndices(topo));
 		SetupAllgather(input_elts, topo.GetNInputChunks(), topo.GetNScratchChunks());
 	}
 
@@ -179,6 +231,7 @@ namespace ns3{
 			}
 			DumpIfVerbose(app, app->GetSrcBuffer());
 		}
+		AllocateRelayBuffers(input_elts, output_elts, scratch_elts);
 	}
 
 	CollectiveTestResult CollectiveTester::VerifyAlltoall(size_t input_elts, int n_chunks){
@@ -234,6 +287,7 @@ namespace ns3{
 	}
 
 	void CollectiveTester::SetupAlltoall(AlgoTopology& topo, size_t input_elts){
+		SetRelayGpus(RelayAppIndices(topo));
 		SetupAlltoall(input_elts, topo.GetNInputChunks(), topo.GetNScratchChunks());
 	}
 

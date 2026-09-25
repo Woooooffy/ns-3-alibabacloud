@@ -55,8 +55,20 @@ namespace ns3
 		int GetNChunksPerLoop() const { return m_nChunksPerLoop; }
 		int GetNChannels() const { return m_nChannels; }
 		// GPU ids carrying a non-empty algorithm (>=1 threadblock), ascending. These are the
-		// active participants; any other GPU in the container is passive for this algorithm.
+		// GPUs that RUN, so they are the ones an application must be installed on; any other
+		// GPU in the container is passive for this algorithm.
 		const std::vector<int>& GetActiveGpuIds() const { return m_activeGpuIds; }
+		// The active GPUs that hold a slice of the collective (i_chunks > 0), ascending. On a
+		// whole-topology solve this equals GetActiveGpuIds(); on a partial-participation one it
+		// is the subset the collective is actually defined over, and it is THIS count and
+		// ordering that the buffer layout is numbered by -- see GetRelayGpuIds().
+		const std::vector<int>& GetDataGpuIds() const { return m_dataGpuIds; }
+		// The active GPUs with no input chunks of their own: they forward other ranks' data
+		// through scratch and nothing else. A solver produces these on a partial problem by
+		// routing through an idle GPU. They must still be installed and still need buffers
+		// (their steps read and write scratch), but they own no participant rank and there is
+		// nothing to verify on them -- hand them to CollectiveTester::SetRelayGpus.
+		const std::vector<int>& GetRelayGpuIds() const { return m_relayGpuIds; }
 
 		AlgoParseResult ParseAlgoXml(const char* xmlFilePath);
 		// Parses the switch JSON, which describes two independent things:
@@ -107,6 +119,8 @@ namespace ns3
 		int m_nChunksPerLoop = 0;            // nchunksperloop from the <algo> root
 		int m_nChannels = 0;                 // nchannels from the <algo> root
 		std::vector<int> m_activeGpuIds;     // gpu ids with a non-empty algorithm, ascending
+		std::vector<int> m_dataGpuIds;       // active AND i_chunks > 0 (the participant ranks)
+		std::vector<int> m_relayGpuIds;      // active AND i_chunks == 0 (forward-only)
 		// switch node id -> (neighbor node id -> every outgoing ifIndex reaching that
 		// neighbor), built lazily the first time a given switch is touched by
 		// ParseSwitchJson. The value is a vector, not a single port, because a realistic

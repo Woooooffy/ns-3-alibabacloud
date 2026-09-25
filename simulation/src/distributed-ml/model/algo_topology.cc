@@ -270,6 +270,8 @@ namespace ns3
 		m_nInputChunks = 0;
 		m_nScratchChunks = 0;
 		m_activeGpuIds.clear();
+		m_dataGpuIds.clear();
+		m_relayGpuIds.clear();
 		const char*  collectiveType;
 		CollectiveType collType;
 		XML_GET_PROP_STR(root, "coll", collectiveType);
@@ -775,19 +777,37 @@ namespace ns3
 
 			mscclAlgo->isValid = true;
 
-			// A GPU that carries at least one threadblock is an active participant. Record it
-			// (ascending gpu-id order, enforced below) and its per-GPU input chunk count so the
-			// topo-driven helper/tester paths can install and set up without the caller
-			// re-specifying either. Symmetric collectives give every active rank the same
-			// i_chunks; warn if that assumption is violated rather than silently pick one.
+			// A GPU that carries at least one threadblock is ACTIVE: it runs steps, so it needs
+			// an application installed. Active splits two ways, and the split matters:
+			//
+			//   DATA participant (i_chunks > 0) -- contributes and receives a slice of the
+			//     collective. These are the ranks the collective is defined over, so it is
+			//     their count, not the active count, that the buffer layout is numbered by.
+			//   RELAY (i_chunks == 0) -- carries no slice of its own and only forwards through
+			//     scratch. A solver picks these up on a partial-participation problem: asked
+			//     to move data between a subset of the GPUs it will happily route a chunk
+			//     through an idle one, so a relay is a non-participant that nonetheless runs.
+			//
+			// Lumping the two together silently corrupted every partial solve: m_nInputChunks
+			// took whichever GPU happened to be parsed last (0 if that was a relay, which then
+			// looks like an empty algorithm), and the tester numbered its participant ranks
+			// over relays too, so every rank's output slice landed at the wrong offset.
 			if (mscclAlgo->nBlocks > 0){
 				m_activeGpuIds.push_back(gpuId);
-				if (m_nInputChunks != 0 && m_nInputChunks != iChunks){
-					NS_LOG_WARN("MSCCL: GPU " << gpuId << " has i_chunks " << iChunks
-						<< " differing from earlier active GPUs (" << m_nInputChunks
-						<< "); topo-driven tester setup assumes a uniform per-rank input size.");
+				if (iChunks > 0){
+					m_dataGpuIds.push_back(gpuId);
+					// Symmetric collectives give every data rank the same i_chunks; warn if that
+					// assumption is violated rather than silently pick one. Relays are exempt --
+					// i_chunks 0 is what MAKES them relays, not a disagreement.
+					if (m_nInputChunks != 0 && m_nInputChunks != iChunks){
+						NS_LOG_WARN("MSCCL: GPU " << gpuId << " has i_chunks " << iChunks
+							<< " differing from earlier data GPUs (" << m_nInputChunks
+							<< "); topo-driven tester setup assumes a uniform per-rank input size.");
+					}
+					m_nInputChunks = iChunks;
+				} else {
+					m_relayGpuIds.push_back(gpuId);
 				}
-				m_nInputChunks = iChunks;
 				// Scratch, unlike i_chunks, legitimately varies per rank (a rank that relays more
 				// traffic stages more chunks), so take the maximum: the tester allocates one
 				// uniform scratch buffer and it must cover the hungriest rank's offsets.
@@ -795,6 +815,17 @@ namespace ns3
 			}
     } // gpu
 		std::sort(m_activeGpuIds.begin(), m_activeGpuIds.end());
+		std::sort(m_dataGpuIds.begin(), m_dataGpuIds.end());
+		std::sort(m_relayGpuIds.begin(), m_relayGpuIds.end());
+		if (!m_relayGpuIds.empty()){
+			std::ostringstream relayOss;
+			for (size_t i = 0; i < m_relayGpuIds.size(); ++i)
+				relayOss << (i ? ", " : "") << m_relayGpuIds[i];
+			NS_LOG_UNCOND("MSCCL: " << m_dataGpuIds.size() << " data GPUs, plus "
+				<< m_relayGpuIds.size() << " relay GPU(s) carrying threadblocks but no input "
+				<< "chunks (" << relayOss.str() << "). Relays run their steps but hold no slice "
+				<< "of the collective, so they are excluded from participant ranks.");
+		}
 
 		// Unconditional, like the switch-JSON summary. A schedule from a time-indexed solver is
 		// congestion-free only because its network dependences separate flows into epochs; if

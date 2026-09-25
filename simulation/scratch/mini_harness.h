@@ -241,6 +241,21 @@ struct Options {
     // (4 vs 8 on mini_1g1n); --inputBytes is a rank's whole input either way, so the bytes
     // per GPU pair -- and hence the comparison -- are unchanged.
     std::string sched = "";
+    // A PARTIAL-PARTICIPATION scenario solved against this same topology: the fabric and the
+    // scratch are unchanged, but only a subset of the GPUs carries a slice of the collective.
+    // `--scenario=2B` inserts the tag between the stem and the collective, so it reads
+    // xml_input/<stem>_2B_<coll>[_no_rate].xml and json_input/<stem>_2B_<coll>.json, and it
+    // composes with --sched (`--scenario=2B --sched=milp` -> <stem>_2B_<coll>_milp.*).
+    //
+    // The subsets are picked so the number of flows a leaf must spread over its two
+    // equal-cost uplinks is ODD, which makes ECMP's best possible split ceil(K/2):floor(K/2)
+    // -- lopsided no matter how good the hash is. That is the baseline the multipath solve is
+    // measured against, and it is why the default (lp) solve splits a pair's chunk over
+    // several channels while the `milp` variant deliberately keeps one chunk per pair.
+    //
+    // Which GPUs participate is NOT configured here: it is whichever <gpu> elements of the
+    // chosen XML carry threadblocks. This flag only selects the file.
+    std::string scenario = "";
     // Period of the per-NIC bandwidth trace, in ns. 0 disables it and costs nothing.
     uint32_t nicBwIntervalNs = 0;
     // The per-packet queue trace is exact but grows with the traffic: one row per enqueue and
@@ -294,6 +309,7 @@ struct Options {
         cmd.AddValue("flowId", "Network only: carry msccl flow ids and install per-flow switch forwarding from the JSON (does not affect NIC selection)", flowId);
         cmd.AddValue("xml", "XML schedule filename inside scratch/xml_input, overriding the one derived from --coll/--rate (empty = derive)", xmlName);
         cmd.AddValue("sched", "Schedule variant suffix applied to BOTH input stems, e.g. milp -> <stem>_<coll>_milp[_no_rate].xml and <stem>_<coll>_milp.json (empty = the topology's default solve)", sched);
+        cmd.AddValue("scenario", "Partial-participation scenario tag inserted before the collective in BOTH input stems, e.g. 2B -> <stem>_2B_<coll>[_milp][_no_rate].xml and <stem>_2B_<coll>[_milp].json (empty = the whole-topology solve)", scenario);
         cmd.AddValue("nicSel", "NIC selection: schedule (switch JSON pins the NIC) | merged (NCCL-style merged NIC, one qp per NIC) | rr (one qp per connection, round-robin NICs)", nicSel);
         cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences (false = release every buffer-ready send immediately)", netDeps);
         cmd.AddValue("qlenRows", "Write the per-packet switch queue trace (0 = only the per-port peak summary)", qlenRows);
@@ -314,6 +330,11 @@ struct Options {
     bool IsAllgather() const { return coll == "allgather"; }
 
     void Validate() {
+        // Traces in logs/ are keyed by label, and two scenarios of the same scratch would
+        // otherwise overwrite each other's. The sweep driver always passes --label, so this
+        // only affects hand-run invocations -- which is exactly where the collision would be
+        // silent and confusing.
+        if (!scenario.empty() && label == stem) label = stem + "_" + scenario;
         if (nicSel != "schedule" && nicSel != "merged" && nicSel != "rr")
             NS_FATAL_ERROR("Unknown --nicSel value '" << nicSel << "' (expected schedule|merged|rr).");
         if (coll != "allgather" && coll != "alltoall")
@@ -351,7 +372,9 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     // by the rate and _no_rate XMLs since routing is identical between them.
     // --sched names a variant solve of the same topology/collective and suffixes both stems;
     // an explicit --xml still overrides the XML half, so the two can be combined.
-    const std::string STEM = opt.stem + "_" + opt.CollSuffix()
+    const std::string STEM = opt.stem
+                           + (opt.scenario.empty() ? "" : "_" + opt.scenario)
+                           + "_" + opt.CollSuffix()
                            + (opt.sched.empty() ? "" : "_" + opt.sched);
     const std::string XML_NAME = opt.xmlName.empty()
         ? STEM + (opt.rate ? "" : "_no_rate") + ".xml"
@@ -398,7 +421,19 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     // Chunk count and participant set come straight from the parsed algorithm, so ChunkSize
     // and the tester can never drift from the XML, and swapping XMLs needs no source edit.
     const int N_CHUNKS = topo.GetNInputChunks();
-    const int N_NODES = (int) topo.GetActiveGpuIds().size();
+    // The collective's rank count is the DATA participants, not everything that runs: a
+    // partial-participation solve may route through idle GPUs, and those relays carry no
+    // slice of their own. Counting them here would inflate the algbw denominator by the
+    // bytes of ranks that never had any.
+    const int N_NODES = (int) topo.GetDataGpuIds().size();
+    const int N_RELAYS = (int) topo.GetRelayGpuIds().size();
+    if (N_NODES <= 0)
+        NS_FATAL_ERROR("Parsed algorithm has no GPU with input chunks; check " << XML_ALGO << ".");
+    if ((int) topo.GetActiveGpuIds().size() < (int) gpunodes.GetN() || N_RELAYS > 0) {
+        std::cout << "Participants: " << N_NODES << " of " << gpunodes.GetN() << " GPUs carry data";
+        if (N_RELAYS) std::cout << ", " << N_RELAYS << " relay only";
+        std::cout << " (schedule " << XML_NAME << ")" << std::endl;
+    }
     // Fatal rather than NS_ASSERT: these two are configuration mistakes, and an assert is
     // compiled out of an optimized build -- which is the build a sweep runs.
     if (N_CHUNKS <= 0)
