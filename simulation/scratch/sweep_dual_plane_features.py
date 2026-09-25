@@ -401,8 +401,13 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
             f"--inputBytes={input_bytes}", f"--label={label}", f"--coll={args.coll}",
             f"--rate={flags['rate']}", f"--netDeps={flags['netDeps']}",
             f"--flowId={flags['flowId']}", f"--nicSel={flags['nicSel']}",
-            f"--sched={flags.get('sched', '')}",
-            f"--scenario={prog.scenario or ''}",
+            # --sched / --scenario are OMITTED when empty rather than passed as "": ns-3's
+            # CommandLineHelper::UserItemParse feeds the value to `istringstream >> val`,
+            # which sets failbit on an empty string, so `--sched=` is rejected outright
+            # ("Invalid argument value: sched=") for every string-valued option. Leaving the
+            # flag off is what selects the default solve.
+            *([f"--sched={flags['sched']}"] if flags.get("sched") else []),
+            *([f"--scenario={prog.scenario}"] if prog.scenario else []),
             f"--protoChunkBytes={PROTO_CHUNK_BYTES}",
             f"--maxMsgsInFlight={MAX_MSGS_IN_FLIGHT}",
             f"--nicBwInterval={interval}", f"--qlenRows={qlen_rows}",

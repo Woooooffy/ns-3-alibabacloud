@@ -46,8 +46,10 @@ run_scenario () {
             echo "  SKIPPED: no $xml (run ./import_teccl_partial.py after solving it)"
             continue
         fi
+        # --sched is omitted, not passed empty: ns-3 parses a string option with
+        # `istringstream >> val`, which fails on "", so `--sched=` is rejected outright.
         local out
-        out=$( cd .. && ./ns3 run "$prog --scenario=$tag --sched=$sched --inputBytes=$bytes \
+        out=$( cd .. && ./ns3 run "$prog --scenario=$tag ${sched:+--sched=$sched} --inputBytes=$bytes \
                  --correctness=1 --checkLog=minimal --qlenRows=0 --nicBwInterval=0 \
                  --label=check_${tag}${sched:+_$sched}" 2>&1 )
         echo "$out" | grep -E "Participants:|relay GPU|Total simulated time|algorithm bandwidth|verified|incorrect"
