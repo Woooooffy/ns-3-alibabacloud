@@ -744,6 +744,22 @@ namespace ns3 {
 					MakeUintegerAccessor(&CollectivesApplication::m_protoChunkBytes),
 					MakeUintegerChecker<uint32_t>())
 				.AddAttribute(
+					"SyncBlocks",
+					"Barrier every threadblock at the gridOffset loop boundary: no threadblock "
+					"starts pipeline iteration k+1 until all of them have finished iteration k. "
+					"Off by default, which is the kernel-faithful behaviour -- the MSCCL kernel "
+					"has no such barrier, and the overlap it gives up is the whole point of the "
+					"loop. Turn it on to measure what that overlap costs in schedule phase: a "
+					"time-indexed solve is congestion-free only while every threadblock is in "
+					"the same epoch, and nothing in the XML's netdeps or per-flow rates spans an "
+					"iteration boundary, so drift accumulates across replays. Inert unless "
+					"ProtoChunkBytes puts a chunk over the pipelining threshold (m_nLoops > 1).\n"
+					"Scope is one GPU -- this is a grid-wide barrier, not a device-to-device one. "
+					"Cross-GPU phase is still held only by the netdeps.",
+					BooleanValue(false),
+					MakeBooleanAccessor(&CollectivesApplication::m_syncBlocks),
+					MakeBooleanChecker())
+				.AddAttribute(
 					"CorrectnessCheck",
 					"When true, perform actual memcpy and reduce operations for correctness verification. "
 					"Set false for large-chunk simulation where data values are irrelevant.",
@@ -1257,21 +1273,95 @@ namespace ns3 {
 		// iteration's steps actually start completing.
 		tbState->flag = (uint64_t) COMPUTE_FLAG(m_currWorkId, tbState->iter, tbState->global_step); // flag update
 		tbState->global_step++;
-		// End of the schedule: replay it on the next pipeline slice. Both step counters restart
-		// at 0, mirroring the kernel's `int step = 0` at the top of the gridOffset loop, since
-		// XML dependence targets are numbered within an iteration. There is deliberately no
+		// End of the schedule: replay it on the next pipeline slice. By default there is no
 		// barrier here -- this threadblock moves on the instant its own last step lands, which
-		// is where the pipelining overlap comes from.
-		if (tbState->local_step == (int16_t) m_algo->mscclTBs[bid].nsteps && tbState->iter + 1 < m_nLoops){
-			tbState->iter++;
-			tbState->local_step = 0;
-			tbState->global_step = 0;
+		// is where the pipelining overlap comes from. SyncBlocks() is the opt-in barrier that
+		// takes that overlap away again; COMMENT OUT ITS CALL BELOW to make the boundary
+		// unconditionally free-running, which is the pre-barrier code exactly.
+		const bool atBoundary = (tbState->local_step == (int16_t) m_algo->mscclTBs[bid].nsteps
+			&& tbState->iter + 1 < m_nLoops);
+		const bool parked = atBoundary && SyncBlocks(bid);
+		if (!parked){
+			if (atBoundary) AdvanceIteration(bid);
+			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
 		}
-		Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
+		// Waiters on the flag this step just published are woken whether or not this
+		// threadblock parked. It must be this way round: a parked threadblock is holding the
+		// barrier open, so if it also sat on threadblocks it has already satisfied, none of
+		// them could reach the barrier and nothing would ever release it.
 		for (int16_t depTB : tbState->tryReschedule){
 			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, depTB);
 		}
 		tbState->tryReschedule.clear();
+	}
+
+	// Rolls one threadblock over to the next gridOffset iteration. Both step counters restart
+	// at 0, mirroring the kernel's `int step = 0` at the top of the loop, since XML dependence
+	// targets are numbered within an iteration. `flag` stays monotone across the rollover
+	// because COMPUTE_FLAG orders (iter, step) lexicographically.
+	void CollectivesApplication::AdvanceIteration(int16_t bid){
+		TBState* tbState = &m_TBStates[bid];
+		tbState->iter++;
+		tbState->local_step = 0;
+		tbState->global_step = 0;
+	}
+
+	// Grid-wide barrier at the gridOffset loop boundary, off unless the SyncBlocks attribute
+	// is set. Returns true when `bid` has been parked and must NOT be rescheduled by its
+	// caller; the release path does that instead.
+	//
+	// What it models, and why it is worth having as a knob. The kernel has no such barrier,
+	// and the schedules here are time-indexed solves: a chunk's traffic is congestion-free
+	// only while every threadblock is in the same epoch of the same pass. Both of the
+	// mechanisms that hold that phase together are scoped inside one iteration -- data and
+	// network dependences resolve against COMPUTE_FLAG(work, *this tb's own iter*, step), and
+	// gates are m_gateOpen[iter][gate] -- and they bound a *consumer* from running ahead
+	// without ever holding a *producer* back. So across m_nLoops replays the threadblocks
+	// drift, the epochs smear into each other, and a receiver that the solve sized at exactly
+	// its line rate is offered more than that. Barriering the boundary re-imposes the phase at
+	// the cost of the overlap, which makes the difference between the two runs a measurement
+	// of what that drift costs rather than an argument about it.
+	//
+	// Scope is one GPU. This is the grid-wide barrier a `__syncthreads()`-style sync at the
+	// top of the loop would give, not a device-to-device one: there is no cross-GPU barrier in
+	// the kernel to model, and cross-GPU phase remains held only by the netdeps.
+	//
+	// Liveness: parking cannot deadlock. A threadblock only parks after publishing every flag
+	// of its own iteration, so no peer waiting on this iteration is left blocked; and netFlags
+	// and gates are published from the RDMA completion path (OnRdmaSendComplete), which runs
+	// on messages already in flight and is entirely independent of whether their threadblock
+	// is parked. The barrier therefore only withdraws satisfaction that came from running
+	// *ahead* into a later iteration -- it never blocks anything within an iteration.
+	bool CollectivesApplication::SyncBlocks(int16_t bid){
+		if (!m_syncBlocks) return false;
+		m_iterBarrierParked.push_back(bid);
+		NS_LOG_DEBUG("GPU " << GetNode()->GetId() << " TB=" << (int)bid
+			<< " arrived at iteration barrier (" << m_iterBarrierParked.size() << "/"
+			<< m_iterBarrierParticipants << ") leaving iter=" << m_TBStates[bid].iter
+			<< " t=" << Simulator::Now().GetNanoSeconds());
+		if (m_iterBarrierParked.size() < m_iterBarrierParticipants) return true;
+		ReleaseIterBarrier();
+		return true;
+	}
+
+	// Last arrival at the barrier releases the whole set: every threadblock, the last arrival
+	// included, is rolled over here rather than by its own caller, so all m_iterBarrierParticipants
+	// leave the boundary through one path and in one order.
+	void CollectivesApplication::ReleaseIterBarrier(){
+		// Release in threadblock order, not arrival order. Arrival order is deterministic but
+		// incidental -- it depends on how the event queue happened to break ties -- and the
+		// order threadblocks resume in decides the order their first sends of the new
+		// iteration are pushed onto the shared per-peer qps, which the receiver then claims in
+		// FIFO. Sorting keeps a rerun reproducible against unrelated event-order changes.
+		std::sort(m_iterBarrierParked.begin(), m_iterBarrierParked.end());
+		NS_LOG_DEBUG("GPU " << GetNode()->GetId() << ": iteration barrier releasing "
+			<< m_iterBarrierParked.size() << " threadblock(s) at t="
+			<< Simulator::Now().GetNanoSeconds());
+		for (int16_t bid : m_iterBarrierParked){
+			AdvanceIteration(bid);
+			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
+		}
+		m_iterBarrierParked.clear();
 	}
 
 	// Splits a chunk into the pipeline slices the kernel's gridOffset loop walks. Mirrors
@@ -1361,6 +1451,15 @@ namespace ns3 {
 				}
 			}
 		}
+
+		// Barrier roster (SyncBlocks). A zero-step threadblock never completes a step, so it
+		// could never arrive at the boundary; counting it would hang the barrier on the first
+		// release. Fixed for the run: nBlocks and nsteps do not change once the XML is parsed.
+		m_iterBarrierParticipants = 0;
+		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
+			if (m_algo->mscclTBs[bid].nsteps > 0) ++m_iterBarrierParticipants;
+		}
+		m_iterBarrierParked.reserve(m_iterBarrierParticipants);
 
 		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
 			// mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
@@ -1667,6 +1766,17 @@ namespace ns3 {
 						gateInfo << " Parked on gate " << netWait << " for iter " << pair.second.iter
 							<< " (open=" << (int)m_gateOpen[pair.second.iter][netWait] << ").";
 					}
+				}
+				// With SyncBlocks on, one threadblock that cannot finish its iteration hangs
+				// every other one at the boundary, so most of these reports would be innocent
+				// bystanders. Say which is which.
+				if (!m_iterBarrierParked.empty()){
+					const bool atBarrier = std::find(m_iterBarrierParked.begin(),
+						m_iterBarrierParked.end(), pair.first) != m_iterBarrierParked.end();
+					gateInfo << (atBarrier ? " Parked at the SyncBlocks iteration barrier"
+					                       : " Did NOT reach the SyncBlocks iteration barrier")
+						<< " (" << m_iterBarrierParked.size() << "/" << m_iterBarrierParticipants
+						<< " arrived), so look at the threadblocks that never arrived.";
 				}
 				NS_FATAL_ERROR("BUG: TB " << pair.first << " on node " << GetNode()->GetId() << " not finished at application close. Has " << tb->nsteps << " steps, at step " << pair.second.local_step << " of iteration " << pair.second.iter << "/" << m_nLoops << "." << gateInfo.str());
 			}
