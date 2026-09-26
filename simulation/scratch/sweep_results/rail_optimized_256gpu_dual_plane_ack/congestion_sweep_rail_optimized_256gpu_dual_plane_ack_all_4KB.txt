@@ -1,0 +1,6 @@
+== sweep_rail_optimized_256gpu_dual_plane_ack_all_4KB ==
+  events (switch_events_sweep_rail_optimized_256gpu_dual_plane_ack_all_4KB.csv):
+    none
+  peak egress queue (switch_qlen_sweep_rail_optimized_256gpu_dual_plane_ack_all_4KB.csv):
+    spine downlink   n= 512  max     83.6 KB  mean    47.9  p50    46.2  max/mean  1.75
+  per-NIC bandwidth: host_nic_bw_sweep_rail_optimized_256gpu_dual_plane_ack_all_4KB.csv not found (re-run with --nicBwInterval=<ns>)

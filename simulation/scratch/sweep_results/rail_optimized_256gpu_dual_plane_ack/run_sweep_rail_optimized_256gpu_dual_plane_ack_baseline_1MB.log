@@ -1,0 +1,17 @@
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/rail_optimized_256gpu_dual_plane_alltoall_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_rail_optimized_256gpu_dual_plane_ack_baseline_1MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_rail_optimized_256gpu_dual_plane_ack_baseline_1MB.csv
+Total simulated time: 3523405 nanoseconds
+Simulator end (last event of any kind): 3524805 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_rail_optimized_256gpu_dual_plane_ack_baseline_1MB.csv
+Fabric end (last switch data dequeue): 3473732 ns
+Switch-to-switch data bytes over 512 ports: min 0 / mean 0 / max 0 (max/mean 0)
+Busiest switch port: sw 256 port 0 -> node 0, 2633482 ns of data at line rate (75.8113% of fabric end)
+alltoall algorithm bandwidth: 19503.7 GB/s
+Algorithm XML: honoring 31724 network dependence(s) over 116204 send step(s).
+Skipping correctness check.
+Done simulation
