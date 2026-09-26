@@ -400,6 +400,14 @@ namespace ns3 {
 			void TryScheduleNextStep(int16_t bid);
 			// Marks `gate` open (idempotently) and re-runs every threadblock parked on it.
 			void OpenGate(int16_t gate, uint32_t iter);
+			// Rolls a threadblock over to its next gridOffset iteration: iter++, both step
+			// counters back to 0. Split out of StepCompletionCallback because the barrier
+			// release path below performs the same rollover on another threadblock's behalf.
+			void AdvanceIteration(int16_t bid);
+			// Grid-wide barrier at the gridOffset loop boundary. See the definition in
+			// collectives.cc for what it models and why it is off by default.
+			bool SyncBlocks(int16_t bid);
+			void ReleaseIterBarrier();
 			// Derives m_sliceElems / m_nLoops from m_protoChunkBytes and m_currChunkSize, and
 			// rejects schedules whose features the pipelining model does not cover yet.
 			void DerivePipelining();
@@ -462,6 +470,19 @@ namespace ns3 {
 			// publishes a step's flag after the whole count loop, not per iteration of it. Absent
 			// for an unsplit step, which is the common case.
 			std::map<std::pair<int16_t, int16_t>, uint16_t> m_stepPartsLeft;
+			// SyncBlocks attribute: barrier every threadblock at the gridOffset loop boundary
+			// instead of letting each roll over the instant its own last step lands. Off by
+			// default, which is the pre-existing (and kernel-faithful) overlapping behaviour.
+			bool m_syncBlocks = false;
+			// Threadblocks that must reach the barrier before it releases: those with at least
+			// one step, since a zero-step threadblock never completes a step and so could never
+			// arrive. Computed once in InterpretAlgo.
+			uint32_t m_iterBarrierParticipants = 0;
+			// Threadblocks currently parked at the barrier, in arrival order. Never grows past
+			// m_iterBarrierParticipants: the last arrival releases the whole set and clears it,
+			// so one vector serves every boundary in turn -- a threadblock cannot reach barrier
+			// k+1 without having been released from barrier k.
+			std::vector<int16_t> m_iterBarrierParked;
 			// Elements this iteration covers (the kernel's `nelem`): m_sliceElems, except on the
 			// final iteration where the chunk may not divide evenly.
 			uint32_t SliceElemsForIter(uint32_t iter) const;

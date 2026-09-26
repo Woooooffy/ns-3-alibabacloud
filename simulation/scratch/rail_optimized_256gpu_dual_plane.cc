@@ -260,6 +260,12 @@ int main(int argc, char *argv[]) {
     // and maxAllowedCount loops inert. To exercise them, either raise inputBytes until a chunk
     // approaches this, or set this below the chunk size.
     uint32_t protoChunkBytes = 0;
+    // Barrier every threadblock at the gridOffset loop boundary (CollectivesApplication's
+    // SyncBlocks). Inert unless --protoChunkBytes puts a chunk over the pipelining threshold,
+    // i.e. unless a chunk (inputBytes/nchunksperloop) exceeds it and nLoops > 1. Off by
+    // default: the kernel has no such barrier, so this is a measurement knob for what the
+    // unsynchronized replay costs the schedule's phase, not a model of the hardware.
+    bool syncBlocks = false;
     // Transport pipelining depth (NCCL_STEPS analogue): how many messages a qp may have in
     // flight before waiting for a completion. It binds only when --l2Ack is nonzero: with acks
     // off the sender self-acknowledges at send completion and messages retire without a round
@@ -297,6 +303,7 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
     cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
     cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
+    cmd.AddValue("syncBlocks", "Barrier all threadblocks at each gridOffset iteration boundary (inert unless --protoChunkBytes makes nLoops > 1)", syncBlocks);
     cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
     cmd.AddValue("l2Ack", "Ack mode: 0 = no-ack (sender self-acknowledges at send completion), nonzero = acks on", l2AckInterval);
     cmd.AddValue("ackEveryNPkts", "Mid-message ack coalescing in packets; message-closing packets are acked regardless (0 = only those)", ackEveryNPkts);
@@ -1439,6 +1446,7 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
     app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(protoChunkBytes));
+    app_helper.SetAttribute("SyncBlocks", BooleanValue(syncBlocks));
     app_helper.SetAttribute("NicSelection", StringValue(
         nicSel == "schedule" ? "SCHEDULED" : (nicSel == "merged" ? "MERGED" : "ROUND_ROBIN")));
     app_helper.SetAttribute("NetworkFlowIds", BooleanValue(flowId));
