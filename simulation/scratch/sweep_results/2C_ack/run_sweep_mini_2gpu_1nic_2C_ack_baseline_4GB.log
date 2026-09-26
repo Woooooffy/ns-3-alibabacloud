@@ -1,0 +1,28 @@
+Participants: 6 of 8 GPUs carry data (schedule mini_2g1n_2C_a2a_no_rate.xml)
+Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_2gpu_1nic_2C_ack_baseline_4GB.csv (every 5000000 ns, 8 NICs)
+Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_2C_a2a_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_2C_ack_baseline_4GB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_2C_ack_baseline_4GB.csv
+Total simulated time: 4732609628 nanoseconds
+Simulator end (last event of any kind): 4735000000 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_2C_ack_baseline_4GB.csv
+Fabric end (last switch data dequeue): 4732607732 ns
+Switch-to-switch data bytes over 8 ports: min 9786359808 / mean 19572719616 / max 29359079424 (max/mean 1.5)
+Busiest switch port: sw 9 port 2 -> node 10, 4697452707 ns of data at line rate (99.2572% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 61440  with a rate: 0 (0.0%)  without: 61440
+  packets paced: 31457280 (124440.0 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       31455214 (100.0%)
+    cc rate (message tail): 2066 (0.0%)
+  bytes shaped by the XML rate: 0.0 of 124440.0 MB (0.0%)
+alltoall algorithm bandwidth: 32.6709 GB/s
+Algorithm XML: honoring 37 network dependence(s) over 70 send step(s).
+Skipping correctness check.
+Done simulation

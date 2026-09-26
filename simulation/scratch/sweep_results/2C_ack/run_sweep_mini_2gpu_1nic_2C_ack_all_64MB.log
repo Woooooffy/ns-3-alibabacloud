@@ -1,0 +1,76 @@
+Participants: 6 of 8 GPUs carry data (schedule mini_2g1n_2C_a2a.xml)
+Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_2gpu_1nic_2C_ack_all_64MB.csv (every 50000 ns, 8 NICs)
+Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: schedule-pinned (one qp per connection)
+Network flow ids: on (custom headers + per-flow switch forwarding)
+Network deps (netdepid/netdeps): honored
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_2C_a2a.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_2C_ack_all_64MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_2C_ack_all_64MB.csv
+Total simulated time: 65302096 nanoseconds
+Simulator end (last event of any kind): 65350000 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_2C_ack_all_64MB.csv
+Fabric end (last switch data dequeue): 65300198 ns
+Switch-to-switch data bytes over 8 ports: min 306118656 / mean 306118656 / max 306118656 (max/mean 1)
+Busiest switch port: sw 8 port 2 -> node 10, 48978984 ns of data at line rate (75.0059% of fabric end)
+Flow-forwarding rule coverage: 1015808 hit / 0 miss (100% of flow-id packets steered by the schedule)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 960  with a rate: 960 (100.0%)  without: 0
+    of those, one MTU or less (shaped only by the gap after): 0 (0.0%)
+    requested rate, byte-weighted mean: 42.9 Gbps over 1920.0 MB
+  packets paced: 491520 (1946.2 MB), gap set by:
+    the message's cap:      491520 (100.0%), 1946.2 MB, applied cap 42.9 Gbps
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       0 (0.0%)
+    cc rate (message tail): 0 (0.0%)
+  bytes shaped by the XML rate: 1946.2 of 1946.2 MB (100.0%)
+alltoall algorithm bandwidth: 36.996 GB/s
+Algorithm XML: honoring 37 network dependence(s) over 70 send step(s).
+Switch JSON: switch 0, flow 0: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 1: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 16: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 17: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 18: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 19: port 1 reaches node 13, not the declared next_hop 3 (gpu, node 3). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 2: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 20: port 1 reaches node 13, not the declared next_hop 3 (gpu, node 3). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 26: port 1 reaches node 13, not the declared next_hop 2 (gpu, node 2). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 29: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 3: port 1 reaches node 13, not the declared next_hop 2 (gpu, node 2). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 30: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 31: port 1 reaches node 13, not the declared next_hop 3 (gpu, node 3). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 34: port 1 reaches node 13, not the declared next_hop 2 (gpu, node 2). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 35: port 1 reaches node 13, not the declared next_hop 2 (gpu, node 2). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 36: port 1 reaches node 13, not the declared next_hop 2 (gpu, node 2). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 37: port 1 reaches node 13, not the declared next_hop 2 (gpu, node 2). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 40: port 1 reaches node 13, not the declared next_hop 3 (gpu, node 3). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 41: port 1 reaches node 13, not the declared next_hop 3 (gpu, node 3). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 46: port 1 reaches node 13, not the declared next_hop 2 (gpu, node 2). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 6: port 1 reaches node 13, not the declared next_hop 3 (gpu, node 3). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 0, flow 7: port 1 reaches node 13, not the declared next_hop 3 (gpu, node 3). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 12: port 0 reaches node 14, not the declared next_hop 5 (gpu, node 5). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 13: port 1 reaches node 15, not the declared next_hop 6 (gpu, node 6). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 14: port 1 reaches node 15, not the declared next_hop 6 (gpu, node 6). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 15: port 1 reaches node 15, not the declared next_hop 6 (gpu, node 6). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 21: port 0 reaches node 14, not the declared next_hop 4 (gpu, node 4). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 22: port 0 reaches node 14, not the declared next_hop 5 (gpu, node 5). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 23: port 0 reaches node 14, not the declared next_hop 5 (gpu, node 5). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 24: port 1 reaches node 15, not the declared next_hop 6 (gpu, node 6). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 25: port 1 reaches node 15, not the declared next_hop 6 (gpu, node 6). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 27: port 0 reaches node 14, not the declared next_hop 5 (gpu, node 5). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 28: port 1 reaches node 15, not the declared next_hop 6 (gpu, node 6). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 32: port 1 reaches node 15, not the declared next_hop 6 (gpu, node 6). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 33: port 1 reaches node 15, not the declared next_hop 6 (gpu, node 6). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 38: port 0 reaches node 14, not the declared next_hop 5 (gpu, node 5). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 39: port 0 reaches node 14, not the declared next_hop 5 (gpu, node 5). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 42: port 0 reaches node 14, not the declared next_hop 4 (gpu, node 4). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 43: port 0 reaches node 14, not the declared next_hop 4 (gpu, node 4). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 44: port 0 reaches node 14, not the declared next_hop 4 (gpu, node 4). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 45: port 0 reaches node 14, not the declared next_hop 4 (gpu, node 4). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 47: port 0 reaches node 14, not the declared next_hop 5 (gpu, node 5). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 8: port 0 reaches node 14, not the declared next_hop 4 (gpu, node 4). Forwarding follows the port; next_hop looks stale.
+Switch JSON: switch 1, flow 9: port 0 reaches node 14, not the declared next_hop 4 (gpu, node 4). Forwarding follows the port; next_hop looks stale.
+Switch JSON: pinned the scheduled egress NIC on 0 RDMA connection(s); 0 left unpinned due to conflicting plane assignments.
+Skipping correctness check.
+Done simulation

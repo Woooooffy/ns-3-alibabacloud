@@ -1,0 +1,6 @@
+== sweep_mini_1gpu_1nic_1A_ack_milp_4GB ==
+  events (switch_events_sweep_mini_1gpu_1nic_1A_ack_milp_4GB.csv):
+    none
+  peak egress queue (switch_qlen_max_sweep_mini_1gpu_1nic_1A_ack_milp_4GB.csv):
+    leaf->gpu        n=  10  max     24.9 KB  mean     6.7  p50     4.1  max/mean  3.74
+  per-NIC bandwidth: no paired fabric samples

@@ -1,0 +1,29 @@
+Participants: 4 of 8 GPUs carry data, 2 relay only (schedule mini_2g1n_2B_a2a_milp_no_rate.xml)
+Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_2gpu_1nic_2B_ack_milp_256MB.csv (every 200000 ns, 8 NICs)
+Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_2B_a2a_milp_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_2B_ack_milp_256MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_2B_ack_milp_256MB.csv
+Total simulated time: 131869978 nanoseconds
+Simulator end (last event of any kind): 132000000 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_2B_ack_milp_256MB.csv
+Fabric end (last switch data dequeue): 131868082 ns
+Switch-to-switch data bytes over 8 ports: min 0 / mean 407764992 / max 815529984 (max/mean 2)
+Busiest switch port: sw 9 port 2 -> node 10, 130484797 ns of data at line rate (98.951% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 2304  with a rate: 0 (0.0%)  without: 2304
+  packets paced: 1179648 (4666.5 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       1179193 (100.0%)
+    cc rate (message tail): 455 (0.0%)
+  bytes shaped by the XML rate: 0.0 of 4666.5 MB (0.0%)
+alltoall algorithm bandwidth: 32.5697 GB/s
+MSCCL: 4 data GPUs, plus 2 relay GPU(s) carrying threadblocks but no input chunks (1, 4). Relays run their steps but hold no slice of the collective, so they are excluded from participant ranks.
+Algorithm XML: honoring 3 network dependence(s) over 18 send step(s).
+Skipping correctness check.
+Done simulation

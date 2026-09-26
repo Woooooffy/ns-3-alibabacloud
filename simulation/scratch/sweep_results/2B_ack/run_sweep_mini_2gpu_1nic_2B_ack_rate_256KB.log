@@ -1,0 +1,30 @@
+Participants: 4 of 8 GPUs carry data (schedule mini_2g1n_2B_a2a.xml)
+Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_2gpu_1nic_2B_ack_rate_256KB.csv (every 200 ns, 8 NICs)
+Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_2B_a2a.xml
+Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_2gpu_1nic_2B_ack_rate_256KB.csv
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_2B_ack_rate_256KB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_2B_ack_rate_256KB.csv
+Total simulated time: 95759 nanoseconds
+Simulator end (last event of any kind): 98800 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_2B_ack_rate_256KB.csv
+Fabric end (last switch data dequeue): 93863 ns
+Switch-to-switch data bytes over 8 ports: min 265472 / mean 398208 / max 530944 (max/mean 1.33333)
+Busiest switch port: sw 8 port 1 -> node 13, 84951 ns of data at line rate (90.5054% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 18  with a rate: 18 (100.0%)  without: 0
+    of those, one MTU or less (shaped only by the gap after): 0 (0.0%)
+    requested rate, byte-weighted mean: 66.7 Gbps over 3.0 MB
+  packets paced: 768 (3.0 MB), gap set by:
+    the message's cap:      768 (100.0%), 3.0 MB, applied cap 66.7 Gbps
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       0 (0.0%)
+    cc rate (message tail): 0 (0.0%)
+  bytes shaped by the XML rate: 3.0 of 3.0 MB (100.0%)
+alltoall algorithm bandwidth: 43.8006 GB/s
+Algorithm XML: honoring 8 network dependence(s) over 18 send step(s).
+Skipping correctness check.
+Done simulation

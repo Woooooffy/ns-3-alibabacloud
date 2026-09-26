@@ -1,0 +1,28 @@
+Participants: 2 of 4 GPUs carry data (schedule mini_1g1n_1A_a2a_no_rate.xml)
+Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_1gpu_1nic_1A_ack_baseline_4GB.csv (every 2000000 ns, 4 NICs)
+Topology: mini_1g1n (4 GPUs, 4 switches, 0 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_1g1n_1A_a2a_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_1gpu_1nic_1A_ack_baseline_4GB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_1gpu_1nic_1A_ack_baseline_4GB.csv
+Total simulated time: 796330990 nanoseconds
+Simulator end (last event of any kind): 798000000 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_1gpu_1nic_1A_ack_baseline_4GB.csv
+Fabric end (last switch data dequeue): 796329959 ns
+Switch-to-switch data bytes over 8 ports: min 0 / mean 2174746624 / max 4349493248 (max/mean 2)
+Busiest switch port: sw 5 port 2 -> node 6, 695918919 ns of data at line rate (87.3908% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 4096  with a rate: 0 (0.0%)  without: 4096
+  packets paced: 2097152 (8296.0 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       2097148 (100.0%)
+    cc rate (message tail): 4 (0.0%)
+  bytes shaped by the XML rate: 0.0 of 8296.0 MB (0.0%)
+alltoall algorithm bandwidth: 21.5738 GB/s
+Algorithm XML: honoring 0 network dependence(s) over 4 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
+Skipping correctness check.
+Done simulation
