@@ -414,6 +414,26 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     // plain ECMP switches, but each connection still injected on the NIC the schedule chose.
     const bool pinNics = (opt.nicSel == "schedule");
     if (opt.flowId || pinNics) {
+        // A missing file is a configuration mistake with one overwhelmingly likely cause, so
+        // it gets its own message instead of "error code 1". Not every schedule HAS a switch
+        // JSON: a p2p (NCCL) solve pins no NICs and stamps no flow ids, so there is nothing
+        // for one to say -- and --nicSel defaults to "schedule", which asks for it anyway.
+        // That combination is the trap, and the generic parse error gave no hint of the fix.
+        {
+            std::ifstream probe(SWITCH_JSON.c_str());
+            if (!probe.good()) {
+                std::string why = opt.flowId && pinNics ? "--flowId=1 and --nicSel=schedule both need one"
+                                : opt.flowId            ? "--flowId=1 needs one"
+                                                        : "--nicSel=schedule needs one";
+                NS_FATAL_ERROR("No switch JSON at " << SWITCH_JSON << ".\n"
+                    << "  " << why << ", but this schedule ships without it"
+                    << (opt.sched.empty() ? "." : " (--sched=" + opt.sched + ").")
+                    << "\n  A p2p/NCCL schedule never has one: it pins no NICs and stamps no flow ids.\n"
+                    << "  Re-run with --flowId=0 --nicSel=merged (or rr), which is what the sweep's\n"
+                    << "  p2p config passes. Leaving either knob on would route this run by a\n"
+                    << "  schedule that does not exist.");
+            }
+        }
         AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str(), opt.flowId, pinNics);
         // Fatal for the same reason the XML parse above is: ParseSwitchJson returns on the
         // first bad entry, leaving flow forwarding half-installed (CustomFlowForwarding on,
