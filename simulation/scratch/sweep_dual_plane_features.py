@@ -39,6 +39,22 @@ can be added to a finished sweep:
 
     ./sweep_dual_plane_features.py mini_1gpu_1nic --configs=milp --start 4KB --end 4MB
 
+--sync-blocks is not a config but a modifier on the ones you asked for: it re-runs each with
+the MSCCL gridOffset iteration barrier on (CollectivesApplication's SyncBlocks) under the name
+<config>+sync, so a barriered run sits beside its unbarriered twin in the same table rather
+than overwriting it.
+
+    ./sweep_dual_plane_features.py rail_optimized_256gpu_dual_plane \
+        --configs=baseline,all --sync-blocks --start 4MB --end 16MB
+
+It is inert below the pipelining threshold: a chunk here is inputBytes/nchunksperloop, and
+unless that exceeds the sweep's 2 MiB --protoChunkBytes there is only one iteration and no
+boundary to barrier at. On the 256-GPU dual-plane schedule (nchunksperloop == ngpus) a chunk
+IS the per-pair size, so the barrier does nothing until 4 MB/pair and bites hardest at 16 MB,
+where the schedule is replayed 8 times. A program that does not declare --syncBlocks is
+refused outright rather than swept, since every column would be an unbarriered run wearing a
++sync name.
+
 PARTIAL-PARTICIPATION SCENARIOS. A scenario tag (1A, 2B, 2C, 3A -- or the group `partial`) is
 itself a program spec: it names one of the mini topologies plus a solve in which only a subset
 of its GPUs carries data, selected through the scratch's --scenario knob.
@@ -100,6 +116,13 @@ CONFIGS = collections.OrderedDict([
     ("milp",       dict(rate=0, netDeps=0, flowId=0, nicSel="merged", sched="milp")),
 ])
 BASELINE = "baseline"
+# --sync-blocks does not add a config; it re-runs whichever configs were asked for with the
+# threadblock barrier on, under a suffixed name. Suffixing rather than overwriting is the
+# point: a barriered run is not the same simulation as its unbarriered twin, so the two must
+# not collide on a (pair_bytes, config) key in results.csv -- and side by side in one table
+# the pair IS the measurement. The config name also feeds the label, so the traces separate
+# too.
+SYNC_SUFFIX = "+sync"
 # Run unless --configs says otherwise. Everything with a `sched` is a different schedule, not an
 # ablation of the sweep's own one, so it does not belong in the default ablation table.
 DEFAULT_CONFIGS = [n for n, f in CONFIGS.items() if not f.get("sched")]
@@ -409,6 +432,7 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
             *([f"--sched={flags['sched']}"] if flags.get("sched") else []),
             *([f"--scenario={prog.scenario}"] if prog.scenario else []),
             f"--protoChunkBytes={PROTO_CHUNK_BYTES}",
+            f"--syncBlocks={flags.get('syncBlocks', 0)}",
             f"--maxMsgsInFlight={MAX_MSGS_IN_FLIGHT}",
             f"--nicBwInterval={interval}", f"--qlenRows={qlen_rows}",
             f"--l2Ack={args.l2ack}", f"--ackEveryNPkts={args.ack_every_n_pkts}",
@@ -588,7 +612,8 @@ def num(row, key):
 def tables(done, sweep_sizes, out, line_gbps):
     # Only the configs this results.csv actually holds. Listing every known config would give
     # the opt-in ones (milp) a column of dashes in every sweep that did not ask for them.
-    names = [n for n in CONFIGS if any((s, n) in done for s in sweep_sizes)]
+    order = [v for n in CONFIGS for v in (n, n + SYNC_SUFFIX)]
+    names = [n for n in order if any((s, n) in done for s in sweep_sizes)]
     lines = []
 
     def table(title, note, cell):
@@ -707,6 +732,13 @@ def main():
                     help="skip the per-NIC bandwidth sampling (--nicBwInterval=0): drops the "
                          "periodic trace events from every run, so it goes faster, at the cost "
                          "of the bandwidth table (its cells read '-')")
+    ap.add_argument("--sync-blocks", "--syncBlocks", action="store_true", dest="sync_blocks",
+                    help="re-run every config in --configs with the gridOffset iteration "
+                         "barrier on (CollectivesApplication's SyncBlocks), under the name "
+                         "<config>" + SYNC_SUFFIX + ". Inert unless a chunk (inputBytes/"
+                         "nchunksperloop) exceeds the sweep's "
+                         f"{fmt_size(PROTO_CHUNK_BYTES)} --protoChunkBytes, since below that "
+                         "there is only one iteration and no boundary to barrier at")
     ap.add_argument("--keep-traces", action="store_true",
                     help="keep the raw per-run CSVs instead of deleting them once reduced")
     ap.add_argument("--skip-build", action="store_true",
@@ -803,6 +835,25 @@ def sweep_one(prog, args):
                 f"{results} was written with different columns ({','.join(header)}).\n"
                 f"Expected: {','.join(FIELDS)}\n"
                 "Delete it or pass a fresh --outdir; the old points have to be re-run anyway.")
+    # What this sweep actually runs: name -> flags. Normally just the --configs subset; with
+    # --sync-blocks, the same subset with the barrier on and the name suffixed, so the rows
+    # land beside their unbarriered twins instead of on top of them.
+    selected = collections.OrderedDict()
+    for n in args.configs.split(","):
+        flags = dict(CONFIGS[n])
+        if args.sync_blocks:
+            flags["syncBlocks"] = 1
+        selected[n + SYNC_SUFFIX if args.sync_blocks else n] = flags
+
+    if args.sync_blocks and "syncBlocks" not in prog.flags:
+        # Not a note and not a skip-one-column warning: with --sync-blocks EVERY column of this
+        # program's sweep is a barriered one, prog.filter would drop the flag from all of them,
+        # and the whole table would be an unbarriered run wearing +sync names. There is nothing
+        # left to salvage, so stop.
+        raise SystemExit(
+            f"{prog.name} declares no --syncBlocks, so --sync-blocks would silently produce a "
+            f"table of unbarriered runs named '<config>{SYNC_SUFFIX}'. Add the knob to the "
+            "scratch (see rail_optimized_256gpu_dual_plane.cc) or drop --sync-blocks.")
     sweep = sizes(args.start, args.end, args.step)
     done = load(results)
     # Per program, not per process: which --flags a scratch is missing is a fact about that
@@ -817,7 +868,7 @@ def sweep_one(prog, args):
             print(f"scenario {prog.scenario}: {prog.participants} participating GPUs "
                   f"-- {SCENARIOS[prog.scenario]['note']}")
         print(f"output: {args.outdir}")
-        print(f"{len(sweep)} sizes x {len(args.configs.split(','))} configs, "
+        print(f"{len(sweep)} sizes x {len(selected)} configs, "
               f"{fmt_size(args.start)}..{fmt_size(args.end)} per pair "
               f"({fmt_size(args.start * prog.pair_ranks)}..{fmt_size(args.end * prog.pair_ranks)} "
               f"per rank, over {prog.pair_ranks} participants)\n")
@@ -828,8 +879,8 @@ def sweep_one(prog, args):
                            if built else "on the first run only, then --no-build") + "\n")
         for s in sweep:
             print(f"{fmt_size(s)}/pair -> --inputBytes={s * prog.pair_ranks}")
-            for name in args.configs.split(","):
-                sched = CONFIGS[name].get("sched")
+            for name, flags in selected.items():
+                sched = flags.get("sched")
                 if sched and not ("sched" in prog.flags and prog.has_sched(sched, args.coll)):
                     if name not in skipped_sched:
                         # A warning, not a note: asking for `milp` and silently getting a table
@@ -849,7 +900,7 @@ def sweep_one(prog, args):
                 if (s, name) in done and not args.force:
                     print(f"  [{name:8s}] already in results.csv, skipping")
                     continue
-                row = run_one(s, name, CONFIGS[name], args, prog, no_build=built)
+                row = run_one(s, name, flags, args, prog, no_build=built)
                 built = True
                 if row is None:
                     continue
