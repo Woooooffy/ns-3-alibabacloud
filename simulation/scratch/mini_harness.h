@@ -467,11 +467,20 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     // compiled out of an optimized build -- which is the build a sweep runs.
     if (N_CHUNKS <= 0)
         NS_FATAL_ERROR("Parsed algorithm reports zero input chunks; check " << XML_ALGO << ".");
-    const int CHUNK_SIZE = (INPUT_BYTES / N_CHUNKS) / DataType::GetSizeBytes(dtype);
+    const uint64_t CHUNK_BYTES = INPUT_BYTES / N_CHUNKS;
+    const uint64_t CHUNK_SIZE = CHUNK_BYTES / DataType::GetSizeBytes(dtype);
+    // The app counts chunk elements (ChunkSize) and grid byte offsets within a chunk in
+    // uint32, so a chunk must stay under 4 GiB of bytes. Past that the value wraps -- at
+    // exactly 2^32 elements it wraps to 0 and would otherwise read as "input too small".
+    if (CHUNK_BYTES > UINT32_MAX)
+        NS_FATAL_ERROR("--inputBytes=" << INPUT_BYTES << " over " << N_CHUNKS << " chunks gives "
+            << CHUNK_BYTES << "-byte chunks; the app caps a chunk at " << UINT32_MAX
+            << " bytes (uint32 offsets), so --inputBytes must be at most "
+            << (uint64_t) N_CHUNKS * UINT32_MAX << ".");
     // A chunk of zero elements moves no bytes and makes the whole run vacuous, which at these
     // chunk counts (8, 32, 48) is an easy mistake to make: anything below 4 bytes per chunk
     // rounds away entirely, and the run then reports a suspiciously fast time for no traffic.
-    if (CHUNK_SIZE <= 0)
+    if (CHUNK_SIZE == 0)
         NS_FATAL_ERROR("--inputBytes=" << INPUT_BYTES << " over " << N_CHUNKS
             << " chunks rounds to a zero-element chunk; raise it to at least "
             << (uint64_t) N_CHUNKS * DataType::GetSizeBytes(dtype) << " bytes.");

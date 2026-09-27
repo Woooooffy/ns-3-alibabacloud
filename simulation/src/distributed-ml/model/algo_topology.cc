@@ -197,6 +197,26 @@ namespace ns3
 	}
 	#endif
 
+	// The "global step" number the runtime publishes for each parsed transfer of a threadblock,
+	// which is what depid/deps and netdepid/netdeps name -- NOT the transfer's index in
+	// tb->transfers. The two differ because a nop step never becomes a transfer (see the
+	// `transferType != -1` guard in ParseAlgoXml) while still consuming an XML `s` index: the
+	// runtime makes up the difference by bumping the counter by `numDependences - 1` on the
+	// transfer the nops' deps were folded into (CollectivesApplication::TryScheduleStep) and by
+	// `numReductions - 1` on a fused reduction (RunStep). Replaying both bumps here keeps this
+	// numbering identical to the one a waiter compares against at run time.
+	static void GlobalStepsOfTb(const struct mscclThreadBlock* tb, std::vector<int64_t>& out){
+		out.assign(tb->nsteps, 0);
+		int64_t global = 0;
+		for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+			const struct mscclTransfer* tran = &tb->transfers[sid];
+			if (tran->numDependences > 0) global += tran->numDependences - 1;
+			if (tran->type == MSCCL_REDUCE && tran->numReductions > 0) global += tran->numReductions - 1;
+			out[sid] = global;
+			++global;
+		}
+	}
+
 	// Post-parse validation of one GPU's network dependences (see mscclTransfer::netDepBid).
 	// Every reference must name a real step of a real threadblock on this same GPU, and that
 	// step must be one that actually puts bytes on the wire -- a dependence on a step that
@@ -214,14 +234,27 @@ namespace ns3
 					return AlgoParseResult::INVALID_USE_ERROR;
 				}
 				struct mscclThreadBlock* dep = &algo->mscclTBs[tran->netDepBid];
-				if (tran->netDepStep < 0 || tran->netDepStep >= (int16_t) dep->nsteps){
+				// netdeps is a global step id, so resolve it through that numbering rather than
+				// indexing tb->transfers directly -- an XML whose anchor tb contains nops would
+				// otherwise be rejected for naming a step that does exist.
+				std::vector<int64_t> depGlobal;
+				GlobalStepsOfTb(dep, depGlobal);
+				uint16_t depSid = 0;
+				bool found = false;
+				for (uint16_t k = 0; k < dep->nsteps; ++k){
+					if (depGlobal[k] == (int64_t) tran->netDepStep){ depSid = k; found = true; break; }
+				}
+				if (tran->netDepStep < 0 || !found){
 					NS_LOG_WARN("MSCCL: tb " << bid << " step " << sid << " on GPU (" << gpuId
 						<< ") has a network dependence on step " << tran->netDepStep << " of threadblock "
-						<< tran->netDepBid << ", which has only " << dep->nsteps << " steps.");
+						<< tran->netDepBid << ", which has no such step (its "
+						<< dep->nsteps << " transfer(s) occupy global step(s) "
+						<< (dep->nsteps ? depGlobal.front() : 0) << ".."
+						<< (dep->nsteps ? depGlobal.back() : 0) << ").");
 					return AlgoParseResult::INVALID_USE_ERROR;
 				}
 				// Only send-bearing ops signal network completion (MscclChannel::OnRdmaSendComplete).
-				uint8_t t = dep->transfers[tran->netDepStep].type;
+				uint8_t t = dep->transfers[depSid].type;
 				const bool sends = (t == MSCCL_SEND || t == MSCCL_RECV_COPY_SEND
 					|| t == MSCCL_RECV_REDUCE_SEND || t == MSCCL_RECV_REDUCE_COPY_SEND);
 				if (!sends){

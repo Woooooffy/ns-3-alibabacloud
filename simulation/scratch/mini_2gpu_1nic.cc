@@ -1,8 +1,8 @@
 // VARIANT 2 of the mini_* controlled set: 4 hosts x 2 GPUs sharing ONE PCIe-attached NIC.
 // 8 GPUs, 4 root complexes (modelled as NVSwitchNodes -- see below), 2 leaves, 2 spines.
 //
-// The host interior is a plain PCIe box: both GPUs hang off a root complex over PCIe x16
-// (200Gbps) and ALSO have a direct 56 GBps NVLink bridge to each other, but the bridge does
+// The host interior is a PCIe box: both GPUs hang off a root complex over PCIe x16
+// (200Gbps) and ALSO have a direct 900 GBps NVLink bridge to each other, but the bridge does
 // not reach the network. There is exactly one NIC and it hangs off the root complex, so
 // every fabric byte either GPU sends or receives crosses its PCIe link and then the shared
 // 100Gbps port. That funnel is the whole point of this variant, and the per-NIC bandwidth
@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
     PointToPointHelper link_helper1;
     link_helper1.SetDeviceAttribute("Mtu", UintegerValue(9000));
     link_helper1.SetChannelAttribute("Delay", StringValue("700ns"));
-    link_helper1.SetDeviceAttribute("DataRate", StringValue("56GBps"));
+    link_helper1.SetDeviceAttribute("DataRate", StringValue("900GBps"));
     
     QbbHelper link_helper2;
     link_helper2.SetDeviceAttribute("Mtu", UintegerValue(4096));

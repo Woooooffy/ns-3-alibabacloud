@@ -1,8 +1,8 @@
-// VARIANT 3 of the mini_* controlled set: 4 hosts x 2 GPUs, ONE NIC PER GPU. 8 GPUs, 4 host
-// switches, 2 leaves, 2 spines -- the richest of the three.
+// VARIANT 3 of the mini_* controlled set: 4 hosts x 2 GPUs, ONE NIC PER GPU. 8 GPUs, 4
+// NVSwitches (one per host, 900 GBps per GPU), 2 leaves, 2 spines -- the richest of the three.
 //
 // Each GPU owns its own 100Gbps fabric port, so a GPU can reach the network without crossing
-// the host interior at all; the intra-host switch becomes an optional relay rather than the
+// the host interior at all; the NVSwitch becomes a near-free optional relay rather than the
 // mandatory funnel of mini_2gpu_1nic.cc. Host egress is therefore 200Gbps against variant
 // 2's 100, and the fabric is doubled in width to match: 4 downlinks per leaf against 2 x
 // 100Gbps of uplink, still exactly 2:1, so the taper argument and the 4/3 separation between
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
     QbbHelper link_helper0;
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(4096));
     link_helper0.SetChannelAttribute("Delay", StringValue("700ns"));
-    link_helper0.SetDeviceAttribute("DataRate", StringValue("200Gbps"));
+    link_helper0.SetDeviceAttribute("DataRate", StringValue("900GBps"));
     
     QbbHelper link_helper1;
     link_helper1.SetDeviceAttribute("Mtu", UintegerValue(4096));
