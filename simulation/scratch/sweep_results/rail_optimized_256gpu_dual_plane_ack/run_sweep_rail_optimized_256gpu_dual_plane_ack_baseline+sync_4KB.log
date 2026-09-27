@@ -1,0 +1,17 @@
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/xml_input/rail_optimized_256gpu_dual_plane_alltoall_no_rate.xml
+Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_rail_optimized_256gpu_dual_plane_ack_baseline+sync_4KB.csv
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_rail_optimized_256gpu_dual_plane_ack_baseline+sync_4KB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_events_sweep_rail_optimized_256gpu_dual_plane_ack_baseline+sync_4KB.csv
+Total simulated time: 26963 nanoseconds
+Simulator end (last event of any kind): 28363 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_rail_optimized_256gpu_dual_plane_ack_baseline+sync_4KB.csv
+Fabric end (last switch data dequeue): 14379 ns
+Switch-to-switch data bytes over 512 ports: min 0 / mean 0 / max 0 (max/mean 0)
+Busiest switch port: sw 256 port 0 -> node 0, 10416 ns of data at line rate (72.439% of fabric end)
+alltoall algorithm bandwidth: 9955.7 GB/s
+Algorithm XML: honoring 31724 network dependence(s) over 116204 send step(s).
+Skipping correctness check.
+Done simulation
