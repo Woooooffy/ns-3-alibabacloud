@@ -245,6 +245,18 @@ int main(int argc, char *argv[]) {
     // is what the tester and the switch JSON name are keyed on, while the algorithm itself is
     // swapped. Empty means "derive it from --coll and --rate", the original behaviour.
     std::string xmlName = "";
+    // A schedule VARIANT of the same topology and collective: solved differently, but against
+    // the same fabric, so it is selected by suffixing the input stem rather than by naming a
+    // file. `--sched=p2p` reads xml_input/rail_optimized_256gpu_dual_plane_<coll>_p2p[_no_rate].xml
+    // alongside json_input/rail_optimized_256gpu_dual_plane_<coll>_p2p.json. Empty = this
+    // topology's own solve. Mirrors the knob mini_harness.h carries, so the sweep driver
+    // selects a variant the same way on every scratch.
+    //
+    // `p2p` is the NCCL floor: ncclAlltoAll posts one direct message per ordered pair and
+    // routes nothing, so it is what the TE-CCL solve is measured against. It carries no
+    // switch JSON and must not be asked for one -- run it with --flowId=0 and a --nicSel
+    // other than "schedule", which is exactly what the sweep's `p2p` config does.
+    std::string sched = "";
     // Period of the per-NIC bandwidth trace, in ns. 0 disables it, so every existing invocation
     // behaves exactly as before and pays nothing.
     uint32_t nicBwIntervalNs = 0;
@@ -297,6 +309,7 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("rateTargeting", "Treat per-flow XML rates as targets, not just caps", rateTargeting);
     cmd.AddValue("flowId", "Network only: carry msccl flow ids and install per-flow switch forwarding from the JSON (does not affect NIC selection)", flowId);
     cmd.AddValue("xml", "XML schedule filename inside scratch/xml_input, overriding the one derived from --coll/--rate (empty = derive)", xmlName);
+    cmd.AddValue("sched", "Schedule variant suffix applied to BOTH input stems, e.g. p2p -> rail_optimized_256gpu_dual_plane_<coll>_p2p[_no_rate].xml and ..._p2p.json (empty = this topology's own solve)", sched);
     cmd.AddValue("nicSel", "NIC selection: schedule (switch JSON pins the NIC) | merged (NCCL-style merged NIC, one qp per NIC) | rr (one qp per connection, round-robin NICs)", nicSel);
     cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences (false = release every buffer-ready send immediately)", netDeps);
     cmd.AddValue("qlenRows", "Write the per-packet switch queue trace (0 = only the per-port peak summary, which is all a large sweep can afford on disk)", qlenRows);
@@ -1387,13 +1400,18 @@ int main(int argc, char *argv[]) {
     // Algorithm + per-flow forwarding table. The switch JSON's switch_id_map (0..11 -> TE-CCL
     // ids) matches the regswtches declaration order above (0-7 = leafA0,leafB0,leafA1,leafB1,leafA2,leafB2,leafA3,leafB3; 8-11 = spineA0,spineB0,spineA1,spineB1); there is one
     // JSON per collective, shared by the rate and _no_rate XMLs since routing is identical.
+    // --sched names a variant solve of the same topology/collective and suffixes the stem
+    // both files are derived from; an explicit --xml still overrides the XML half, so the two
+    // can be combined.
+    const std::string STEM = "rail_optimized_256gpu_dual_plane_" + coll
+                           + (sched.empty() ? "" : "_" + sched);
     const std::string XML_NAME = xmlName.empty()
-        ? "rail_optimized_256gpu_dual_plane_" + coll + (rate ? "" : "_no_rate") + ".xml"
+        ? STEM + (rate ? "" : "_no_rate") + ".xml"
         : xmlName;
     std::string XML_ALGO = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
                                                   "../../scratch/xml_input/" + XML_NAME);
     std::string SWITCH_JSON = ns3::SystemPath::Append(ns3::SystemPath::FindSelfDirectory(),
-                                                      "../../scratch/json_input/rail_optimized_256gpu_dual_plane_" + coll + ".json");
+                                                      "../../scratch/json_input/" + STEM + ".json");
 
     // All output files go to simulation/scratch/logs. FindSelfDirectory() resolves to
     // simulation/build/scratch, so "../../scratch/logs" hops back up to the source tree.
