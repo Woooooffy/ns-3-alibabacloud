@@ -8,12 +8,12 @@ Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulat
 Switch queue trace: (rows off)
 Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_1gpu_1nic_1A_ack_milp_16MB.csv
 Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_1gpu_1nic_1A_ack_milp_16MB.csv
-Total simulated time: 4916562 nanoseconds
-Simulator end (last event of any kind): 4920000 nanoseconds
+Total simulated time: 2719773 nanoseconds
+Simulator end (last event of any kind): 2725000 nanoseconds
 Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_1gpu_1nic_1A_ack_milp_16MB.csv
-Fabric end (last switch data dequeue): 4915531 ns
+Fabric end (last switch data dequeue): 2718742 ns
 Switch-to-switch data bytes over 8 ports: min 0 / mean 8495104 / max 16990208 (max/mean 2)
-Busiest switch port: sw 4 port 3 -> node 7, 2718433 ns of data at line rate (55.3029% of fabric end)
+Busiest switch port: sw 4 port 3 -> node 7, 2718433 ns of data at line rate (99.9886% of fabric end)
 Pacing diagnostic (MSCCL XML "rate" -> host shaper)
   messages posted: 16  with a rate: 0 (0.0%)  without: 16
   packets paced: 8192 (32.4 MB), gap set by:
@@ -22,7 +22,8 @@ Pacing diagnostic (MSCCL XML "rate" -> host shaper)
     cc rate (no cap):       8190 (100.0%)
     cc rate (message tail): 2 (0.0%)
   bytes shaped by the XML rate: 0.0 of 32.4 MB (0.0%)
-alltoall algorithm bandwidth: 13.6496 GB/s
+Ack requests (AckReq) over 8192 data packets: 16 closing a message, 828 filling the window (10.11% of packets)
+alltoall algorithm bandwidth: 24.6744 GB/s
 Algorithm XML: honoring 0 network dependence(s) over 2 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
 Skipping correctness check.
 Done simulation

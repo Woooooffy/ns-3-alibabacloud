@@ -22,6 +22,7 @@ Pacing diagnostic (MSCCL XML "rate" -> host shaper)
     cc rate (no cap):       28 (87.5%)
     cc rate (message tail): 4 (12.5%)
   bytes shaped by the XML rate: 0.0 of 0.1 MB (0.0%)
+Ack requests (AckReq) over 32 data packets: 4 closing a message, 0 filling the window (0.00% of packets)
 alltoall algorithm bandwidth: 17.793 GB/s
 Algorithm XML: honoring 0 network dependence(s) over 4 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
 Skipping correctness check.
