@@ -271,6 +271,12 @@ struct Options {
     // Compared against the size of ONE chunk (inputBytes / nchunksperloop), so at small
     // --inputBytes any sane value leaves the gridOffset and maxAllowedCount loops inert.
     uint32_t protoChunkBytes = 0;
+    // Barrier every threadblock at the gridOffset loop boundary (CollectivesApplication's
+    // SyncBlocks), so no threadblock starts iteration k+1 until all have finished k. Inert
+    // unless --protoChunkBytes puts a chunk over the pipelining threshold. Off by default:
+    // the kernel has no such barrier, so this measures what the unsynchronized replay costs
+    // a time-indexed schedule's phase rather than modelling the hardware.
+    bool syncBlocks = false;
     // Transport pipelining depth (NCCL_STEPS analogue): how many messages a qp may have in
     // flight before waiting for a completion. It binds only when --l2Ack is nonzero: with acks
     // off the sender self-acknowledges at send completion and messages retire without a round
@@ -318,6 +324,7 @@ struct Options {
         cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
         cmd.AddValue("correctness", "Run the collective correctness check (cheap at these sizes, so on by default)", correctness);
         cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
+        cmd.AddValue("syncBlocks", "Barrier all threadblocks at each gridOffset iteration boundary (inert unless --protoChunkBytes makes nLoops > 1)", syncBlocks);
         cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
         cmd.AddValue("l2Ack", "Ack mode: 0 = no-ack (sender self-acknowledges at send completion), nonzero = acks on", l2AckInterval);
         cmd.AddValue("ackEveryNPkts", "Mid-message ack coalescing in packets; message-closing packets are acked regardless (0 = only those)", ackEveryNPkts);
@@ -453,6 +460,7 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(opt.correctness));
     app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(opt.protoChunkBytes));
+    app_helper.SetAttribute("SyncBlocks", BooleanValue(opt.syncBlocks));
     app_helper.SetAttribute("NicSelection", StringValue(
         opt.nicSel == "schedule" ? "SCHEDULED" : (opt.nicSel == "merged" ? "MERGED" : "ROUND_ROBIN")));
     app_helper.SetAttribute("NetworkFlowIds", BooleanValue(opt.flowId));
