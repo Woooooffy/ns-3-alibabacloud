@@ -91,8 +91,9 @@ void RdmaFabric3NodesTestCase::DoRun() {
 
 /**
  * @ingroup rdma-fabric-helper-tests
- * The 3nodes topology again, with acks on: each peer window must carry N*MTU of headroom on
- * top of the 3nodes.cc BDP (38500 B), so a coalesced ack's lag cannot stall the sender, while
+ * The 3nodes topology again, with acks on: each peer window must carry N*MTU of coalescing
+ * headroom plus one MTU of serialization per hop for the ack's way back, on top of the
+ * 3nodes.cc BDP (38500 B), so neither lag can stall the sender, while
  * the base RTT stays the pure path RTT. The golden-value case above runs with acks off
  * (L2AckInterval's default of 0) and so also pins that no-ack windows are unchanged.
  */
@@ -131,9 +132,10 @@ void RdmaFabricAckHeadroomTestCase::DoRun() {
     Config::SetDefault("ns3::RdmaHw::AckEveryNPackets", UintegerValue(8));
 
     Ptr<GPU> gpu0 = DynamicCast<GPU>(gpus.Get(0));
-    // 38500 B BDP + 8 * 1500 B MTU.
-    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(1), 50500u, "acked window must be BDP + AckEveryNPackets * MTU");
-    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(2), 50500u, "acked window must be BDP + AckEveryNPackets * MTU");
+    // 38499.75 B BDP (71 Gbps x 4338 ns) + 8 * 1500 B coalescing + 2999.75 B for the ack's
+    // way back (71 Gbps x 338 ns, one MTU of serialization per hop) = 53499.5 -> 53500.
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(1), 53500u, "acked window must be BDP + N*MTU + return-path serialization");
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(2), 53500u, "acked window must be BDP + N*MTU + return-path serialization");
     NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerBaseRtt(1), 4338u, "base RTT must stay the pure path RTT, without headroom");
 }
 

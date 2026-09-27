@@ -36,8 +36,14 @@ TypeId SwitchNode::GetTypeId (void)
 			MakeUintegerAccessor(&SwitchNode::m_ccMode),
 			MakeUintegerChecker<uint32_t>())
 	.AddAttribute("AckHighPrio",
-			"Set high priority for ACK/NACK or not",
-			UintegerValue(0),
+			"Send ACK/NACK in queue 0, the strict-priority control class (with PFC and QCN), "
+			"instead of the data queue of the packet's priority group. On by default because "
+			"that is how RoCE fabrics carry them: an ack queued FIFO behind reverse-direction "
+			"data inflates the sender's RTT past the window the fabric helper sized, and with no "
+			"standing queue to absorb it every such delay idles the wire -- 1A flowId+nic ran "
+			"86% -> 93% of its host link on turning this on. Queue 0 also bypasses MMU "
+			"admission and PFC, as a control class should.",
+			UintegerValue(1),
 			MakeUintegerAccessor(&SwitchNode::m_ackHighPrio),
 			MakeUintegerChecker<uint32_t>())
 	.AddAttribute("MaxRtt",

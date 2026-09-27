@@ -123,9 +123,12 @@ public:
 	// Job-global like PaceStats. windowFill counts only the requests that exist because of the
 	// window -- a packet that also closes its message is counted under msgEnd -- so it reads
 	// directly as how often the qp reached its window edge, each of which would have stalled
-	// with no ack coming if AckEveryNPackets*MTU exceeded the window. With the fabric helper's
-	// coalescing headroom in place it should be near zero; a large share says the window, not
-	// the network, is what the sender keeps running into.
+	// with no ack coming if AckEveryNPackets*MTU exceeded the window. Reading it: ~0 means the
+	// qp never ran into its window. ~1/N is the normal steady state of a qp that is limited by
+	// a slower link downstream -- with no congestion control the window is the only brake, so
+	// it sits at the edge and each coalesced ack releases N packets, the last of which fills it
+	// again (the excess queues at the bottleneck, which stays busy). It says the window is
+	// binding; whether that costs throughput is the bottleneck's utilization, not this number.
 	struct AckReqStats {
 		uint64_t dataPkts = 0;     // data packets built with acks on
 		uint64_t msgEnd = 0;       // AckReq: the packet closes its message
