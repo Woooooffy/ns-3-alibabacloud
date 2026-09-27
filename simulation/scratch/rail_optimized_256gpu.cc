@@ -1342,8 +1342,15 @@ int main(int argc, char *argv[]) {
     // reads "Total simulated time", and algbw uses the same number.
     Time simTime;
     for (uint32_t i = 0; i < apps.GetN(); ++i) {
-        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i)))
+        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i))) {
+            // Run() also returns when the event queue merely drains, which is what a deadlocked
+            // transfer does. Without this the run would print a plausible -- or zero -- time and
+            // exit 0, and a sweep would record it as a real point. See IsComplete.
+            std::string why;
+            if (!app->IsComplete(&why))
+                NS_FATAL_ERROR("Collective did not complete before the event queue drained: " << why);
             simTime = std::max(simTime, app->GetLastStepTime());
+        }
     }
     std::cout << "Total simulated time: " << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
     std::cout << "Simulator end (last event of any kind): " << Simulator::Now().GetNanoSeconds()
