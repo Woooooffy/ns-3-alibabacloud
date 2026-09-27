@@ -1435,6 +1435,25 @@ int main(int argc, char *argv[]) {
     // plain ECMP switches, but each connection still injected on the plane the schedule chose.
     const bool pinNics = (nicSel == "schedule");
     if (flowId || pinNics) {
+        // Same trap --sched opens here as in mini_harness.h: not every schedule variant has a
+        // switch JSON (a p2p/NCCL solve pins no NICs and stamps no flow ids), while --nicSel
+        // defaults to "schedule" and asks for one regardless. Name the cause and the fix
+        // rather than reporting "error code 1".
+        {
+            std::ifstream probe(SWITCH_JSON.c_str());
+            if (!probe.good()) {
+                std::string why = flowId && pinNics ? "--flowId=1 and --nicSel=schedule both need one"
+                                : flowId            ? "--flowId=1 needs one"
+                                                    : "--nicSel=schedule needs one";
+                NS_FATAL_ERROR("No switch JSON at " << SWITCH_JSON << ".\n"
+                    << "  " << why << ", but this schedule ships without it"
+                    << (sched.empty() ? "." : " (--sched=" + sched + ").")
+                    << "\n  A p2p/NCCL schedule never has one: it pins no NICs and stamps no flow ids.\n"
+                    << "  Re-run with --flowId=0 --nicSel=merged (or rr), which is what the sweep's\n"
+                    << "  p2p config passes. Leaving either knob on would route this run by a\n"
+                    << "  schedule that does not exist.");
+            }
+        }
         AlgoParseResult switchResult = topo.ParseSwitchJson(SWITCH_JSON.c_str(), flowId, pinNics);
         // Fatal for the same reason the XML parse above is: ParseSwitchJson returns on the
         // first bad entry, leaving flow forwarding half-installed (CustomFlowForwarding on,
