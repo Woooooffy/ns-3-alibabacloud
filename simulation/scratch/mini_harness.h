@@ -110,8 +110,9 @@ static void OnSwitchDequeue(FILE* out, uint32_t swId, uint32_t port, Ptr<const P
     if (depth < 0) depth = 0; // guard against control pkts (e.g. PFC) not counted on enqueue
     const int64_t now = Simulator::Now().GetNanoSeconds();
     PortStat& ps = g_portStats[std::make_pair(swId, port)];
-    // Split by protocol, not queue: with SwitchNode::AckHighPrio at its default of 0, ACK and
-    // NACK share the data queue, so queue 0 alone would count them as data. RDMA data is UDP.
+    // Split by protocol, not queue: the queue index does not identify data. ACK/NACK ride
+    // queue 0 alongside PFC/QCN under SwitchNode::AckHighPrio (on by default), and with it
+    // off they share the data queue of their priority group. RDMA data is UDP.
     CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header);
     p->PeekHeader(ch);
     if (ch.l3Prot != 0x11) {

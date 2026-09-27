@@ -266,11 +266,27 @@ void RdmaFabricHelper::Build(NodeContainer gpus, NodeContainer switches, NodeCon
                 // still gets one MTU for the packet in service. With acks off the sender
                 // self-acknowledges at transmit, the window never gates, and there is no lag to
                 // cover, so no-ack runs keep the pure BDP and stay comparable with earlier ones.
+                //
+                // Plus the ack's own way back. The RTT above charges one MTU of serialization per
+                // hop in the data direction only; an ack, even in the strict-priority control
+                // queue (SwitchNode::AckHighPrio), cannot preempt a data packet already on the
+                // wire, so at each hop back it can wait up to one MTU behind reverse-direction
+                // data -- which exists whenever both ends send, as in any alltoall. Charge the
+                // same per-hop MTU term again (the reverse path crosses the same link rates).
+                // Without it a qp whose sender is its bottleneck, and so has no standing queue
+                // downstream to absorb the wait, idles for it: 1A flowId+nic ran 93% of its host
+                // link on 50 Gbps paths with priority acks and this term missing.
+                //
                 // The base RTT below is left as the pure path RTT: it means propagation plus
                 // serialization, and anything reading it wants exactly that.
-                double ackLagBytes = hw->m_ack_interval == 0
-                    ? 0.0
-                    : static_cast<double>(std::max(1u, hw->m_ackEveryNPkts)) * rdmaMtu;
+                double ackLagBytes = 0.0;
+                if (hw->m_ack_interval != 0) {
+                    const double coalesceBytes =
+                        static_cast<double>(std::max(1u, hw->m_ackEveryNPkts)) * rdmaMtu;
+                    const double ackReturnBytes = static_cast<double>(m.bottleneckBps) *
+                        static_cast<double>(m.txDelay.GetNanoSeconds()) / 1e9 / 8.0;
+                    ackLagBytes = coalesceBytes + ackReturnBytes;
+                }
                 uint32_t winBytes = std::max(1u, static_cast<uint32_t>(std::round(bdpBytes + ackLagBytes)));
                 gpu->PushPeerIpAddr(dstIdx, dstIp);
                 gpu->PushPeerWin(dstIdx, winBytes);
