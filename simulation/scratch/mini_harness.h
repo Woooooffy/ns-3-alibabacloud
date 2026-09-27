@@ -292,10 +292,11 @@ struct Options {
     // unacknowledged bytes inside its BDP window, since snd_una advances on acks and
     // RdmaQueuePair::IsWinBound gates on snd_nxt - snd_una.
     //
-    // Sized against that window. A fabric hop here is 700 ns at 100 Gbps, so a two-hop round
-    // trip is 2*(2*700) + 2*327.7 = 3455 ns and the window is 100e9 * 3455e-9 / 8 = 43 KB,
-    // ~10 packets at a 4096 B MTU. 8 sits just inside that, so the sawtooth never touches the
-    // window edge and the fabric, not the ack cadence, is what limits the run.
+    // It no longer has to be sized around that window: RdmaFabricHelper builds each window as
+    // BDP + N*MTU, covering the up-to-(N-1)-packet lag of a coalesced ack, and the sender sets
+    // AckReq on the packet that fills its window, so no N can deadlock. What N still sets is the
+    // reverse-path ack load. (Against a bare-BDP window, N=8 capped a lone qp at ~55% of a
+    // 50 Gbps tapered uplink, and N >= window/MTU deadlocked mid-message.)
     uint32_t ackEveryNPkts = 8;
 
     static Options For(const std::string& stem, uint32_t ranks) {
@@ -639,8 +640,15 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     // reads "Total simulated time", and algbw uses the same number.
     Time simTime;
     for (uint32_t i = 0; i < apps.GetN(); ++i) {
-        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i)))
+        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i))) {
+            // Run() also returns when the event queue merely drains, which is what a deadlocked
+            // transfer does. Without this the run would print a plausible -- or zero -- time and
+            // exit 0, and a sweep would record it as a real point. See IsComplete.
+            std::string why;
+            if (!app->IsComplete(&why))
+                NS_FATAL_ERROR("Collective did not complete before the event queue drained: " << why);
             simTime = std::max(simTime, app->GetLastStepTime());
+        }
     }
     std::cout << "Total simulated time: " << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
     std::cout << "Simulator end (last event of any kind): " << Simulator::Now().GetNanoSeconds()
@@ -685,6 +693,7 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     // cannot express (a message of a single MTU has no inter-packet gap to stretch) all
     // produce runs indistinguishable from --rate=0. This says which of those happened.
     RdmaHw::PrintPaceStats(std::cout);
+    RdmaHw::PrintAckReqStats(std::cout);
 
     // algorithm bandwidth: total data moved per rank / time
     const std::string collName = isAllgather ? "allgather" : "alltoall";

@@ -74,10 +74,12 @@ TypeId RdmaHw::GetTypeId (void)
 				"The analogue of an HCA setting the BTH AckReq bit periodically inside a long "
 				"message, and it exists for one reason -- to keep the sender's unacknowledged "
 				"bytes under its window (RdmaQueuePair::IsWinBound), since snd_una only "
-				"advances on an ack. Size it against the BDP that window is built from: "
-				"N <= win/(4*MTU) leaves the ack sawtooth comfortably inside the window. "
-				"Acks at message boundaries are unconditional and independent of this (see "
-				"RdmaHw::GetNxtPacket); 0 leaves only those. Ignored when L2AckInterval is 0.",
+				"advances on an ack. An ack can trail its packet by up to N-1 packet-times, so "
+				"RdmaFabricHelper sizes each window as BDP + N*MTU to cover that lag; a window "
+				"of the bare BDP would stall every round trip at any N > 1. Progress never "
+				"depends on N: the sender also sets AckReq on the packet that closes a message "
+				"and on the packet that fills its window (RdmaHw::GetNxtPacket), so no N can "
+				"deadlock. 0 leaves only those two. Ignored when L2AckInterval is 0.",
 				UintegerValue(8),
 				MakeUintegerAccessor(&RdmaHw::m_ackEveryNPkts),
 				MakeUintegerChecker<uint32_t>())
@@ -745,7 +747,8 @@ int RdmaHw::Receive(Ptr<Packet> p, CustomHeader &ch){
 // requester sets the BTH AckReq bit.
 //
 // `ackReq` is the mandatory one: the sender marks the packet that closes a message, and that
-// ack is what retires the message. Retirement is load-bearing three times over -- it advances
+// ack is what retires the message. (It also marks the packet that fills its window -- the
+// other point at which it cannot continue without an ack; see GetNxtPacket.) Retirement is load-bearing three times over -- it advances
 // snd_una (window credit), it frees a slot against m_maxMsgsInFlight (RdmaQueuePair::
 // GetSendingMessage returns nullptr once the scan reaches the limit, so the qp goes ineligible
 // until something retires), and it fires notifyAppFinish, which is how the collective makes
@@ -889,6 +892,24 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	// packet -- that ack is what retires the message, releasing window credit, an in-flight
 	// message slot, and the application's completion callback. See ReceiverCheckSeq.
 	const bool lastPktOfMsg = (payload_size == bytesLeftInMsg);
+	// ...or is it the last packet this qp can send before its window gates? A real requester
+	// sets AckReq when it is about to run out of credit, not only at message end: the sender
+	// knows it is about to stall, the receiver's coalescing counter does not. Without this,
+	// AckEveryNPackets * MTU > window deadlocks inside any message longer than the window --
+	// the receiver never counts N packets, the message-closing packet is never sent, and
+	// snd_una never moves again. snd_nxt advances below, so on-the-fly plus this packet is
+	// exactly what IsWinBound will see next. Acks off: the receiver ignores AckReq and the
+	// window never gates, so leave the bit alone and keep no-ack runs bit-identical.
+	bool fillsWindow = false;
+	if (m_ack_interval != 0){
+		const uint64_t w = qp->GetWin();
+		fillsWindow = w != 0 && qp->GetOnTheFly() + payload_size >= w;
+		m_ackReqStats.dataPkts++;
+		if (lastPktOfMsg)
+			m_ackReqStats.msgEnd++;
+		else if (fillsWindow)
+			m_ackReqStats.windowFill++;
+	}
 	// Remember the pacing rate of the message this packet is coming out of, while snd_nxt still
 	// points into it. UpdateNextAvail sets the gap that FOLLOWS this packet and runs after the
 	// advance below, by which point GetCurRate() no longer names this message -- see the note
@@ -924,7 +945,7 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	SimpleSeqTsHeader seqTs;
 	seqTs.SetSeq (qp->snd_nxt);
 	seqTs.SetPG (qp->m_pg);
-	seqTs.SetAckReq (lastPktOfMsg);
+	seqTs.SetAckReq (lastPktOfMsg || fillsWindow);
 	p->AddHeader (seqTs);
 	// add udp header
 	UdpHeader udpHeader;
@@ -1105,6 +1126,26 @@ void RdmaHw::PrintPaceStats(std::ostream& os){
 	os << "    cc rate (message tail): " << st.tailPkts << " (" << pct(st.tailPkts, pkts) << "%)" << std::endl;
 	os << "  bytes shaped by the XML rate: " << mb(st.cappedBytes) << " of " << mb(pktBytes)
 	   << " MB (" << pct(st.cappedBytes, pktBytes) << "%)" << std::endl;
+}
+
+// ---- ack-request diagnostic (see RdmaHw::AckReqStats) ---------------------------------------
+RdmaHw::AckReqStats RdmaHw::m_ackReqStats;
+
+void RdmaHw::PrintAckReqStats(std::ostream& os){
+	const AckReqStats& st = m_ackReqStats;
+	if (st.dataPkts == 0){
+		os << "Ack requests: none (acks off, or no RDMA data sent)" << std::endl;
+		return;
+	}
+	const std::ios_base::fmtflags flags = os.flags();
+	const std::streamsize prec = os.precision();
+	os << std::fixed << std::setprecision(2);
+	os << "Ack requests (AckReq) over " << st.dataPkts << " data packets: "
+	   << st.msgEnd << " closing a message, "
+	   << st.windowFill << " filling the window ("
+	   << 100.0 * st.windowFill / st.dataPkts << "% of packets)" << std::endl;
+	os.flags(flags);
+	os.precision(prec);
 }
 
 /**

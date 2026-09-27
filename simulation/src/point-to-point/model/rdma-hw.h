@@ -119,6 +119,21 @@ public:
 	// The whole diagnostic as a short block on `os`, or one line if no rate was ever requested.
 	static void PrintPaceStats(std::ostream& os);
 
+	// Why the sender set AckReq on the packets it did (see GetNxtPacket), acks-on runs only.
+	// Job-global like PaceStats. windowFill counts only the requests that exist because of the
+	// window -- a packet that also closes its message is counted under msgEnd -- so it reads
+	// directly as how often the qp reached its window edge, each of which would have stalled
+	// with no ack coming if AckEveryNPackets*MTU exceeded the window. With the fabric helper's
+	// coalescing headroom in place it should be near zero; a large share says the window, not
+	// the network, is what the sender keeps running into.
+	struct AckReqStats {
+		uint64_t dataPkts = 0;     // data packets built with acks on
+		uint64_t msgEnd = 0;       // AckReq: the packet closes its message
+		uint64_t windowFill = 0;   // AckReq: the packet fills the window (and does not close a message)
+	};
+	static AckReqStats m_ackReqStats;
+	static void PrintAckReqStats(std::ostream& os);
+
 	// nvls
 	void enable_nvls();
 	void disable_nvls();

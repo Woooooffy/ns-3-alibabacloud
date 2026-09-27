@@ -1754,12 +1754,24 @@ namespace ns3 {
 			pair.second.Close();
 		}
 		// tb states checks
-		for (auto& pair : m_TBStates){
-			mscclThreadBlock* tb = &m_algo->mscclTBs[pair.first];
+		std::string why;
+		if (!IsComplete(&why))
+			NS_FATAL_ERROR("BUG: " << why);
+	}
+
+	bool CollectivesApplication::IsComplete(std::string* why) const{
+		for (const auto& pair : m_TBStates){
+			const mscclThreadBlock* tb = &m_algo->mscclTBs[pair.first];
 			if (pair.second.busy || pair.second.local_step < tb->nsteps || pair.second.iter + 1 < m_nLoops){
+				if (!why) return false;
 				// Name the gate too when the tb is parked on one: a gate that never opens drains
 				// the event queue and returns a plausible-looking wrong answer otherwise.
 				std::ostringstream gateInfo;
+				// busy means a transfer was posted and never retired -- the transport stalled
+				// under it (e.g. a window that filled with no ack coming), as opposed to the
+				// schedule never releasing the step. The two want very different fixes.
+				if (pair.second.busy)
+					gateInfo << " Busy: a posted transfer never completed, so the transport stalled under it.";
 				if (pair.second.local_step < tb->nsteps){
 					int16_t netWait = tb->transfers[pair.second.local_step].netWait;
 					if (netWait != MSCCL_GATE_NONE){
@@ -1778,9 +1790,13 @@ namespace ns3 {
 						<< " (" << m_iterBarrierParked.size() << "/" << m_iterBarrierParticipants
 						<< " arrived), so look at the threadblocks that never arrived.";
 				}
-				NS_FATAL_ERROR("BUG: TB " << pair.first << " on node " << GetNode()->GetId() << " not finished at application close. Has " << tb->nsteps << " steps, at step " << pair.second.local_step << " of iteration " << pair.second.iter << "/" << m_nLoops << "." << gateInfo.str());
+				std::ostringstream msg;
+				msg << "TB " << pair.first << " on node " << GetNode()->GetId() << " not finished at application close. Has " << tb->nsteps << " steps, at step " << pair.second.local_step << " of iteration " << pair.second.iter << "/" << m_nLoops << "." << gateInfo.str();
+				*why = msg.str();
+				return false;
 			}
 		}
+		return true;
 	}
 
 } // namespace ns3
