@@ -79,8 +79,10 @@ Their results land in sweep_results/<TAG>, named by the tag rather than by the p
 2B and 2C are the same scratch and would otherwise share a results.csv. Every other flag means
 what it always did. Two things are scenario-aware: sizes on the size axis divide by the
 scenario's PARTICIPANT count (not the topology's GPU count), so a point means the same bytes
-per pair in all four; and `milp` looks for <stem>_<TAG>_<coll>_milp.xml. 2C and 3A have no
-milp solve yet, so asking for that config on them warns and drops the column.
+per pair in all four; and `milp` looks for <stem>_<TAG>_<coll>_milp.xml. Only 1A has a milp
+solve today -- the 2-GPU topologies' NVLink bandwidth changed (2026-09-27) and only their lp
+solves were re-run, so their stale milp schedules were deleted -- and asking for that config
+on 2B, 2C or 3A warns and drops the column. See import_teccl_partial.py.
 
 Results are appended to results.csv under a per-program output directory and re-read on
 startup. The directory (and every run's trace label) is named for the program plus a suffix for
@@ -128,7 +130,7 @@ CONFIGS = collections.OrderedDict([
     # measured against in turn: baseline still runs a solve that splits pairs across paths.
     #
     # Opt-in rather than part of the default set: it needs both the --sched knob and a
-    # <stem>_<coll>_milp solve on disk (today only mini_1gpu_1nic has one), and a program
+    # <stem>_<coll>_milp solve on disk (today only mini_1gpu_1nic / 1A has one), and a program
     # missing either is skipped with a note rather than run as a duplicate baseline.
     ("milp",       dict(rate=0, netDeps=0, flowId=0, nicSel="merged", sched="milp")),
     # The other floor, and the one a reader outside this project will ask about: what a
