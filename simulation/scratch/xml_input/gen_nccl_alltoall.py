@@ -445,6 +445,24 @@ def main():
         print(f"{base}.xml (+_no_rate): ranks={comm.n_ranks} gpus={parts} domains={sizes} "
               f"groupSize={comm.group_size} nGroups={comm.n_groups} tbs/rank={ntb}")
 
+    # rail_optimized_256gpu_dual_plane also carries a --sched knob, so its NCCL schedule is
+    # emitted a second time under the name that knob derives. Same 256-rank communicator and
+    # therefore the same schedule as the _ncclalltoall.xml above -- the duplicate exists only
+    # so the sweep can select it as the `p2p` COLUMN (--sched=p2p) rather than as a one-off
+    # --xml run, which is what puts it in the same table as baseline. As with the mini set,
+    # both the plain and the _no_rate name are written and are byte identical, because
+    # feature-off implies --rate=0 and NCCL has no rate model to strip.
+    for sizes, topo, base in [t for t in targets
+                              if t[2] == "rail_optimized_256gpu_dual_plane_ncclalltoall"]:
+        comm = Comm(sizes, P2P_N_CHANNELS)
+        validate(comm)
+        sched_base = "rail_optimized_256gpu_dual_plane_alltoall_p2p"
+        ntb, text = emit(comm, topo, sched_base, os.path.join(here, sched_base + ".xml"))
+        with open(os.path.join(here, sched_base + "_no_rate.xml"), "w") as f:
+            f.write(text)
+        print(f"{sched_base}.xml (+_no_rate): nRanks={comm.n_ranks} tbs/rank={ntb} "
+              f"size: {os.path.getsize(os.path.join(here, sched_base + '.xml'))/1e6:.2f} MB each")
+
     for sizes, topo, base in targets:
         comm = Comm(sizes, P2P_N_CHANNELS)
         validate(comm)

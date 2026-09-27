@@ -8,8 +8,14 @@ Three schedules for the large topologies, selected with `--xml`:
 | `rail_optimized_256gpu_ncclalltoall.xml` | `rail_optimized_256gpu.cc` | 256 | 32 × 8 | 1 × 400G |
 | `rail_optimized_256gpu_dual_plane_ncclalltoall.xml` | `rail_optimized_256gpu_dual_plane.cc` | 256 | 32 × 8 | 2 × 400G |
 
-…and fourteen for the `mini_*` controlled set, selected with `--sched=p2p`, which is the
-sweep's `p2p` config (§7).
+…and sixteen selected with `--sched=p2p`, which is the sweep's `p2p` config (§7): fourteen
+for the `mini_*` controlled set, plus `rail_optimized_256gpu_dual_plane_alltoall_p2p.xml`
+and its `_no_rate` twin. Those last two hold the same 256-rank schedule as
+`rail_optimized_256gpu_dual_plane_ncclalltoall.xml` — byte identical bar the `algo name`
+attribute. The duplicate is deliberate: `--xml` runs a schedule as a one-off, `--sched` runs
+it as a sweep COLUMN alongside `baseline`, and only the latter puts NCCL and the TE-CCL
+solve in the same table. It costs about 2.1 MB of git objects (the two names are byte
+identical to each other, so they share one blob).
 
 All of them are produced by `gen_nccl_alltoall.py` (`python3 gen_nccl_alltoall.py`), which
 transcribes NCCL 2.31.2-1 (`7b83616d`) and self-checks the permutation before emitting.
@@ -230,13 +236,25 @@ partial-participation subsets. Seven communicators, each written under two names
 | 2B | `mini_2gpu_1nic` | `2B` | g0,g2,g3,g5 — `[1,2,1]` | `mini_2g1n_2B_a2a_p2p.xml` |
 | 2C | `mini_2gpu_1nic` | `2C` | g0,g2,g3,g4,g5,g6 — `[1,2,2,1]` | `mini_2g1n_2C_a2a_p2p.xml` |
 | 3A | `mini_2gpu_2nic` | `3A` | g0,g2,g3,g4,g5,g6 — `[1,2,2,1]` | `mini_2g2n_3A_a2a_p2p.xml` |
+| — | `rail_optimized_256gpu_dual_plane` | — | 256 ranks, 32 domains of 8 | `rail_optimized_256gpu_dual_plane_alltoall_p2p.xml` |
 
 Run them through the sweep rather than by hand:
 
 ```sh
 ./sweep_dual_plane_features.py mini    --configs=baseline,p2p --start 4KB --end 64MB
 ./sweep_dual_plane_features.py partial --configs=baseline,p2p,milp --start 4KB --end 64MB
+./sweep_dual_plane_features.py rail_optimized_256gpu_dual_plane --configs=baseline,p2p \
+    --start 1MB --end 128MB
 ```
+
+Note the filename convention differs between the two families, because the scratches do:
+`mini_*` abbreviate the collective (`mini_1g1n_a2a_p2p.xml`) while the large scratches spell
+it out (`rail_optimized_256gpu_dual_plane_alltoall_p2p.xml`). The sweep scrapes which
+convention a scratch uses out of its source rather than being told.
+
+`rail_optimized_256gpu` and `dual_plane_hetero` have NCCL schedules but no `--sched` knob, so
+the sweep skips `p2p` on them with a warning and they stay `--xml`-only. Adding the knob is a
+six-line change — copy it from `rail_optimized_256gpu_dual_plane.cc`.
 
 ### Why `--sched=p2p` and not `--xml`
 

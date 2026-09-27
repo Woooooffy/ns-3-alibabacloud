@@ -310,10 +310,21 @@ class Program:
         m = (re.search(r'"ns3::RdmaHw::L2AckInterval"\s*,\s*UintegerValue\((\d+)\)', src)
              or re.search(r"uint32_t\s+l2AckInterval\s*=\s*(\d+)", src))
         self.ack_default = int(m.group(1)) if m else 0
-        # The stem its schedule files are named after (mini::Options::For("mini_1g1n", 4)),
-        # which is what lets has_sched() below check for a variant solve on disk.
+        # The stem its schedule files are named after, and how the collective is spelled in
+        # them. Two conventions are in use and has_sched() has to know which:
+        #   mini_*  -- mini::Options::For("mini_1g1n", 4), files <stem>_a2a[...].xml
+        #   the big scratches -- the name is built inline as "<prefix>_" + coll, so the
+        #       collective appears in full: <prefix>_alltoall[...].xml
+        # Scraped rather than tabulated, for the same reason the rank count and the flag set
+        # are: the point of this driver is to run against scratches it was not written for.
         m = re.search(r'Options::For\(\s*"([A-Za-z0-9_]+)"', src)
-        self.stem = m.group(1) if m else None
+        if m:
+            self.stem, self.coll_abbreviated = m.group(1), True
+        else:
+            # `"<prefix>_" + coll`, whether that sits directly in the XML_NAME ternary or in
+            # a STEM built ahead of it (which is what adding a --sched knob turns it into).
+            m = re.search(r'"([A-Za-z0-9_]+)_"\s*\+\s*coll\b', src)
+            self.stem, self.coll_abbreviated = (m.group(1) if m else None), False
 
     @property
     def pair_ranks(self):
@@ -333,7 +344,9 @@ class Program:
         than as an NS_FATAL_ERROR after the build, which in a multi-program sweep would only
         surface once the earlier programs had finished.
         """
-        suffix = "ag" if coll == "allgather" else "a2a"
+        if not self.stem:
+            return "<no schedule stem found in the source>"
+        suffix = ("ag" if coll == "allgather" else "a2a") if self.coll_abbreviated else coll
         stem = self.stem + (f"_{self.scenario}" if self.scenario else "")
         return f"{stem}_{suffix}" + (f"_{sched}" if sched else "") + ".xml"
 
