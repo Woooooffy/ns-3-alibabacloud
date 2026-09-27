@@ -1,0 +1,6 @@
+== sweep_mini_1gpu_1nic_ack_noRate+sync_4GB ==
+  events (switch_events_sweep_mini_1gpu_1nic_ack_noRate+sync_4GB.csv):
+    none
+  peak egress queue (switch_qlen_max_sweep_mini_1gpu_1nic_ack_noRate+sync_4GB.csv):
+    leaf->gpu        n=  12  max    373.7 KB  mean   181.3  p50   182.7  max/mean  2.06
+  per-NIC bandwidth: no paired fabric samples
