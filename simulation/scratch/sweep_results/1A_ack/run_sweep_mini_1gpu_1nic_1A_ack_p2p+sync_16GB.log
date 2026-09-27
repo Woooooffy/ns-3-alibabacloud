@@ -1,0 +1,5 @@
+Participants: 2 of 4 GPUs carry data (schedule mini_1g1n_1A_a2a_p2p_no_rate.xml)
+Command 'build/scratch/ns3.36.1-mini_1gpu_1nic-debug --inputBytes=34359738368 --label=sweep_mini_1gpu_1nic_1A_ack_p2p+sync_16GB --coll=alltoall --rate=0 --netDeps=0 --flowId=0 --nicSel=merged --sched=p2p --scenario=1A --protoChunkBytes=2097152 --syncBlocks=1 --maxMsgsInFlight=8 --nicBwInterval=5000000 --qlenRows=0 --l2Ack=1 --ackEveryNPkts=8 --correctness=0 --checkLog=silent' died with <Signals.SIGABRT: 6>.
+Algorithm XML: honoring 0 network dependence(s) over 2 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
+msg="--inputBytes=34359738368 over 2 chunks rounds to a zero-element chunk; raise it to at least 8 bytes.", +0.000000000s -1 file=/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/mini_harness.h, line=475
+terminate called without an active exception

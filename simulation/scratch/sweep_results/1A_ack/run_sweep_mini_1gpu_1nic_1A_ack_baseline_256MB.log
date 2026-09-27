@@ -8,12 +8,12 @@ Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulat
 Switch queue trace: (rows off)
 Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_1gpu_1nic_1A_ack_baseline_256MB.csv
 Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_1gpu_1nic_1A_ack_baseline_256MB.csv
-Total simulated time: 43567143 nanoseconds
-Simulator end (last event of any kind): 43600000 nanoseconds
+Total simulated time: 43493463 nanoseconds
+Simulator end (last event of any kind): 43500000 nanoseconds
 Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_1gpu_1nic_1A_ack_baseline_256MB.csv
-Fabric end (last switch data dequeue): 43566112 ns
+Fabric end (last switch data dequeue): 43492432 ns
 Switch-to-switch data bytes over 8 ports: min 0 / mean 135921664 / max 271843328 (max/mean 2)
-Busiest switch port: sw 5 port 2 -> node 6, 43494932 ns of data at line rate (99.8366% of fabric end)
+Busiest switch port: sw 5 port 2 -> node 6, 43494932 ns of data at line rate (100.006% of fabric end)
 Pacing diagnostic (MSCCL XML "rate" -> host shaper)
   messages posted: 256  with a rate: 0 (0.0%)  without: 256
   packets paced: 131072 (518.5 MB), gap set by:
@@ -22,8 +22,8 @@ Pacing diagnostic (MSCCL XML "rate" -> host shaper)
     cc rate (no cap):       131068 (100.0%)
     cc rate (message tail): 4 (0.0%)
   bytes shaped by the XML rate: 0.0 of 518.5 MB (0.0%)
-Ack requests (AckReq) over 131072 data packets: 256 closing a message, 21541 filling the window (16.43% of packets)
-alltoall algorithm bandwidth: 24.6457 GB/s
+Ack requests (AckReq) over 131072 data packets: 256 closing a message, 19385 filling the window (14.79% of packets)
+alltoall algorithm bandwidth: 24.6874 GB/s
 Algorithm XML: honoring 0 network dependence(s) over 4 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
 Skipping correctness check.
 Done simulation
