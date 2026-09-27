@@ -108,8 +108,9 @@ static void OnSwitchDequeue(FILE* out, uint32_t swId, uint32_t port, Ptr<const P
     if (depth < 0) depth = 0; // guard against control pkts (e.g. PFC) not counted on enqueue
     const int64_t now = Simulator::Now().GetNanoSeconds();
     PortStat& ps = g_portStats[std::make_pair(swId, port)];
-    // Split by protocol, not queue: with SwitchNode::AckHighPrio at its default of 0, ACK and
-    // NACK share the data queue, so queue 0 alone would count them as data. RDMA data is UDP.
+    // Split by protocol, not queue: the queue index does not identify data. ACK/NACK ride
+    // queue 0 alongside PFC/QCN under SwitchNode::AckHighPrio (on by default), and with it
+    // off they share the data queue of their priority group. RDMA data is UDP.
     CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header);
     p->PeekHeader(ch);
     if (ch.l3Prot != 0x11) {
@@ -281,10 +282,10 @@ int main(int argc, char *argv[]) {
     // sender's unacknowledged bytes inside its BDP window, since snd_una advances on acks and
     // RdmaQueuePair::IsWinBound gates on snd_nxt - snd_una.
     //
-    // Sized against that window, not against the message size. A rail-local fabric hop here is
-    // 700 ns at 400 Gbps, so the round trip is 2*(2*700) + 2*81.92 = 2964 ns and the window is
-    // 400e9 * 2964e-9 / 8 = 148 KB = ~36 packets at a 4096 B MTU. A quarter of that keeps the
-    // ack sawtooth well clear of the window edge, and costs 48/(8*4156) = 0.145% of the wire
+    // Sized for ack cost, not for the window: RdmaFabricHelper adds N*MTU of headroom to each
+    // BDP window to cover a coalesced ack's lag, and the sender requests an ack on the packet
+    // that fills the window. For reference, a rail-local round trip here is 2*(2*700) +
+    // 2*81.92 = 2964 ns, a 148 KB (~36 packet) BDP. N=8 costs 48/(8*4156) = 0.145% of the wire
     // in ack bytes -- against 1.16% when every packet is acknowledged.
     uint32_t ackEveryNPkts = 8;
 
@@ -1623,8 +1624,15 @@ int main(int argc, char *argv[]) {
     // reads "Total simulated time", and algbw uses the same number.
     Time simTime;
     for (uint32_t i = 0; i < apps.GetN(); ++i) {
-        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i)))
+        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i))) {
+            // Run() also returns when the event queue merely drains, which is what a deadlocked
+            // transfer does. Without this the run would print a plausible -- or zero -- time and
+            // exit 0, and a sweep would record it as a real point. See IsComplete.
+            std::string why;
+            if (!app->IsComplete(&why))
+                NS_FATAL_ERROR("Collective did not complete before the event queue drained: " << why);
             simTime = std::max(simTime, app->GetLastStepTime());
+        }
     }
     std::cout << "Total simulated time: " << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
     std::cout << "Simulator end (last event of any kind): " << Simulator::Now().GetNanoSeconds()

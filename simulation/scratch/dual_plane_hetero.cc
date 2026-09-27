@@ -95,8 +95,9 @@ static void OnSwitchDequeue(FILE* out, uint32_t swId, uint32_t port, Ptr<const P
     if (depth < 0) depth = 0; // guard against control pkts (e.g. PFC) not counted on enqueue
     const int64_t now = Simulator::Now().GetNanoSeconds();
     PortStat& ps = g_portStats[std::make_pair(swId, port)];
-    // Split by protocol, not queue: with SwitchNode::AckHighPrio at its default of 0, ACK and
-    // NACK share the data queue, so queue 0 alone would count them as data. RDMA data is UDP.
+    // Split by protocol, not queue: the queue index does not identify data. ACK/NACK ride
+    // queue 0 alongside PFC/QCN under SwitchNode::AckHighPrio (on by default), and with it
+    // off they share the data queue of their priority group. RDMA data is UDP.
     CustomHeader ch(CustomHeader::L2_Header | CustomHeader::L3_Header);
     p->PeekHeader(ch);
     if (ch.l3Prot != 0x11) {
@@ -1045,8 +1046,15 @@ int main(int argc, char *argv[]) {
     // reads "Total simulated time", and algbw uses the same number.
     Time simTime;
     for (uint32_t i = 0; i < apps.GetN(); ++i) {
-        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i)))
+        if (Ptr<CollectivesApplication> app = DynamicCast<CollectivesApplication>(apps.Get(i))) {
+            // Run() also returns when the event queue merely drains, which is what a deadlocked
+            // transfer does. Without this the run would print a plausible -- or zero -- time and
+            // exit 0, and a sweep would record it as a real point. See IsComplete.
+            std::string why;
+            if (!app->IsComplete(&why))
+                NS_FATAL_ERROR("Collective did not complete before the event queue drained: " << why);
             simTime = std::max(simTime, app->GetLastStepTime());
+        }
     }
     std::cout << "Total simulated time: " << simTime.GetNanoSeconds() << " nanoseconds" << std::endl;
     std::cout << "Simulator end (last event of any kind): " << Simulator::Now().GetNanoSeconds()
@@ -1093,6 +1101,7 @@ int main(int argc, char *argv[]) {
     // express (a message of a single MTU has no inter-packet gap to stretch) all produce runs
     // indistinguishable from --rate=0. This says which of those happened. See RdmaHw::PaceStats.
     RdmaHw::PrintPaceStats(std::cout);
+    RdmaHw::PrintAckReqStats(std::cout);
 
     // algorithm bandwidth: total data moved per rank / time
     std::cout << coll << " algorithm bandwidth: "

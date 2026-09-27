@@ -253,15 +253,45 @@ void RdmaFabricHelper::Build(NodeContainer gpus, NodeContainer switches, NodeCon
             Ptr<Node> node = m_nodeById[nodeId];
 
             if (Ptr<GPU> gpu = DynamicCast<GPU>(node)) {
+                Ptr<RdmaHw> hw = rdmaHwOf[gpuIndexByNodeId[nodeId]];
                 Time rtt = m.delay * 2 + m.txDelay;
                 uint64_t rttNs = static_cast<uint64_t>(rtt.GetNanoSeconds());
                 double bdpBytes = static_cast<double>(m.bottleneckBps) * static_cast<double>(rttNs) / 1e9 / 8.0;
-                uint32_t winBytes = std::max(1u, static_cast<uint32_t>(std::round(bdpBytes)));
+                // Headroom for ack coalescing. snd_una only advances on an ack, and with
+                // AckEveryNPackets = N an ack can trail the packet it covers by up to N-1
+                // bottleneck packet-times, plus the packet still in service: N MTUs in all. A
+                // window of exactly the BDP cannot cover that lag, so once N > 1 the qp stalls
+                // every round trip and runs at ~win / (baseRtt + (N-1)*MTU/bottleneck) -- 55% of a
+                // 50 Gbps path at N=8. N = 0 (acks only where the sender asks, see GetNxtPacket)
+                // still gets one MTU for the packet in service. With acks off the sender
+                // self-acknowledges at transmit, the window never gates, and there is no lag to
+                // cover, so no-ack runs keep the pure BDP and stay comparable with earlier ones.
+                //
+                // Plus the ack's own way back. The RTT above charges one MTU of serialization per
+                // hop in the data direction only; an ack, even in the strict-priority control
+                // queue (SwitchNode::AckHighPrio), cannot preempt a data packet already on the
+                // wire, so at each hop back it can wait up to one MTU behind reverse-direction
+                // data -- which exists whenever both ends send, as in any alltoall. Charge the
+                // same per-hop MTU term again (the reverse path crosses the same link rates).
+                // Without it a qp whose sender is its bottleneck, and so has no standing queue
+                // downstream to absorb the wait, idles for it: 1A flowId+nic ran 93% of its host
+                // link on 50 Gbps paths with priority acks and this term missing.
+                //
+                // The base RTT below is left as the pure path RTT: it means propagation plus
+                // serialization, and anything reading it wants exactly that.
+                double ackLagBytes = 0.0;
+                if (hw->m_ack_interval != 0) {
+                    const double coalesceBytes =
+                        static_cast<double>(std::max(1u, hw->m_ackEveryNPkts)) * rdmaMtu;
+                    const double ackReturnBytes = static_cast<double>(m.bottleneckBps) *
+                        static_cast<double>(m.txDelay.GetNanoSeconds()) / 1e9 / 8.0;
+                    ackLagBytes = coalesceBytes + ackReturnBytes;
+                }
+                uint32_t winBytes = std::max(1u, static_cast<uint32_t>(std::round(bdpBytes + ackLagBytes)));
                 gpu->PushPeerIpAddr(dstIdx, dstIp);
                 gpu->PushPeerWin(dstIdx, winBytes);
                 gpu->PushPeerBaseRtt(dstIdx, rttNs);
 
-                Ptr<RdmaHw> hw = rdmaHwOf[gpuIndexByNodeId[nodeId]];
                 for (const QbbEdge* edge : nextHops) {
                     bool isNvswitch = DynamicCast<NVSwitchNode>(edge->peer) != nullptr;
                     hw->AddTableEntry(dstIp, edge->ifIndex, isNvswitch);

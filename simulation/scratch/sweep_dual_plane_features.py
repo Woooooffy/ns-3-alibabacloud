@@ -39,6 +39,19 @@ can be added to a finished sweep:
 
     ./sweep_dual_plane_features.py mini_1gpu_1nic --configs=milp --start 4KB --end 4MB
 
+A tenth, `p2p`, is opt-in the same way and is the NCCL floor: --sched=p2p runs a
+transcription of `ncclAlltoAll` (one direct message per ordered pair, no relaying, no
+multipath, no rates) under baseline's flags. Between them the three reference columns read
+as: `p2p` = what NCCL would do, `milp` = a solve constrained to one chunk per pair,
+`baseline` = the unconstrained solve, all on identical transport settings.
+
+    ./sweep_dual_plane_features.py mini --configs=baseline,p2p,milp --start 4KB --end 4MB
+
+One deviation worth knowing: --protoChunkBytes and --maxMsgsInFlight are held constant
+across every config (2 MiB / 8), so the p2p column is NCCL's SCHEDULE on this sweep's
+transport, not NCCL's transport too -- real NCCL would use a 128 KiB p2p chunk. Varying it
+per column would confound the schedule comparison, which is the thing being measured.
+
 --sync-blocks is not a config but a modifier on the ones you asked for: it re-runs each with
 the MSCCL gridOffset iteration barrier on (CollectivesApplication's SyncBlocks) under the name
 <config>+sync, so a barriered run sits beside its unbarriered twin in the same table rather
@@ -70,10 +83,14 @@ per pair in all four; and `milp` looks for <stem>_<TAG>_<coll>_milp.xml. 2C and 
 milp solve yet, so asking for that config on them warns and drops the column.
 
 Results are appended to results.csv under a per-program output directory and re-read on
-startup, so an interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are
+startup. The directory (and every run's trace label) is named for the program plus a suffix for
+each simulation setting that is not a config column and is off its reference value -- `_ack`,
+`_ackN<N>`, `_allgather`, `_chunk<size>`, `_inflight<N>` -- so sweeps under different setups
+never share a results.csv; the reference values add nothing, so older directories keep their
+names. Results are re-read on startup, so an interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are
 (re)printed from that file at the end, and also written to tables.md.
 """
-import argparse, collections, csv, os, re, subprocess, sys, time
+import argparse, collections, csv, math, os, re, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NS3_DIR = os.path.dirname(HERE)                    # simulation/
@@ -114,6 +131,17 @@ CONFIGS = collections.OrderedDict([
     # <stem>_<coll>_milp solve on disk (today only mini_1gpu_1nic has one), and a program
     # missing either is skipped with a note rather than run as a duplicate baseline.
     ("milp",       dict(rate=0, netDeps=0, flowId=0, nicSel="merged", sched="milp")),
+    # The other floor, and the one a reader outside this project will ask about: what a
+    # stock NCCL job does. `ncclAlltoAll` is not an algorithm -- it fans out one direct
+    # message per ordered pair and routes nothing (no cost model, no algorithm selection,
+    # no multipath, no pacing anywhere in that path), so it is the natural zero against
+    # which "the solver bought us X" is stated. Same flags as `baseline` for the same reason
+    # `milp` has them: the columns must differ only in the schedule.
+    #
+    # The schedules are transcribed from NCCL 2.31.2-1 by xml_input/gen_nccl_alltoall.py --
+    # the real round permutation and channel assignment, not a hand-rolled ring -- and exist
+    # for every mini_* topology and every partial scenario. See README_nccl_alltoall.md.
+    ("p2p",        dict(rate=0, netDeps=0, flowId=0, nicSel="merged", sched="p2p")),
 ])
 BASELINE = "baseline"
 # --sync-blocks does not add a config; it re-runs whichever configs were asked for with the
@@ -130,11 +158,51 @@ DEFAULT_CONFIGS = [n for n, f in CONFIGS.items() if not f.get("sched")]
 # Constant across every run, per the sweep's terms.
 PROTO_CHUNK_BYTES = 2 * 1024 * 1024
 MAX_MSGS_IN_FLIGHT = 8
-# Mid-message ack coalescing, in packets. Sized against the BDP window rather than the message
-# size -- a rail-local 400G hop pair gives a ~148 KB window, ~36 packets at a 4096 B MTU, and a
-# quarter of that keeps the ack sawtooth clear of the window edge. Constant across the sweep for
-# that reason: it is a property of the network, not of the size axis.
+# Mid-message ack coalescing, in packets. RdmaFabricHelper sizes every window as BDP + N*MTU and
+# the sender requests an ack on the packet that fills it, so N no longer caps throughput or risks
+# a stall; what it sets is the reverse-path ack load. Constant across the sweep: it is a
+# transport setting, not a property of the size axis. A non-default N is part of the output
+# name (see setup_suffix), so sweeps at different N land in different directories.
 ACK_EVERY_N_PKTS = 8
+
+# Everything that changes what a run simulates but is not a config column. Each setting at its
+# reference value adds nothing to the output name, so directories written before this scheme
+# keep their names; any other value gets a suffix on the directory AND on the run label (the
+# traces in logs/ are keyed by label). Anything that only changes what is sampled or kept --
+# --host-tx-gbps, --no-nic-bw, --qlen-rows-max-bytes, --keep-traces -- is deliberately absent.
+SETUP_REFERENCE = dict(coll="alltoall", ack_every_n_pkts=8,
+                       proto_chunk_bytes=2 * 1024 * 1024, max_msgs_in_flight=8)
+
+
+def setup(args):
+    """The run's simulation setup outside the config columns, as name -> value.
+
+    ack_every_n_pkts is None with acks off: RdmaHw ignores it there, so two no-ack sweeps that
+    differ only in it are the same simulation and must share a namespace.
+    """
+    return collections.OrderedDict([
+        ("l2ack", 1 if args.l2ack else 0),
+        ("coll", args.coll),
+        ("ack_every_n_pkts", args.ack_every_n_pkts if args.l2ack else None),
+        ("proto_chunk_bytes", PROTO_CHUNK_BYTES),
+        ("max_msgs_in_flight", MAX_MSGS_IN_FLIGHT),
+    ])
+
+
+def setup_suffix(args):
+    """The output-name suffix for setup(args): e.g. "_ack", "_ack_ackN1", "_allgather"."""
+    st, ref, parts = setup(args), SETUP_REFERENCE, []
+    if st["l2ack"]:
+        parts.append("ack")
+    if st["ack_every_n_pkts"] not in (None, ref["ack_every_n_pkts"]):
+        parts.append(f"ackN{st['ack_every_n_pkts']}")
+    if st["coll"] != ref["coll"]:
+        parts.append(st["coll"])
+    if st["proto_chunk_bytes"] != ref["proto_chunk_bytes"]:
+        parts.append(f"chunk{fmt_size(st['proto_chunk_bytes'])}")
+    if st["max_msgs_in_flight"] != ref["max_msgs_in_flight"]:
+        parts.append(f"inflight{st['max_msgs_in_flight']}")
+    return "".join("_" + p for p in parts)
 
 FIELDS = ["pair_bytes", "config", "input_bytes", "sim_time_ns", "algbw_gbps",
           "pause", "resume", "max_qlen_bytes", "nic_mean_gbps", "nic_peak_gbps",
@@ -274,15 +342,15 @@ class Program:
             return False
         return os.path.isfile(os.path.join(SCRATCH_DIR, "xml_input", self.sched_xml(sched, coll)))
 
-    def slug(self, ack_interval):
-        """Output namespace for a sweep run in this ack mode.
+    def slug(self, args):
+        """Output namespace for a sweep of this program under args' simulation setup.
 
-        No-ack keeps the bare name so earlier results stay where they are; acked runs get a
-        suffix, on the label as well as the directory, because the traces the scratch writes
-        into logs/ are keyed by label and would otherwise be overwritten in place.
+        The setup suffix (setup_suffix) goes on the label as well as the directory, because the
+        traces the scratch writes into logs/ are keyed by label and would otherwise be
+        overwritten in place by a sweep under a different setup.
         """
         return (self.name + (f"_{self.scenario}" if self.scenario else "")
-                + ("_ack" if ack_interval else ""))
+                + setup_suffix(args))
 
     @staticmethod
     def _read_with_local_headers(path):
@@ -407,7 +475,7 @@ def nic_interval_ns(input_bytes, prog, host_tx_gbps, target_samples=500):
 
 def run_one(pair_bytes, name, flags, args, prog, no_build):
     input_bytes = pair_bytes * prog.pair_ranks
-    label = f"sweep_{prog.slug(args.l2ack)}_{name}_{fmt_size(pair_bytes)}"
+    label = f"sweep_{prog.slug(args)}_{name}_{fmt_size(pair_bytes)}"
     # The NIC bandwidth trace is a periodic event per NIC for the whole run -- a few hundred
     # samples x every GPU NIC, all of it scheduler work the collective does not need. 0 turns
     # the sampling off in the scratch, which is what --no-nic-bw is for when only the latency
@@ -462,17 +530,31 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
     proc = subprocess.run(cmd, cwd=NS3_DIR, capture_output=True, text=True)
     wall = time.time() - t0
     out = proc.stdout + proc.stderr
+    # Written before any verdict, so a failed run keeps its whole log -- the fatal message from a
+    # collective that did not complete names the threadblock it stalled on, and that is exactly
+    # what gets cut off by the 4000-character tail below. No row is appended for a failure, so a
+    # resumed sweep still re-runs the point.
+    with open(os.path.join(args.outdir, f"run_{label}.log"), "w") as f:
+        f.write(out)
     if proc.returncode != 0:
         sys.stderr.write(out[-4000:])
         raise SystemExit(f"run failed ({name}, {fmt_size(pair_bytes)}): exit {proc.returncode}")
-    with open(os.path.join(args.outdir, f"run_{label}.log"), "w") as f:
-        f.write(out)
 
     sim = re.search(r"Total simulated time:\s*(\d+)", out)
     if not sim:
         sys.stderr.write(out[-4000:])
         raise SystemExit(f"no simulated time reported ({name}, {fmt_size(pair_bytes)})")
-    algbw = re.search(r"algorithm bandwidth:\s*([0-9.eE+-]+)", out)
+    # inf/nan are matched on purpose: they are how a run that never finished shows up here.
+    algbw = re.search(r"algorithm bandwidth:\s*([0-9.eE+-]+|inf|nan)", out)
+    # A run that never finished can still exit 0 -- on any scratch without the IsComplete
+    # guard, Simulator::Run() simply returns when the event queue drains. Its time then reads 0
+    # (no step ever completed) and its algbw inf, and appending it would put a spectacularly
+    # fast point in the tables. Refuse it the same way as any other failed run.
+    if int(sim.group(1)) == 0 or (algbw and not math.isfinite(float(algbw.group(1)))):
+        sys.stderr.write(out[-4000:])
+        raise SystemExit(f"run did not complete ({name}, {fmt_size(pair_bytes)}): simulated time "
+                         f"{sim.group(1)} ns, algbw {algbw.group(1) if algbw else 'missing'} -- "
+                         f"likely a transport deadlock; see run_{label}.log")
 
     row = dict(pair_bytes=pair_bytes, config=name, input_bytes=input_bytes,
                sim_time_ns=int(sim.group(1)),
@@ -493,11 +575,16 @@ def pace_stats(out):
     actually set; it is what makes a --rate run different from a --rate=0 one, and 0 here means
     the two are the same simulation no matter what the latency column shows. unshapeable_pct is
     the share of rate-carrying messages that fit in one MTU -- those have no inter-packet gap to
-    stretch, so their rate can only ever be discarded, which is the expected failure mode when a
-    schedule solved for large messages is replayed at small ones.
+    stretch, so their rate reaches the wire only as the gap after the single packet, which is
+    the expected failure mode when a schedule solved for large messages is replayed at small
+    ones.
     """
     m = re.search(r"bytes shaped by the XML rate:\s*[0-9.]+ of [0-9.]+ MB \(([0-9.]+)%\)", out)
-    u = re.search(r"one MTU or less \(rate unshapeable\):\s*\d+ \(([0-9.]+)%\)", out)
+    # The parenthetical is matched loosely on purpose: PrintPaceStats renamed it from
+    # "(rate unshapeable)" to "(shaped only by the gap after)", and a sweep has to read
+    # logs written on either side of that change -- a literal match silently left the
+    # column blank for every run instead of failing.
+    u = re.search(r"one MTU or less \([^)]*\):\s*\d+ \(([0-9.]+)%\)", out)
     return dict(paced_pct=float(m.group(1)) if m else "",
                 unshapeable_pct=float(u.group(1)) if u else "")
 
@@ -707,8 +794,9 @@ def main():
                          "the transport under every configuration and the two are not comparable")
     ap.add_argument("--ack-every-n-pkts", type=int, default=ACK_EVERY_N_PKTS, metavar="N",
                     help=f"mid-message ack coalescing in packets (default {ACK_EVERY_N_PKTS}); "
-                         "packets closing a message are acknowledged regardless. Bound by the "
-                         "BDP window, not by the message size, so it does not scale with --end")
+                         "packets closing a message or filling the window are acknowledged "
+                         "regardless. With acks on, a value other than "
+                         f"{SETUP_REFERENCE['ack_every_n_pkts']} adds _ackN<N> to the output name")
     ap.add_argument("--configs", default=",".join(DEFAULT_CONFIGS),
                     help="comma-separated subset of: " + ",".join(CONFIGS)
                          + f" (default: {','.join(DEFAULT_CONFIGS)}; the rest are opt-in "
@@ -723,8 +811,11 @@ def main():
                     help="per-NIC line rate, quoted in the bandwidth table's caption (default "
                          "400, or the program's own entry in PROGRAM_DEFAULTS)")
     ap.add_argument("--outdir",
-                    help="default: sweep_results/<program> next to this script. With more than "
-                         "one program, each program's slug is appended so they cannot collide")
+                    help="default: sweep_results/<program><setup> next to this script, where "
+                         "<setup> is a suffix for every simulation setting off its reference "
+                         "value (_ack, _ackN<N>, _allgather, ...). With more than one program, "
+                         "each program's slug is appended so they cannot collide. The directory "
+                         "is stamped with its setup (setup.txt) and reuse under another is refused")
     ap.add_argument("--qlen-rows-max-bytes", type=parse_size, default="16MB",
                     help="keep the per-packet queue trace only while --inputBytes is at most "
                          "this (default 16MB); above it only the peak summary is written")
@@ -807,15 +898,15 @@ def main():
         if base_outdir is None:
             # A scenario's results go in a directory named after the TAG, since the tag is what
             # identifies the experiment (2B and 2C are the same scratch and would otherwise
-            # collide). The ack suffix stays, for the same reason it exists elsewhere: the two
-            # ack modes are not comparable and must not share a results.csv.
+            # collide). The setup suffix stays, for the same reason it exists elsewhere: runs
+            # under different setups are not comparable and must not share a results.csv.
             pa.outdir = os.path.join(HERE, "sweep_results",
-                                     (prog.scenario + ("_ack" if pa.l2ack else ""))
-                                     if prog.scenario else prog.slug(pa.l2ack))
+                                     (prog.scenario + setup_suffix(pa))
+                                     if prog.scenario else prog.slug(pa))
         elif len(progs) > 1:
             # One --outdir over several programs would have them append to each other's
             # results.csv under incompatible rank counts. Give each its own subdirectory.
-            pa.outdir = os.path.join(base_outdir, prog.slug(pa.l2ack))
+            pa.outdir = os.path.join(base_outdir, prog.slug(pa))
         else:
             pa.outdir = base_outdir
         sweep_one(prog, pa)
@@ -825,6 +916,24 @@ def sweep_one(prog, args):
     """One program's whole sweep: run the missing points, then (re)print its tables."""
     os.makedirs(args.outdir, exist_ok=True)
     results = os.path.join(args.outdir, "results.csv")
+    # The default directory name already encodes the setup, but an explicit --outdir does not,
+    # and reusing one under a different setup would mix incomparable points in one results.csv
+    # -- and a resumed sweep would then SKIP the new setup's points as already done. Stamp the
+    # directory with its setup on first use and refuse a mismatch after that. A directory from
+    # before this stamp existed is adopted by the first sweep that writes to it.
+    stamp = os.path.join(args.outdir, "setup.txt")
+    want = "".join(f"{k}={v}\n" for k, v in setup(args).items())
+    if os.path.exists(stamp):
+        have = open(stamp).read()
+        if have != want and not args.tables_only:
+            raise SystemExit(
+                f"{args.outdir} holds results for a different simulation setup.\n"
+                f"  on disk:   {have.strip().replace(chr(10), ', ')}\n"
+                f"  this run:  {want.strip().replace(chr(10), ', ')}\n"
+                "Drop --outdir to get a directory named for this setup, or pass a fresh one.")
+    elif not (args.dry_run or args.tables_only):
+        with open(stamp, "w") as f:
+            f.write(want)
     # Appending rows under a header from an older FIELDS would write each row's columns against
     # the wrong names, silently corrupting every earlier point too. Refuse instead.
     if os.path.exists(results):

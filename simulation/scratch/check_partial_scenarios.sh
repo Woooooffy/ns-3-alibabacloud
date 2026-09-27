@@ -12,7 +12,8 @@
 # send/recv steps staging through scratch while owning no input or output partition. If the
 # relay were counted as a participant, every rank's output slice would land at the wrong
 # offset and this check is what would catch it -- so a "verified" here is load-bearing, not a
-# formality. 3A's and 2B-milp's solves both relay; 1A's, 2B-lp's and 2C's do not.
+# formality. Four of the eight solves relay: 2B-milp and 2C-milp through g1/g4 and g1/g7,
+# 3A-lp and 3A-milp through g1/g7. 1A (both), 2B-lp and 2C-lp route directly.
 #
 # Usage:  ./check_partial_scenarios.sh [pair_bytes]        (default 1 MiB per GPU pair)
 
@@ -40,8 +41,8 @@ run_scenario () {
     for sched in "$@"; do
         local what="${sched:-lp}"
         echo
-        echo "===== $tag / $what   $prog   ${parts} participants, $(( PAIR >> 10 )) KiB per pair ====="
-        local xml="xml_input/$(ls_stem "$prog")_${tag}_a2a${sched:+_$sched}.xml"
+        echo "===== ${tag:-full} / $what   $prog   ${parts} participants, $(( PAIR >> 10 )) KiB per pair ====="
+        local xml="xml_input/$(ls_stem "$prog")${tag:+_$tag}_a2a${sched:+_$sched}.xml"
         if [ ! -f "$xml" ]; then
             echo "  SKIPPED: no $xml (run ./import_teccl_partial.py after solving it)"
             continue
@@ -49,9 +50,9 @@ run_scenario () {
         # --sched is omitted, not passed empty: ns-3 parses a string option with
         # `istringstream >> val`, which fails on "", so `--sched=` is rejected outright.
         local out
-        out=$( cd .. && ./ns3 run "$prog --scenario=$tag ${sched:+--sched=$sched} --inputBytes=$bytes \
+        out=$( cd .. && ./ns3 run "$prog ${tag:+--scenario=$tag} ${sched:+--sched=$sched} --inputBytes=$bytes \
                  --correctness=1 --checkLog=minimal --qlenRows=0 --nicBwInterval=0 \
-                 --label=check_${tag}${sched:+_$sched}" 2>&1 )
+                 --label=check_${tag:-full}_${prog}${sched:+_$sched}" 2>&1 )
         echo "$out" | grep -E "Participants:|relay GPU|Total simulated time|algorithm bandwidth|verified|incorrect"
         if ! echo "$out" | grep -q "alltoall verified"; then
             echo "  !!! NOT VERIFIED"
@@ -61,14 +62,25 @@ run_scenario () {
     done
 }
 
-run_scenario 1A mini_1gpu_1nic 2 "" milp
-run_scenario 2B mini_2gpu_1nic 4 "" milp
-run_scenario 2C mini_2gpu_1nic 6 ""
-run_scenario 3A mini_2gpu_2nic 6 ""
+# Partial-participation solves: the TE-CCL multipath solve (lp), its single-chunk-per-pair
+# twin (milp), and the NCCL transcription (p2p).
+run_scenario 1A mini_1gpu_1nic 2 "" milp p2p
+run_scenario 2B mini_2gpu_1nic 4 "" milp p2p
+run_scenario 2C mini_2gpu_1nic 6 "" milp p2p
+run_scenario 3A mini_2gpu_2nic 6 "" milp p2p
+
+# Whole-topology p2p, which is new and therefore unverified too. The lp/milp arms of these
+# are the long-standing mini_*_a2a schedules and are already covered by resweep_mini.sh's
+# smoke runs, so only p2p is checked here.
+run_scenario "" mini_1gpu_1nic 4 p2p
+run_scenario "" mini_2gpu_1nic 8 p2p
+run_scenario "" mini_2gpu_2nic 8 p2p
 
 echo
 if [ "$FAIL" = 0 ]; then
-    echo "All schedules verified. Safe to sweep:  ./sweep_dual_plane_features.py partial --start 4KB --end 64MB"
+    echo "All schedules verified. Safe to sweep, e.g.:"
+    echo "  ./sweep_dual_plane_features.py partial --configs=baseline,p2p,milp --start 4KB --end 64MB"
+    echo "  ./sweep_dual_plane_features.py mini    --configs=baseline,p2p      --start 4KB --end 64MB"
 else
     echo "!!! At least one schedule did not verify -- do not sweep until it does."
 fi

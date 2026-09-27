@@ -119,6 +119,24 @@ public:
 	// The whole diagnostic as a short block on `os`, or one line if no rate was ever requested.
 	static void PrintPaceStats(std::ostream& os);
 
+	// Why the sender set AckReq on the packets it did (see GetNxtPacket), acks-on runs only.
+	// Job-global like PaceStats. windowFill counts only the requests that exist because of the
+	// window -- a packet that also closes its message is counted under msgEnd -- so it reads
+	// directly as how often the qp reached its window edge, each of which would have stalled
+	// with no ack coming if AckEveryNPackets*MTU exceeded the window. Reading it: ~0 means the
+	// qp never ran into its window. ~1/N is the normal steady state of a qp that is limited by
+	// a slower link downstream -- with no congestion control the window is the only brake, so
+	// it sits at the edge and each coalesced ack releases N packets, the last of which fills it
+	// again (the excess queues at the bottleneck, which stays busy). It says the window is
+	// binding; whether that costs throughput is the bottleneck's utilization, not this number.
+	struct AckReqStats {
+		uint64_t dataPkts = 0;     // data packets built with acks on
+		uint64_t msgEnd = 0;       // AckReq: the packet closes its message
+		uint64_t windowFill = 0;   // AckReq: the packet fills the window (and does not close a message)
+	};
+	static AckReqStats m_ackReqStats;
+	static void PrintAckReqStats(std::ostream& os);
+
 	// nvls
 	void enable_nvls();
 	void disable_nvls();

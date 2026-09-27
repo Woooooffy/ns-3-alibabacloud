@@ -380,6 +380,14 @@ namespace ns3 {
 			// unlike Simulator::Now(), which also counts whatever event ran last (a periodic
 			// trace sampler, trailing acks).
 			Time GetLastStepTime() const { return m_lastStepTime; }
+			// Whether every threadblock on this rank ran all of its steps in every iteration, i.e.
+			// the collective finished here. Simulator::Run() also returns when the event queue
+			// merely drains -- which is what a deadlocked transfer or a gate that never opens does
+			// -- so a scratch must ask this before trusting GetLastStepTime, which then reads as a
+			// plausible (or zero) time. On false, `why` (if given) names the first unfinished
+			// threadblock and where it is parked. StopApplication makes the same check, fatally,
+			// but it only runs if something schedules a stop, and the sweep's scratches do not.
+			bool IsComplete(std::string* why = nullptr) const;
 			#ifdef FLOW_ID_TEST
 			// void SetFlowIdTableForChannel(std::map<std::pair<int, int>, uint32_t>*, int channel);
 			// void SetFlowIdTableForAllChannels(std::map<std::pair<int, int>, uint32_t>* table);
