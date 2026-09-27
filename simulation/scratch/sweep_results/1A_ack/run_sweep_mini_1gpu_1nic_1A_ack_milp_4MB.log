@@ -1,3 +1,5 @@
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
 Participants: 2 of 4 GPUs carry data (schedule mini_1g1n_1A_a2a_milp_no_rate.xml)
 Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_1gpu_1nic_1A_ack_milp_4MB.csv (every 2000 ns, 4 NICs)
 Topology: mini_1g1n (4 GPUs, 4 switches, 0 host switches)

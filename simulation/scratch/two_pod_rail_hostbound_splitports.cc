@@ -88,7 +88,7 @@ static void OnSwitchPfc(FILE* out, uint32_t swId, uint32_t port, uint32_t type) 
 int main(int argc, char *argv[]) {
     NS_LOG_COMPONENT_DEFINE("TWO_POD_RAIL_HOSTBOUND_SPLITPORTS");
 //    LogComponentEnable("CollectivesApplication", LOG_INFO);
-    LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
+    // LogComponentEnable("SwitchNode", LOG_LEVEL_DEBUG);
     LogComponentEnable("AlgoTopo", LOG_LEVEL_WARN);
 
     uint32_t inputBytes = (1 << 20);
