@@ -118,9 +118,25 @@ test                      visualizer
 -- Generating done
 -- Build files have been written to: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/cmake-cache
 [0/2] Re-checking globbed directories...
-[1/12] Building CXX object src/point-to-point/CMakeFiles/libpoint-to-point-obj.dir/model/rdma-driver.cc.o
-[2/12] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/rdma-client.cc.o
-[3/12] Building CXX object src/point-to-point/CMakeFiles/libpoint-to-point-obj.dir/model/rdma-hw.cc.o
+[1/14] Building CXX object src/applications/CMakeFiles/libapplications-obj.dir/model/rdma-client.cc.o
+[2/14] Building CXX object src/point-to-point/CMakeFiles/libpoint-to-point-obj.dir/model/rdma-driver.cc.o
+[3/14] Building CXX object src/point-to-point/CMakeFiles/libpoint-to-point-obj.dir/model/nvswitch-node.cc.o
+/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/src/point-to-point/model/nvswitch-node.cc: In member function ‘void ns3::NVSwitchNode::PrintSwitchQlen(FILE*)’:
+/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/src/point-to-point/model/nvswitch-node.cc:219:65: warning: format ‘%u’ expects argument of type ‘unsigned int’, but argument 7 has type ‘uint64_t’ {aka ‘long unsigned int’} [-Wformat=]
+  219 |                         fprintf(qlen_output, "%lu, %u, %u, %u, %u, %lu\n", Simulator::Now().GetTimeStep(), m_id, i, j, m_mmu->egress_bytes[i][j], port_len);
+      |                                                                ~^                                                      ~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                                                 |                                                                              |
+      |                                                                 unsigned int                                                                   uint64_t {aka long unsigned int}
+      |                                                                %lu
+[4/14] Building CXX object src/point-to-point/CMakeFiles/libpoint-to-point-obj.dir/model/switch-node.cc.o
+/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/src/point-to-point/model/switch-node.cc: In member function ‘void ns3::SwitchNode::PrintSwitchQlen(FILE*)’:
+/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/src/point-to-point/model/switch-node.cc:412:65: warning: format ‘%u’ expects argument of type ‘unsigned int’, but argument 7 has type ‘uint64_t’ {aka ‘long unsigned int’} [-Wformat=]
+  412 |                         fprintf(qlen_output, "%lu, %u, %u, %u, %u, %lu\n", Simulator::Now().GetTimeStep(), m_id, i, j, m_mmu->egress_bytes[i][j], port_len);
+      |                                                                ~^                                                      ~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                                                 |                                                                              |
+      |                                                                 unsigned int                                                                   uint64_t {aka long unsigned int}
+      |                                                                %lu
+[5/14] Building CXX object src/point-to-point/CMakeFiles/libpoint-to-point-obj.dir/model/rdma-hw.cc.o
 /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/src/point-to-point/model/rdma-hw.cc: In member function ‘int ns3::RdmaHw::ReceiveUdp(ns3::Ptr<ns3::Packet>, ns3::CustomHeader&)’:
 /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/src/point-to-point/model/rdma-hw.cc:614:26: warning: unused variable ‘sid’ [-Wunused-variable]
   614 |                 uint32_t sid = (sip >> 8) & 0xffff;
@@ -184,11 +200,11 @@ test                      visualizer
 /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/src/point-to-point/model/rdma-hw.cc:1651:27: warning: comparison of integer expressions of different signedness: ‘int’ and ‘uint32_t’ {aka ‘unsigned int’} [-Wsign-compare]
  1651 |        if (rand() % 65536 >= pint_smpl_thresh)
       |            ~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~
-[4/12] Building CXX object src/distributed-ml/CMakeFiles/libdistributed-ml-obj.dir/helper/rdma-fabric-helper.cc.o
-[5/12] Building CXX object src/distributed-ml/CMakeFiles/libdistributed-ml-obj.dir/helper/collectives-helper.cc.o
-[6/12] Building CXX object src/distributed-ml/CMakeFiles/libdistributed-ml-obj.dir/model/collective-tests.cc.o
-[7/12] Linking CXX shared library ../build/lib/libns3.36.1-applications-debug.so
-[8/12] Building CXX object scratch/CMakeFiles/scratch_mini_1gpu_1nic.dir/mini_1gpu_1nic.cc.o
+[6/14] Building CXX object src/distributed-ml/CMakeFiles/libdistributed-ml-obj.dir/helper/rdma-fabric-helper.cc.o
+[7/14] Building CXX object src/distributed-ml/CMakeFiles/libdistributed-ml-obj.dir/helper/collectives-helper.cc.o
+[8/14] Linking CXX shared library ../build/lib/libns3.36.1-applications-debug.so
+[9/14] Building CXX object src/distributed-ml/CMakeFiles/libdistributed-ml-obj.dir/model/collective-tests.cc.o
+[10/14] Building CXX object scratch/CMakeFiles/scratch_mini_1gpu_1nic.dir/mini_1gpu_1nic.cc.o
 In file included from /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/include/ns3/point-to-point-module.h:8,
                  from /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/mini_harness.h:28,
                  from /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/mini_1gpu_1nic.cc:28:
@@ -196,10 +212,10 @@ In file included from /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/
 /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/include/ns3/sim-setting.h:19:35: warning: variable ‘j’ set but not used [-Wunused-but-set-variable]
    19 |                         for (auto j : i.second)
       |                                   ^
-[9/12] Linking CXX shared library ../build/lib/libns3.36.1-point-to-point-debug.so
-[10/12] Building CXX object src/distributed-ml/CMakeFiles/libdistributed-ml-obj.dir/model/collectives.cc.o
-[11/12] Linking CXX shared library ../build/lib/libns3.36.1-distributed-ml-debug.so
-[12/12] Linking CXX executable ../build/scratch/ns3.36.1-mini_1gpu_1nic-debug
+[11/14] Linking CXX shared library ../build/lib/libns3.36.1-point-to-point-debug.so
+[12/14] Building CXX object src/distributed-ml/CMakeFiles/libdistributed-ml-obj.dir/model/collectives.cc.o
+[13/14] Linking CXX shared library ../build/lib/libns3.36.1-distributed-ml-debug.so
+[14/14] Linking CXX executable ../build/scratch/ns3.36.1-mini_1gpu_1nic-debug
 Participants: 2 of 4 GPUs carry data (schedule mini_1g1n_1A_a2a_milp_no_rate.xml)
 Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_1gpu_1nic_1A_ack_milp_4KB.csv (every 100 ns, 4 NICs)
 Topology: mini_1g1n (4 GPUs, 4 switches, 0 host switches)
