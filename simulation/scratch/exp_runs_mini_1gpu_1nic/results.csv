@@ -1,0 +1,3 @@
+pair_bytes,config,input_bytes,sim_time_ns,algbw_gbps,pause,resume,max_qlen_bytes,nic_mean_gbps,nic_peak_gbps,paced_pct,unshapeable_pct,nic_interval_ns,qlen_rows,wall_s
+268435456,noRate,1073741824,87328184,49.1819,0,0,332160,74.89,100.21,0.0,,200000,0,99.8
+536870912,noRate,2147483648,174662338,49.1802,0,0,332160,74.8,100.14,0.0,,500000,0,167.6
