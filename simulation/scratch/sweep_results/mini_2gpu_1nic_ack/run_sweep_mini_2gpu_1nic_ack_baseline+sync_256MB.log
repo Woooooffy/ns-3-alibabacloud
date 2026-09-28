@@ -1,0 +1,28 @@
+Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_a2a_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_ack_baseline+sync_256MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_ack_baseline+sync_256MB.csv
+Total simulated time: 392663116 nanoseconds
+Simulator end (last event of any kind): 392667346 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_ack_baseline+sync_256MB.csv
+Fabric end (last switch data dequeue): 392661220 ns
+Switch-to-switch data bytes over 8 ports: min 1902903296 / mean 2174746624 / max 2446589952 (max/mean 1.125)
+Busiest switch port: sw 9 port 3 -> node 11, 391454392 ns of data at line rate (99.6927% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 7168  with a rate: 0 (0.0%)  without: 7168
+  packets paced: 3670016 (14518.0 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       3668807 (100.0%)
+    cc rate (message tail): 1209 (0.0%)
+  bytes shaped by the XML rate: 0.0 of 14518.0 MB (0.0%)
+Ack requests (AckReq) over 3670016 data packets: 7168 closing a message, 471325 filling the window (12.84% of packets)
+alltoall algorithm bandwidth: 43.7522 GB/s
+Algorithm XML: honoring 228 network dependence(s) and 0 epoch-pacing depid(s) over 328 send step(s); 0 remote gate(s) fed by 0 remote notification(s) (enforced only with HonorRemoteDeps).
+Skipping correctness check.
+Done simulation

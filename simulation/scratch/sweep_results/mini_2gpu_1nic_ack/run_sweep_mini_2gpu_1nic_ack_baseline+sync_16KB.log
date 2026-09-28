@@ -1,0 +1,28 @@
+Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_a2a_no_rate.xml
+Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_2gpu_1nic_ack_baseline+sync_16KB.csv
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_ack_baseline+sync_16KB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_ack_baseline+sync_16KB.csv
+Total simulated time: 29914 nanoseconds
+Simulator end (last event of any kind): 34144 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_ack_baseline+sync_16KB.csv
+Fabric end (last switch data dequeue): 28262 ns
+Switch-to-switch data bytes over 8 ports: min 117600 / mean 134400 / max 151200 (max/mean 1.125)
+Busiest switch port: sw 9 port 3 -> node 11, 24192 ns of data at line rate (85.599% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 328  with a rate: 0 (0.0%)  without: 328
+  packets paced: 352 (0.9 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       266 (75.6%)
+    cc rate (message tail): 86 (24.4%)
+  bytes shaped by the XML rate: 0.0 of 0.9 MB (0.0%)
+Ack requests (AckReq) over 352 data packets: 328 closing a message, 0 filling the window (0.00% of packets)
+alltoall algorithm bandwidth: 35.053 GB/s
+Algorithm XML: honoring 228 network dependence(s) and 0 epoch-pacing depid(s) over 328 send step(s); 0 remote gate(s) fed by 0 remote notification(s) (enforced only with HonorRemoteDeps).
+Skipping correctness check.
+Done simulation

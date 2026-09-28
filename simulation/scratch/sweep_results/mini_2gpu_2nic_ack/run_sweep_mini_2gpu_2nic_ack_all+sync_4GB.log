@@ -2,6 +2,7 @@ Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
 NIC selection: schedule-pinned (one qp per connection)
 Network flow ids: on (custom headers + per-flow switch forwarding)
 Network deps (netdepid/netdeps): honored
+Remote deps (remotedep/remotenotify): honored
 Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_a2a.xml
 Switch queue trace: (rows off)
 Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_ack_all+sync_4GB.csv
@@ -25,7 +26,7 @@ Pacing diagnostic (MSCCL XML "rate" -> host shaper)
   bytes shaped by the XML rate: 215904.0 of 232512.0 MB (92.9%)
 Ack requests (AckReq) over 58720256 data packets: 114688 closing a message, 2838261 filling the window (4.83% of packets)
 alltoall algorithm bandwidth: 76.2354 GB/s
-Algorithm XML: honoring 86 network dependence(s) over 126 send step(s).
+Algorithm XML: honoring 86 network dependence(s) and 10 epoch-pacing depid(s) over 126 send step(s); 0 remote gate(s) fed by 0 remote notification(s) (enforced only with HonorRemoteDeps).
 Switch JSON: pinned the scheduled egress NIC on 72 RDMA connection(s); 0 left unpinned due to conflicting plane assignments.
 Skipping correctness check.
 Done simulation
