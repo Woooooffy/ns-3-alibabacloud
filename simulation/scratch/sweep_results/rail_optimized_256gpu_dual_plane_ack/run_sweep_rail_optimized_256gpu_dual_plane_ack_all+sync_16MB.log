@@ -1,0 +1,19 @@
+NIC selection: schedule-pinned (one qp per connection)
+Network flow ids: on (custom headers + per-flow switch forwarding)
+Network deps (netdepid/netdeps): honored
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/xml_input/rail_optimized_256gpu_dual_plane_alltoall.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_rail_optimized_256gpu_dual_plane_ack_all+sync_16MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_events_sweep_rail_optimized_256gpu_dual_plane_ack_all+sync_16MB.csv
+Total simulated time: 45696086 nanoseconds
+Simulator end (last event of any kind): 45697486 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_rail_optimized_256gpu_dual_plane_ack_all+sync_16MB.csv
+Fabric end (last switch data dequeue): 45676949 ns
+Switch-to-switch data bytes over 512 ports: min 0 / mean 0 / max 0 (max/mean 0)
+Busiest switch port: sw 256 port 0 -> node 0, 42176348 ns of data at line rate (92.3362% of fabric end)
+Flow-forwarding rule coverage: 260046848 hit / 0 miss (100% of flow-id packets steered by the schedule)
+alltoall algorithm bandwidth: 24061.4 GB/s
+Algorithm XML: honoring 31724 network dependence(s) over 116204 send step(s).
+Switch JSON: pinned the scheduled egress NIC on 13818 RDMA connection(s); 0 left unpinned due to conflicting plane assignments.
+Skipping correctness check.
+Done simulation

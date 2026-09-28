@@ -1,0 +1,140 @@
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...
+-- Using default output directory /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build
+-- [33mProceeding without cmake-format[0m
+-- [33mfind_external_library: SQLite3 was not found. Missing headers: "sqlite3.h" and missing libraries: "sqlite3".[0m
+-- [33mSQLite was not found[0m
+-- Some or all of the gtk libraries were not found. (missing: GTK3_GTK_LIBRARY GTK3_GTK_INCLUDE_DIR GTK3_GDK_INCLUDE_DIR GTK3_GDKCONFIG_INCLUDE_DIR GTK3_GDK_LIBRARY) 
+-- [33mGTK3 was not found. Continuing without it.[0m
+-- LibXML2 was found.
+-- LibRT was found.
+-- [33mVisualizer requires Python bindings[0m
+-- [33mGSL was not found. Continuing without it.[0m
+-- [33mdocs: doxygen documentation not enabled due to missing dependencies: doxygen;dot;dia[0m
+-- Failed to locate sphinx-build executable (missing: SPHINX_EXECUTABLE) 
+-- [33mdocs: sphinx documentation not enabled due to missing dependencies: Sphinx[0m
+-- Precompiled headers were enabled
+-- Processing src/antenna
+-- Processing src/aodv
+-- Processing src/applications
+-- Processing src/bridge
+-- Processing src/brite
+-- [33mfind_external_library: brite was not found. Missing headers: "Brite.h" and missing libraries: "brite".[0m
+-- [33mSkipping src/brite[0m
+-- Processing src/buildings
+-- Processing src/click
+-- [33mfind_external_library: click was not found. Missing headers: "simclick.h" and missing libraries: "nsclick;click".[0m
+-- [33mSkipping src/click[0m
+-- Processing src/config-store
+-- Processing src/core
+-- Boost Units have been found.
+-- Processing src/csma
+-- Processing src/csma-layout
+-- Processing src/distributed-ml
+-- Processing src/dsdv
+-- Processing src/dsr
+-- Processing src/energy
+-- Processing src/fd-net-device
+-- Checking for module 'libdpdk'
+--   No package 'libdpdk' found
+-- Processing src/flow-monitor
+-- Processing src/internet
+-- Processing src/internet-apps
+-- Processing src/lr-wpan
+-- Processing src/lte
+-- Processing src/mesh
+-- Processing src/mobility
+-- Processing src/netanim
+-- Processing src/network
+-- Processing src/nix-vector-routing
+-- Processing src/olsr
+-- Processing src/openflow
+-- [33mfind_external_library: openflow was not found. Missing headers: "openflow.h" and missing libraries: "openflow".[0m
+-- [33mSkipping src/openflow[0m
+-- Processing src/point-to-point
+-- Processing src/point-to-point-layout
+-- Processing src/propagation
+-- Processing src/sixlowpan
+-- Processing src/spectrum
+-- Processing src/stats
+-- Processing src/tap-bridge
+-- Processing src/test
+-- Processing src/topology-read
+-- Processing src/traffic-control
+-- Processing src/uan
+-- Processing src/virtual-net-device
+-- Processing src/wave
+-- Processing src/wifi
+-- Processing src/wimax
+-- ---- Summary of optional ns-3 features:
+Build profile                 : debug
+Build directory               : /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build
+BRITE Integration             : [31mOFF (missing dependency)[0m
+DES Metrics event collection  : OFF (not requested)
+DPDK NetDevice                : OFF (not requested)
+Emulation FdNetDevice         : [32mON[0m
+Examples                      : OFF (not requested)
+File descriptor NetDevice     : [32mON[0m
+GNU Scientific Library (GSL)  : [31mOFF (missing dependency)[0m
+GtkConfigStore                : [31mOFF (missing dependency)[0m
+LibXml2 support               : [32mON[0m
+MPI Support                   : OFF (not requested)
+Multithreaded Simulation      : OFF (not requested)
+ns-3 Click Integration        : [31mOFF (missing dependency)[0m
+ns-3 OpenFlow Integration     : [31mOFF (missing dependency)[0m
+Netmap emulation FdNetDevice  : [31mOFF (missing dependency)[0m
+PyViz visualizer              : [31mOFF (missing dependency)[0m
+Python API Scanning Support   : OFF (not requested)
+Python Bindings               : OFF (not requested)
+Real Time Simulator           : [32mON[0m
+SQLite support                : [31mOFF (missing dependency)[0m
+Tap Bridge                    : [32mON[0m
+Tap FdNetDevice               : [32mON[0m
+Tests                         : OFF (not requested)
+
+
+Modules configured to be built:
+antenna                   aodv                      applications              
+bridge                    buildings                 config-store              
+core                      csma                      csma-layout               
+distributed-ml            dsdv                      dsr                       
+energy                    fd-net-device             flow-monitor              
+internet                  internet-apps             lr-wpan                   
+lte                       mesh                      mobility                  
+netanim                   network                   nix-vector-routing        
+olsr                      point-to-point            point-to-point-layout     
+propagation               sixlowpan                 spectrum                  
+stats                     tap-bridge                topology-read             
+traffic-control           uan                       virtual-net-device        
+wave                      wifi                      wimax                     
+
+
+Modules that cannot be built:
+brite                     click                     mpi                       
+mtp                       openflow                  p4                        
+test                      visualizer                
+
+
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/cmake-cache
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/xml_input/rail_optimized_256gpu_dual_plane_alltoall_p2p_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_rail_optimized_256gpu_dual_plane_ack_p2p_256KB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_events_sweep_rail_optimized_256gpu_dual_plane_ack_p2p_256KB.csv
+Total simulated time: 1175992 nanoseconds
+Simulator end (last event of any kind): 1178796 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns3-bigram/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_rail_optimized_256gpu_dual_plane_ack_p2p_256KB.csv
+Fabric end (last switch data dequeue): 1175210 ns
+Switch-to-switch data bytes over 512 ports: min 42475520 / mean 49377792 / max 57740160 (max/mean 1.16935)
+Busiest switch port: sw 258 port 73 -> node 264, 1154803 ns of data at line rate (98.2636% of fabric end)
+alltoall algorithm bandwidth: 14608.8 GB/s
+-- GLOB mismatch!
+Algorithm XML: honoring 48896 network dependence(s) over 65280 send step(s).
+Skipping correctness check.
+Done simulation

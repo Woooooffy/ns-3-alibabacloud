@@ -1,0 +1,9 @@
+== sweep_rail_optimized_256gpu_dual_plane_ack_p2p_512KB ==
+  events (switch_events_sweep_rail_optimized_256gpu_dual_plane_ack_p2p_512KB.csv):
+    fabric switch    pause    201827
+    fabric switch    resume   201827
+    gpu fabric NIC   pause    120793
+    gpu fabric NIC   resume   120793
+  peak egress queue (switch_qlen_max_sweep_rail_optimized_256gpu_dual_plane_ack_p2p_512KB.csv):
+    spine downlink   n=1024  max   2302.1 KB  mean   104.0  p50    66.4  max/mean 22.13
+  per-NIC bandwidth: host_nic_bw_sweep_rail_optimized_256gpu_dual_plane_ack_p2p_512KB.csv not found (re-run with --nicBwInterval=<ns>)
