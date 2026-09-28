@@ -243,6 +243,12 @@ namespace ns3
 		// must not survive to be joined against the next switch JSON.
 		m_flowEndpoints.clear();
 		m_nNetDeps = 0;
+		m_nPacingDeps = 0;
+		m_nRemoteDeps = 0;
+		m_nRemoteNotifies = 0;
+		m_remoteWaits.clear();
+		std::map<std::pair<int, int>, int> remoteNotifiesPerPair; // (notifier, waiter) -> per pass
+		std::set<std::string> unknownStepAttrs;
 		m_nSendSteps = 0;
 		int nRanks = GetNGpuNodes();
 		xmlDocPtr doc = xmlReadFile(file_path, NULL, 0);
@@ -397,11 +403,26 @@ namespace ns3
 				int numReductions = 0;
 
 				int numTransfers = 0;
+				int numRemoteNotifyEntries = 0; // packed into sTB->remoteNotifyRank
 
       		/* ---- Iterate over <step> ---- */
 				for (xmlNodePtr stepNode = tb->children; stepNode; stepNode = stepNode->next) {
 					if (stepNode->type != XML_ELEMENT_NODE) continue;
 					if (xmlStrcmp(stepNode->name, BAD_CAST "step") != 0) continue;
+					// An attribute this parser does not read is dropped without a trace, which is
+					// how remotedep went unenforced in every 2C run. Name each one once per parse.
+					for (xmlAttrPtr attr = stepNode->properties; attr; attr = attr->next){
+						static const std::set<std::string> known = {
+							"s", "type", "srcbuf", "srcoff", "dstbuf", "dstoff", "cnt", "depid", "deps",
+							"hasdep", "mscclflowid", "rate", "netgate", "netwait", "netdepid", "netdeps",
+							"remotedep", "remotedeps", "remotenotify"};
+						std::string attrName((const char*)attr->name);
+						if (!known.count(attrName) && unknownStepAttrs.insert(attrName).second){
+							NS_LOG_UNCOND("Algorithm XML: WARNING -- step attribute \"" << attrName
+								<< "\" (first seen on GPU " << gpuId << " tb " << bid << ") is not read by "
+								<< "this simulator and will be IGNORED.");
+						}
+					}
 
 
 					int s, srcoffset, dstoffset, depend_bid, depend_step, has_dependence, count;
@@ -415,7 +436,31 @@ namespace ns3
 
 					XML_GET_PROP_INT(stepNode, "cnt", count);
 					XML_GET_PROP_STR(stepNode, "type", type);
-					XML_GET_PROP_INT(stepNode, "depid", depend_bid);
+					// depid is read by hand rather than with XML_GET_PROP_INT: an epoch-pacing gate
+					// carries MSCCL_PACING_DEPID_SUFFIX ("2p"), which atoi would silently drop,
+					// turning a netDeps-ablated gate back into an always-on data dependence.
+					bool depend_pacing = false;
+					{
+						xmlChar* depidProp = xmlGetProp(stepNode, BAD_CAST "depid");
+						if (!depidProp) return AlgoParseResult::XML_PARSE_ERROR;
+						char* end = nullptr;
+						depend_bid = (int) strtol((const char*)depidProp, &end, 10);
+						const bool empty = (end == (char*)depidProp);
+						if (!empty && *end == MSCCL_PACING_DEPID_SUFFIX){
+							depend_pacing = true;
+							++end;
+						}
+						const bool trailing = (*end != '\0');
+						std::string raw((const char*)depidProp);
+						xmlFree(depidProp);
+						if (empty || trailing || (depend_pacing && depend_bid < 0)){
+							NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+								<< gpuId << ") has depid=\"" << raw << "\"; expected an integer, optionally "
+								<< "suffixed with '" << MSCCL_PACING_DEPID_SUFFIX << "' on a real (>= 0) "
+								<< "threadblock id to mark an epoch-pacing gate.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+					}
 					XML_GET_PROP_INT(stepNode, "deps", depend_step);
 					XML_GET_PROP_INT(stepNode, "hasdep", has_dependence);
 
@@ -492,6 +537,51 @@ namespace ns3
 								return AlgoParseResult::INVALID_USE_ERROR;
 							}
 							++m_nNetDeps;
+						}
+					}
+					// Remote pacing gate (see mscclTransfer::remoteDepRank). Read leniently like the
+					// other optional attributes, but validated strictly: a half-written gate, or a
+					// notification aimed at a rank that cannot be waiting, is an emitter bug that
+					// would otherwise hang or silently unpace the run.
+					int16_t remoteDepRank = MSCCL_REMOTEDEP_NONE;
+					int16_t remoteDepOrdinal = MSCCL_REMOTEDEP_NONE;
+					std::vector<int16_t> remoteNotify;
+					{
+						xmlChar* rdProp = xmlGetProp(stepNode, BAD_CAST "remotedep");
+						xmlChar* rdsProp = xmlGetProp(stepNode, BAD_CAST "remotedeps");
+						const bool hasRd = rdProp != nullptr, hasRds = rdsProp != nullptr;
+						if (rdProp){ remoteDepRank = (int16_t) atoi((const char*)rdProp); xmlFree(rdProp); }
+						if (rdsProp){ remoteDepOrdinal = (int16_t) atoi((const char*)rdsProp); xmlFree(rdsProp); }
+						if (hasRd != hasRds){
+							NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+								<< gpuId << ") has only one of remotedep/remotedeps -- both must be present together.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						if (hasRd && (remoteDepRank < 0 || remoteDepRank >= ngpus || remoteDepRank == gpuId
+							|| remoteDepOrdinal < 1)){
+							NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+								<< gpuId << ") has remotedep=" << remoteDepRank << " remotedeps=" << remoteDepOrdinal
+								<< "; the rank must be another GPU in [0, " << ngpus << ") and the ordinal >= 1.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						xmlChar* rnProp = xmlGetProp(stepNode, BAD_CAST "remotenotify");
+						if (rnProp){
+							std::string list((const char*)rnProp);
+							xmlFree(rnProp);
+							std::stringstream ss(list);
+							std::string tok;
+							while (std::getline(ss, tok, ',')){
+								char* end = nullptr;
+								long r = strtol(tok.c_str(), &end, 10);
+								if (tok.empty() || *end != '\0' || r < 0 || r >= ngpus || r == gpuId
+									|| std::find(remoteNotify.begin(), remoteNotify.end(), (int16_t) r) != remoteNotify.end()){
+									NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+										<< gpuId << ") has remotenotify=\"" << list << "\"; expected distinct ranks of "
+										<< "other GPUs in [0, " << ngpus << "), comma-separated.");
+									return AlgoParseResult::INVALID_USE_ERROR;
+								}
+								remoteNotify.push_back((int16_t) r);
+							}
 						}
 					}
 					if (netGate < MSCCL_GATE_NONE || netWait < MSCCL_GATE_NONE){
@@ -579,6 +669,20 @@ namespace ns3
 						}
 					}
 
+					if (remoteDepRank != MSCCL_REMOTEDEP_NONE && (transferType == -1 || !hasSend)){
+						NS_LOG_WARN("MSCCL: remotedep on a non-sending step (type \"" << type << "\", step " << s
+							<< " of threadblock (" << bid << ") on GPU (" << gpuId << ")). Remote gates hold sends only.");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+					// A notification means "this GPU has taken delivery", which is the completion of a
+					// pure receive. A fused recv-send completes on the send side, so it is rejected
+					// rather than given a meaning the emitter did not intend.
+					if (!remoteNotify.empty() && (transferType == -1 || !hasRecv || hasSend)){
+						NS_LOG_WARN("MSCCL: remotenotify on step " << s << " of threadblock (" << bid << ") on GPU ("
+							<< gpuId << ") of type \"" << type << "\"; only pure receives (r, rrc) may notify.");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+
 					if (depend_bid >= 0) {
 						// Same ceiling as the tb id itself -- this is the field it is stored in.
 						if (depend_bid > MSCCL_MAX_THREAD_BLOCK_ID){
@@ -594,6 +698,8 @@ namespace ns3
 						}
 						sTB->dependentBid[numDependences] = depend_bid;
 						sTB->dependentStep[numDependences] = depend_step;
+						sTB->dependentPacing[numDependences] = depend_pacing ? 1 : 0;
+						if (depend_pacing) ++m_nPacingDeps;
 						numDependences++;
 					}
 
@@ -634,6 +740,24 @@ namespace ns3
 						msccltran->netWait = netWait;
 						msccltran->netDepBid = netDepBid;
 						msccltran->netDepStep = netDepStep;
+						msccltran->remoteDepRank = remoteDepRank;
+						msccltran->remoteDepOrdinal = remoteDepOrdinal;
+						msccltran->remoteNotifyPointer = (int16_t) numRemoteNotifyEntries;
+						msccltran->numRemoteNotify = (int16_t) remoteNotify.size();
+						if (numRemoteNotifyEntries + (int) remoteNotify.size() > MSCCL_MAX_NUM_STEPS){
+							NS_LOG_WARN("MSCCL: too many remotenotify entries in threadblock (" << bid << ") on GPU ("
+								<< gpuId << "). Max: " << MSCCL_MAX_NUM_STEPS);
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						for (int16_t waiter : remoteNotify){
+							sTB->remoteNotifyRank[numRemoteNotifyEntries++] = waiter;
+							++remoteNotifiesPerPair[std::make_pair(gpuId, (int) waiter)];
+							++m_nRemoteNotifies;
+						}
+						if (remoteDepRank != MSCCL_REMOTEDEP_NONE){
+							m_remoteWaits.push_back(RemoteWait{gpuId, remoteDepRank, remoteDepOrdinal, bid, s});
+							++m_nRemoteDeps;
+						}
 
 						if (count < 0 || count >= MSCCL_MAX_COUNT){
 							NS_LOG_WARN("MSCCL: count (" << count << ") must be positive and less than " << MSCCL_MAX_COUNT);
@@ -814,6 +938,21 @@ namespace ns3
 				if (sChunks > m_nScratchChunks) m_nScratchChunks = sChunks;
 			}
     } // gpu
+		// Remote gates cross GPUs, so they can only be checked once every GPU is parsed. A
+		// waiter asking for the i-th notification from a rank that sends it fewer than i per pass
+		// would park forever -- and the event queue would simply drain, which reads as a finished
+		// run with a wrong time rather than as a hang.
+		for (const RemoteWait& w : m_remoteWaits){
+			auto it = remoteNotifiesPerPair.find(std::make_pair((int) w.notifier, w.waiter));
+			const int sent = (it == remoteNotifiesPerPair.end()) ? 0 : it->second;
+			if (sent < w.ordinal){
+				NS_LOG_UNCOND("Algorithm XML: GPU " << w.waiter << " tb " << w.bid << " step " << w.s
+					<< " waits for notification #" << w.ordinal << " from GPU " << w.notifier
+					<< ", but GPU " << w.notifier << " sends it only " << sent << " per pass (remotenotify).");
+				return AlgoParseResult::INVALID_USE_ERROR;
+			}
+		}
+
 		std::sort(m_activeGpuIds.begin(), m_activeGpuIds.end());
 		std::sort(m_dataGpuIds.begin(), m_dataGpuIds.end());
 		std::sort(m_relayGpuIds.begin(), m_relayGpuIds.end());
@@ -832,8 +971,10 @@ namespace ns3
 		// this reports 0 while the XML is full of them, the attribute names have drifted and the
 		// run will release every flow at once -- which looks like a congested fabric rather than
 		// like a parse bug, and is very expensive to diagnose from the other end.
-		NS_LOG_UNCOND("Algorithm XML: honoring " << m_nNetDeps << " network dependence(s) over "
-			<< m_nSendSteps << " send step(s)."
+		NS_LOG_UNCOND("Algorithm XML: honoring " << m_nNetDeps << " network dependence(s) and "
+			<< m_nPacingDeps << " epoch-pacing depid(s) over " << m_nSendSteps << " send step(s); "
+			<< m_nRemoteDeps << " remote gate(s) fed by " << m_nRemoteNotifies << " remote notification(s)"
+			<< " (enforced only with HonorRemoteDeps)."
 			<< (m_nNetDeps == 0 && m_nSendSteps > 0
 				? " NOTE: no netdepid/netdeps found -- every send is released as soon as its data"
 				  " dependences allow, so a time-indexed schedule will not be paced as solved."

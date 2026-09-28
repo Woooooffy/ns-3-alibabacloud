@@ -110,19 +110,19 @@ SCRATCH_DIR = HERE                                  # simulation/scratch, where 
 # --nicSel=schedule with it, and nicSel alone (schedule-pinned NICs, plain ECMP in the fabric)
 # is the run that separates the two halves.
 CONFIGS = collections.OrderedDict([
-    ("baseline",   dict(rate=0, netDeps=0, flowId=0, nicSel="merged")),
-    ("rate",       dict(rate=1, netDeps=0, flowId=0, nicSel="merged")),
-    ("netDeps",    dict(rate=0, netDeps=1, flowId=0, nicSel="merged")),
-    ("nicSel",     dict(rate=0, netDeps=0, flowId=0, nicSel="schedule")),
-    ("flowId+nic", dict(rate=0, netDeps=0, flowId=1, nicSel="schedule")),
+    ("baseline",   dict(rate=0, netDeps=0, flowId=0, nicSel="merged", remoteDeps=0)),
+    ("rate",       dict(rate=1, netDeps=0, flowId=0, nicSel="merged", remoteDeps=0)),
+    ("netDeps",    dict(rate=0, netDeps=1, flowId=0, nicSel="merged", remoteDeps=0)),
+    ("nicSel",     dict(rate=0, netDeps=0, flowId=0, nicSel="schedule", remoteDeps=0)),
+    ("flowId+nic", dict(rate=0, netDeps=0, flowId=1, nicSel="schedule", remoteDeps=0)),
     # Everything on except the rate-annotated XML: isolates what the schedule's per-flow rates
     # buy once the rest of the machinery is already in force.
-    ("noRate",     dict(rate=0, netDeps=1, flowId=1, nicSel="schedule")),
+    ("noRate",     dict(rate=0, netDeps=1, flowId=1, nicSel="schedule", remoteDeps=1)),
     # The same subtraction for the schedule's cross-rank dependencies. Dropping netDeps AND
     # rate together needs no config of its own: with only four knobs that is exactly the
     # flowId+nic run above.
-    ("noNetDeps",  dict(rate=1, netDeps=0, flowId=1, nicSel="schedule")),
-    ("all",        dict(rate=1, netDeps=1, flowId=1, nicSel="schedule")),
+    ("noNetDeps",  dict(rate=1, netDeps=0, flowId=1, nicSel="schedule", remoteDeps=1)),
+    ("all",        dict(rate=1, netDeps=1, flowId=1, nicSel="schedule", remoteDeps=1)),
     # The "baseline baseline": the same flags as baseline, but against a schedule variant
     # (--sched) that fixes strictly one chunk per src-dst GPU pair, so the algorithm itself
     # makes no multipath decision -- direct point-to-point traffic, ECMP-forwarded, unpaced,
@@ -132,7 +132,7 @@ CONFIGS = collections.OrderedDict([
     # Opt-in rather than part of the default set: it needs both the --sched knob and a
     # <stem>_<coll>_milp solve on disk (today only mini_1gpu_1nic / 1A has one), and a program
     # missing either is skipped with a note rather than run as a duplicate baseline.
-    ("milp",       dict(rate=0, netDeps=0, flowId=0, nicSel="merged", sched="milp")),
+    ("milp",       dict(rate=0, netDeps=0, flowId=0, nicSel="merged", remoteDeps=0, sched="milp")),
     # The other floor, and the one a reader outside this project will ask about: what a
     # stock NCCL job does. `ncclAlltoAll` is not an algorithm -- it fans out one direct
     # message per ordered pair and routes nothing (no cost model, no algorithm selection,
@@ -143,7 +143,14 @@ CONFIGS = collections.OrderedDict([
     # The schedules are transcribed from NCCL 2.31.2-1 by xml_input/gen_nccl_alltoall.py --
     # the real round permutation and channel assignment, not a hand-rolled ring -- and exist
     # for every mini_* topology and every partial scenario. See README_nccl_alltoall.md.
-    ("p2p",        dict(rate=0, netDeps=0, flowId=0, nicSel="merged", sched="p2p")),
+    ("p2p",        dict(rate=0, netDeps=0, flowId=0, nicSel="merged", remoteDeps=0, sched="p2p")),
+    # The remote pacing gates (remotedep/remotenotify) as their own knob, alone and subtracted
+    # from the full set. Opt-in: only schedules that carry remote gates (2B and 2C today) can tell these
+    # apart from baseline and all, so on everything else they would be duplicate runs. The
+    # default configs above still set remoteDeps explicitly -- off wherever a feature is being
+    # isolated, on in the "everything" columns -- so no column depends on the scratch default.
+    ("remoteDeps",   dict(rate=0, netDeps=0, flowId=0, nicSel="merged", remoteDeps=1, optin=True)),
+    ("noRemoteDeps", dict(rate=1, netDeps=1, flowId=1, nicSel="schedule", remoteDeps=0, optin=True)),
 ])
 BASELINE = "baseline"
 # --sync-blocks does not add a config; it re-runs whichever configs were asked for with the
@@ -155,7 +162,7 @@ BASELINE = "baseline"
 SYNC_SUFFIX = "+sync"
 # Run unless --configs says otherwise. Everything with a `sched` is a different schedule, not an
 # ablation of the sweep's own one, so it does not belong in the default ablation table.
-DEFAULT_CONFIGS = [n for n, f in CONFIGS.items() if not f.get("sched")]
+DEFAULT_CONFIGS = [n for n, f in CONFIGS.items() if not f.get("sched") and not f.get("optin")]
 
 # Constant across every run, per the sweep's terms.
 PROTO_CHUNK_BYTES = 2 * 1024 * 1024
@@ -507,6 +514,9 @@ def run_one(pair_bytes, name, flags, args, prog, no_build):
             f"--inputBytes={input_bytes}", f"--label={label}", f"--coll={args.coll}",
             f"--rate={flags['rate']}", f"--netDeps={flags['netDeps']}",
             f"--flowId={flags['flowId']}", f"--nicSel={flags['nicSel']}",
+            # Only scratches that know the knob get it; the others have no remote-gate support
+            # and every one of their runs is remoteDeps-off by construction.
+            *([f"--remoteDeps={flags['remoteDeps']}"] if "remoteDeps" in prog.flags else []),
             # --sched / --scenario are OMITTED when empty rather than passed as "": ns-3's
             # CommandLineHelper::UserItemParse feeds the value to `istringstream >> val`,
             # which sets failbit on an empty string, so `--sched=` is rejected outright

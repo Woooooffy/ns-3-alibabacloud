@@ -229,6 +229,9 @@ int main(int argc, char *argv[]) {
     // time-indexed (TE-CCL) solve; off releases every buffer-ready send at once. Safe to ablate
     // -- buffer readiness is still enforced by depid/deps.
     bool netDeps = true;
+    // Honor the XML remote pacing gates (remotedep/remotedeps on a send, remotenotify on the
+    // remote recv that releases it). Independent of netDeps; only 2B and 2C carry any today.
+    bool remoteDeps = true;
     // Network-side only: put the schedule's flow id on the wire and install the per-flow
     // forwarding table from the JSON, so switches route by it instead of hashing ECMP. When
     // false the header is not merely ignored, it is never added, so neither arm carries its 4
@@ -311,7 +314,8 @@ int main(int argc, char *argv[]) {
     cmd.AddValue("xml", "XML schedule filename inside scratch/xml_input, overriding the one derived from --coll/--rate (empty = derive)", xmlName);
     cmd.AddValue("sched", "Schedule variant suffix applied to BOTH input stems, e.g. p2p -> rail_optimized_256gpu_dual_plane_<coll>_p2p[_no_rate].xml and ..._p2p.json (empty = this topology's own solve)", sched);
     cmd.AddValue("nicSel", "NIC selection: schedule (switch JSON pins the NIC) | merged (NCCL-style merged NIC, one qp per NIC) | rr (one qp per connection, round-robin NICs)", nicSel);
-    cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences (false = release every buffer-ready send immediately)", netDeps);
+    cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences and the p-suffixed epoch-pacing depids (false = release every buffer-ready send immediately)", netDeps);
+    cmd.AddValue("remoteDeps", "Honor the XML remotedep/remotenotify cross-GPU pacing gates, independently of netDeps (false = no notification is sent or waited on)", remoteDeps);
     cmd.AddValue("qlenRows", "Write the per-packet switch queue trace (0 = only the per-port peak summary, which is all a large sweep can afford on disk)", qlenRows);
     cmd.AddValue("nicBwInterval", "Sample every GPU NIC's transmitted bytes this often, in ns (0 = off). Try 100 at 1MB, 2000 at 128MB.", nicBwIntervalNs);
     cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
@@ -1489,6 +1493,7 @@ int main(int argc, char *argv[]) {
         nicSel == "schedule" ? "SCHEDULED" : (nicSel == "merged" ? "MERGED" : "ROUND_ROBIN")));
     app_helper.SetAttribute("NetworkFlowIds", BooleanValue(flowId));
     app_helper.SetAttribute("HonorNetDeps", BooleanValue(netDeps));
+    app_helper.SetAttribute("HonorRemoteDeps", BooleanValue(remoteDeps));
     ApplicationContainer apps = app_helper.Install<GPU>(topo);
 
     NS_LOG_INFO("Finished installing collective apps.");
@@ -1651,6 +1656,7 @@ int main(int argc, char *argv[]) {
     std::cout << "Network flow ids: " << (flowId ? "on (custom headers + per-flow switch forwarding)"
                                                  : "off (no header on the wire, plain ECMP)") << std::endl;
     std::cout << "Network deps (netdepid/netdeps): " << (netDeps ? "honored" : "skipped") << std::endl;
+    std::cout << "Remote deps (remotedep/remotenotify): " << (remoteDeps ? "honored" : "skipped") << std::endl;
     std::cout << "Algorithm XML: " << XML_ALGO << std::endl;
     std::cout << "Switch queue trace: " << (qlenRows ? qlenPath : std::string("(rows off)")) << std::endl;
     std::cout << "Switch peak-queue summary: " << qmaxPath << std::endl;

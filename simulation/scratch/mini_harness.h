@@ -207,6 +207,9 @@ struct Options {
     // time-indexed (TE-CCL) solve; off releases every buffer-ready send at once. Safe to
     // ablate -- buffer readiness is still enforced by depid/deps.
     bool netDeps = true;
+    // Honor the XML remote pacing gates (remotedep/remotedeps on a send, remotenotify on the
+    // remote recv that releases it). Independent of netDeps; only 2B and 2C carry any today.
+    bool remoteDeps = true;
     // Network-side only: put the schedule's flow id on the wire and install the per-flow
     // forwarding table from the JSON, so switches route by it instead of hashing ECMP. When
     // false the header is not merely ignored, it is never added, so neither arm carries its 4
@@ -319,7 +322,8 @@ struct Options {
         cmd.AddValue("sched", "Schedule variant suffix applied to BOTH input stems, e.g. milp -> <stem>_<coll>_milp[_no_rate].xml and <stem>_<coll>_milp.json (empty = the topology's default solve)", sched);
         cmd.AddValue("scenario", "Partial-participation scenario tag inserted before the collective in BOTH input stems, e.g. 2B -> <stem>_2B_<coll>[_milp][_no_rate].xml and <stem>_2B_<coll>[_milp].json (empty = the whole-topology solve)", scenario);
         cmd.AddValue("nicSel", "NIC selection: schedule (switch JSON pins the NIC) | merged (NCCL-style merged NIC, one qp per NIC) | rr (one qp per connection, round-robin NICs)", nicSel);
-        cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences (false = release every buffer-ready send immediately)", netDeps);
+        cmd.AddValue("netDeps", "Honor the XML netdepid/netdeps network dependences and the p-suffixed epoch-pacing depids (false = release every buffer-ready send immediately)", netDeps);
+        cmd.AddValue("remoteDeps", "Honor the XML remotedep/remotenotify cross-GPU pacing gates, independently of netDeps (false = no notification is sent or waited on)", remoteDeps);
         cmd.AddValue("qlenRows", "Write the per-packet switch queue trace (0 = only the per-port peak summary)", qlenRows);
         cmd.AddValue("nicBwInterval", "Sample every GPU NIC's transmitted bytes this often, in ns (0 = off)", nicBwIntervalNs);
         cmd.AddValue("checkLog", "Correctness-check logging: silent | minimal | verbose", checkLog);
@@ -487,6 +491,7 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
         opt.nicSel == "schedule" ? "SCHEDULED" : (opt.nicSel == "merged" ? "MERGED" : "ROUND_ROBIN")));
     app_helper.SetAttribute("NetworkFlowIds", BooleanValue(opt.flowId));
     app_helper.SetAttribute("HonorNetDeps", BooleanValue(opt.netDeps));
+    app_helper.SetAttribute("HonorRemoteDeps", BooleanValue(opt.remoteDeps));
     ApplicationContainer apps = app_helper.Install<GPU>(topo);
 
     // The ctor's `verbose` flag only seeds the log mode; SetLogMode below is what governs.
@@ -651,6 +656,7 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     std::cout << "Network flow ids: " << (opt.flowId ? "on (custom headers + per-flow switch forwarding)"
                                                      : "off (no header on the wire, plain ECMP)") << std::endl;
     std::cout << "Network deps (netdepid/netdeps): " << (opt.netDeps ? "honored" : "skipped") << std::endl;
+    std::cout << "Remote deps (remotedep/remotenotify): " << (opt.remoteDeps ? "honored" : "skipped") << std::endl;
     std::cout << "Algorithm XML: " << XML_ALGO << std::endl;
     std::cout << "Switch queue trace: " << (opt.qlenRows ? qlenPath : std::string("(rows off)")) << std::endl;
     std::cout << "Switch peak-queue summary: " << qmaxPath << std::endl;

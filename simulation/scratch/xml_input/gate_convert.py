@@ -50,7 +50,7 @@ def convert_gpu(gpu):
     anchors = set()
     for bid in steps:
         for st in steps[bid].values():
-            dep_bid, dep_sid = int(st.get("depid")), int(st.get("deps"))
+            dep_bid, dep_sid = int(st.get("depid").rstrip("p")), int(st.get("deps"))
             if dep_bid >= 0 and is_send_anchor(dep_bid, dep_sid):
                 anchors.add((dep_bid, dep_sid))
     gate_of = {a: i for i, a in enumerate(sorted(anchors))}
@@ -63,16 +63,19 @@ def convert_gpu(gpu):
         nops = []
         for sid in sorted(steps[bid]):
             st = steps[bid][sid]
-            dep_bid, dep_sid = int(st.get("depid")), int(st.get("deps"))
+            # Each dep is (bid, sid, raw depid): the raw string keeps an epoch-pacing
+            # "<n>p" suffix (tag_pacing_deps.py) intact through the repack below.
+            raw = st.get("depid")
+            dep_bid, dep_sid = int(raw.rstrip("p")), int(st.get("deps"))
             if st.get("type") == "nop":
                 nops.append(st)
                 if dep_bid >= 0:
-                    pending.append((dep_bid, dep_sid))
+                    pending.append((dep_bid, dep_sid, raw))
                 continue
 
-            group = pending + ([(dep_bid, dep_sid)] if dep_bid >= 0 else [])
-            gates = [d for d in group if d in gate_of]
-            data = [d for d in group if d not in gate_of]
+            group = pending + ([(dep_bid, dep_sid, raw)] if dep_bid >= 0 else [])
+            gates = [d for d in group if d[:2] in gate_of]
+            data = [d for d in group if d[:2] not in gate_of]
             assert len(gates) <= 1, (
                 f"gpu {gpu.get('id')} tb {bid} step {sid} would wait on {len(gates)} gates; "
                 "an op may wait on at most one"
@@ -82,7 +85,7 @@ def convert_gpu(gpu):
                     f"gpu {gpu.get('id')} tb {bid} step {sid} is type {st.get('type')}; "
                     "gates are valid only on send-bearing ops"
                 )
-                st.set("netwait", str(gate_of[gates[0]]))
+                st.set("netwait", str(gate_of[gates[0][:2]]))
                 n_waits += 1
 
             # Repack the surviving data deps: last one on the transfer (the parser
@@ -91,14 +94,14 @@ def convert_gpu(gpu):
             for nop in nops:
                 if carried:
                     d = carried.pop(0)
-                    nop.set("depid", str(d[0]))
+                    nop.set("depid", d[2])
                     nop.set("deps", str(d[1]))
                 else:
                     nop.set("depid", "-1")
                     nop.set("deps", "-1")
             assert not carried, f"gpu {gpu.get('id')} tb {bid} step {sid}: too few nops to carry deps"
             if data:
-                st.set("depid", str(data[-1][0]))
+                st.set("depid", data[-1][2])
                 st.set("deps", str(data[-1][1]))
             else:
                 st.set("depid", "-1")

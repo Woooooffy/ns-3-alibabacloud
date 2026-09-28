@@ -113,6 +113,19 @@ namespace ns3
 		NodeContainer m_gpuNodes;
 		NodeContainer m_switchNodes;
 		int m_nNetDeps = 0;                  // netdepid/netdeps pairs honored, for the parse summary
+		int m_nPacingDeps = 0;               // depid="<n>p" epoch-pacing gates, for the parse summary
+		int m_nRemoteDeps = 0;               // remotedep/remotedeps gates, for the parse summary
+		int m_nRemoteNotifies = 0;           // remotenotify entries, for the parse summary
+		// One remotedep waiter, kept until every GPU is parsed so the cross-GPU ordinal check
+		// (a waiter must not ask for more notifications than its notifier sends) can run.
+		struct RemoteWait {
+			int waiter;
+			int16_t notifier;
+			int16_t ordinal;
+			int bid;
+			int s;
+		};
+		std::vector<RemoteWait> m_remoteWaits;
 		int m_nSendSteps = 0;                // send-bearing steps seen, the summary's denominator
 		int m_nInputChunks = 0;              // per-GPU input chunk count (i_chunks); tester n_chunks
 		int m_nScratchChunks = 0;            // max per-GPU scratch chunk count (s_chunks) over active GPUs

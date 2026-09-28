@@ -119,12 +119,30 @@ struct mscclTransfer {
   // an unthrottled release of every flow at once.
   int16_t netDepBid;
   int16_t netDepStep;
+  // Remote (cross-GPU) pacing gate (XML "remotedep"/"remotedeps"): this send may not start until
+  // this GPU has received `remoteDepOrdinal` notifications from GPU `remoteDepRank` in the
+  // current pipeline pass. Both -1 when unused. Addressed by rank and count rather than by
+  // (threadblock, step) because the producer lives on another GPU. Honored only while the
+  // HonorRemoteDeps attribute is on.
+  int16_t remoteDepRank;
+  int16_t remoteDepOrdinal;
+  // The notifying side (XML "remotenotify", a comma-separated rank list on a recv): when this
+  // step completes, one notification goes to each listed rank. The ranks live in
+  // mscclThreadBlock::remoteNotifyRank[remoteNotifyPointer .. +numRemoteNotify).
+  int16_t remoteNotifyPointer;
+  int16_t numRemoteNotify;
 };
 
 // Sentinel for netGate/netWait: this op neither opens nor waits on a gate.
 #define MSCCL_GATE_NONE ((int16_t)-1)
 // Sentinel for netDepBid/netDepStep: this op has no network dependence.
 #define MSCCL_NETDEP_NONE ((int16_t)-1)
+// Sentinel for remoteDepRank/remoteDepOrdinal: this op waits on no remote notification.
+#define MSCCL_REMOTEDEP_NONE ((int16_t)-1)
+// Suffix on an XML depid value marking it as an epoch-pacing gate (see
+// mscclThreadBlock::dependentPacing). A stock MSCCL runtime reads the id with atoi/strtol, which
+// stops at the suffix, so it keeps enforcing the gate as an ordinary dependence.
+#define MSCCL_PACING_DEPID_SUFFIX 'p'
 // Largest gate id a schedule may use. Not a capacity the runtime preallocates -- gate state is
 // sized per node from the highest id actually seen -- just a bound that keeps a typo'd id from
 // allocating a large gate vector on every node. Six gates per GPU is the measured need.
@@ -170,6 +188,12 @@ inline std::ostream& operator<<(std::ostream& os, const mscclTransfer& t) {
   if (t.netDepBid != MSCCL_NETDEP_NONE) {
     os << ", netDep=(tb " << t.netDepBid << ", step " << t.netDepStep << ")";
   }
+  if (t.remoteDepRank != MSCCL_REMOTEDEP_NONE) {
+    os << ", remoteDep=(gpu " << t.remoteDepRank << ", #" << t.remoteDepOrdinal << ")";
+  }
+  if (t.numRemoteNotify > 0) {
+    os << ", remoteNotify=" << t.numRemoteNotify << " rank(s)";
+  }
 
   os << " }";
 
@@ -184,6 +208,16 @@ struct mscclThreadBlock {
   // step is used to index into this array. transfers[step] is the addr to transfer.
   int16_t dependentBid[MSCCL_MAX_NUM_STEPS]; // -1 if not dependent on any threadblock
   int16_t dependentStep[MSCCL_MAX_NUM_STEPS];
+  // 1 if this dependence is an epoch-PACING gate rather than a data dependence (XML depid with
+  // the MSCCL_PACING_DEPID_SUFFIX, e.g. depid="2p"). A recv-sourced pacing gate rides depid/deps
+  // because the runtime edge is identical -- "wait until that recv has landed" -- but it orders
+  // the wire, not buffer readiness, so it belongs to the netDeps ablation: enforced only while
+  // HonorNetDeps is on. The slot counts toward numDependences either way, so global step
+  // numbering does not depend on the knob.
+  int8_t dependentPacing[MSCCL_MAX_NUM_STEPS];
+  // Waiter ranks of every remotenotify in this threadblock, packed; see
+  // mscclTransfer::remoteNotifyPointer.
+  int16_t remoteNotifyRank[MSCCL_MAX_NUM_STEPS];
   int16_t reductionSrcOffsets[MSCCL_MAX_NUM_STEPS]; // in case there are multiple reductions with the same dstwewqwqew
   struct mscclTransfer transfers[MSCCL_MAX_NUM_STEPS];
   int64_t pad;

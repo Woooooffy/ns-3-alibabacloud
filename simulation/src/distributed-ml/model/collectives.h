@@ -319,6 +319,10 @@ namespace ns3 {
 			// drained. Advances that threadblock's netFlag to the value recorded for that step at
 			// dispatch time and wakes anything parked on a netdepid/netdeps referring to it.
 			void NoteNetworkStepComplete(int16_t bid);
+			// Receives one remote pacing notification (XML remotenotify on `fromRank`'s recv) for
+			// pipeline pass `iter`, and wakes any threadblock parked on a remotedep it satisfies.
+			// Called by the notifying GPU's app, delayed by the modeled notification latency.
+			void DeliverRemoteNotify(int16_t fromRank, uint32_t iter);
 			DataBuffer* GetSrcBuffer();
 			DataBuffer* GetDstBuffer();
 			DataBuffer* GetScratchBuffer();
@@ -375,6 +379,7 @@ namespace ns3 {
 			// correct: unlabelled steps send MSCCL_FLOW_ID_NONE and switches fall through to ECMP.
 			bool ConnectionCarriesFlowIds(int16_t peer, int8_t chan);
 			bool GetHonorNetDeps() const { return m_honorNetDeps; }
+			bool GetHonorRemoteDeps() const { return m_honorRemoteDeps; }
 			// When this rank's most recent step completed. After Simulator::Run() it is the
 			// rank's collective finish time; the max over ranks is the collective's runtime,
 			// unlike Simulator::Now(), which also counts whatever event ran last (a periodic
@@ -525,6 +530,22 @@ namespace ns3 {
 			bool m_networkFlowIds = true;    // NetworkFlowIds attribute; see ConnectionCarriesFlowIds
 			std::map<std::pair<int16_t, int8_t>, bool> m_connFlowIds; // memoized ConnectionCarriesFlowIds
 			bool m_honorNetDeps = true;      // HonorNetDeps attribute; see TryScheduleNextStep
+			// HonorRemoteDeps attribute. Independent of HonorNetDeps: when off, remotenotify sends
+			// nothing and remotedep waits on nothing, so the run is identical to one on a
+			// schedule without remote gates.
+			bool m_honorRemoteDeps = true;
+			// RemoteNotifyDelay attribute: latency of one notification. Negative (the default)
+			// means half the notifier->waiter base RTT, i.e. one-way propagation plus
+			// serialization of the path, as if the notification were a tiny RDMA write.
+			Time m_remoteNotifyDelay = NanoSeconds(-1);
+			// Remote gate state, keyed (pipeline pass, notifying rank). Keyed by pass because the
+			// ordinals restart every pass, exactly like the other dependences: a notifier already
+			// in pass k+1 must not satisfy a waiter still in pass k. Maps rather than vectors
+			// because a notification may arrive before this app has sized anything.
+			std::map<std::pair<uint32_t, int16_t>, uint32_t> m_remoteNotifyCount;
+			std::map<std::pair<uint32_t, int16_t>, std::unordered_set<int16_t>> m_remoteWaiters;
+			// Fires one notification per remotenotify rank of step (bid, sid), for pass `iter`.
+			void SendRemoteNotifies(int16_t bid, int16_t sid, uint32_t iter);
 			Time m_lastStepTime;             // see GetLastStepTime
 			// Network gate state (see mscclTransfer::netGate/netWait), indexed [iter][gate]. Both
 			// vectors are sized at InterpretAlgo from m_nLoops and mscclAlgorithm::maxNetGate, so

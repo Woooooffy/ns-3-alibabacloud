@@ -804,12 +804,38 @@ namespace ns3 {
 					"named step of the named threadblock has physically drained onto the wire. "
 					"These are what pace a time-indexed (TE-CCL) solve -- with them off, every "
 					"send whose buffer is ready fires immediately and a congestion-free schedule "
-					"is released as one burst. Off is an ablation, not a correctness hazard: "
-					"buffer readiness is enforced separately by depid/deps. Does not affect the "
-					"netgate/netwait mechanism, which is a separate knob.",
+					"is released as one burst. Also covers recv-sourced epoch-pacing gates, which "
+					"ride depid/deps but are marked with a 'p' suffix (depid=\"2p\"): with this "
+					"off they are skipped too, so no epoch gate survives the ablation. Off is an "
+					"ablation, not a correctness hazard: buffer readiness is enforced separately "
+					"by the unsuffixed depid/deps. Does not affect the netgate/netwait "
+					"mechanism, which is a separate knob.",
 					BooleanValue(true),
 					MakeBooleanAccessor(&CollectivesApplication::m_honorNetDeps),
-					MakeBooleanChecker());
+					MakeBooleanChecker())
+				.AddAttribute(
+					"HonorRemoteDeps",
+					"Honor the XML remote pacing gates: a send carrying remotedep=k remotedeps=i "
+					"is held until this GPU has received i notifications from GPU k in the current "
+					"pipeline pass, each one fired when a recv carrying remotenotify naming this "
+					"GPU completes on GPU k. These pin a send the local clocks (netdeps, pacing "
+					"depids) cannot, to a delivery at its destination. Independent of HonorNetDeps. "
+					"A send carrying a remotedep may also carry a local fallback (netdepid, or a "
+					"'p'-suffixed depid) for runtimes without remote gates; exactly one is honored: "
+					"the remotedep when this is on, else the fallback (subject to HonorNetDeps). "
+					"When off, no notification is sent and none is waited on.",
+					BooleanValue(true),
+					MakeBooleanAccessor(&CollectivesApplication::m_honorRemoteDeps),
+					MakeBooleanChecker())
+				.AddAttribute(
+					"RemoteNotifyDelay",
+					"Latency of one remote pacing notification, from the notifying recv's "
+					"completion to its arrival at the waiting GPU. Negative (the default) uses half "
+					"the pair's base RTT: one-way propagation plus serialization, as for a tiny "
+					"RDMA write. The notification is not put on the wire, so it takes no bandwidth.",
+					TimeValue(NanoSeconds(-1)),
+					MakeTimeAccessor(&CollectivesApplication::m_remoteNotifyDelay),
+					MakeTimeChecker());
 		return tid;
 	}
 
@@ -1149,6 +1175,42 @@ namespace ns3 {
 		tbState->netTryReschedule.clear();
 	}
 
+	void CollectivesApplication::SendRemoteNotifies(int16_t bid, int16_t sid, uint32_t iter){
+		const mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
+		const mscclTransfer* tran = &tb->transfers[sid];
+		const int16_t me = static_cast<int16_t>(GetNode()->GetId());
+		for (int16_t k = 0; k < tran->numRemoteNotify; ++k){
+			int16_t waiter = tb->remoteNotifyRank[tran->remoteNotifyPointer + k];
+			Ptr<CollectivesApplication> waiterApp = DynamicCast<CollectivesApplication>(
+				NodeList::GetNode(static_cast<uint32_t>(waiter))->GetApplication(0));
+			if (!waiterApp){
+				NS_FATAL_ERROR("Node " << me << " TB " << (int)bid << " step " << sid
+					<< " notifies GPU " << waiter << ", which has no CollectivesApplication.");
+			}
+			Time delay = m_remoteNotifyDelay.IsNegative()
+				? NanoSeconds(GetPeerBaseRtt(waiter) / 2) : m_remoteNotifyDelay;
+			NS_LOG_DEBUG("GPU " << me << " TB=" << (int)bid << " sid=" << sid
+				<< " remote notify -> GPU " << waiter << " iter=" << iter
+				<< " delay=" << delay.GetNanoSeconds() << "ns t=" << Simulator::Now().GetNanoSeconds());
+			Simulator::Schedule(delay, &CollectivesApplication::DeliverRemoteNotify,
+				PeekPointer(waiterApp), me, iter);
+		}
+	}
+
+	void CollectivesApplication::DeliverRemoteNotify(int16_t fromRank, uint32_t iter){
+		auto key = std::make_pair(iter, fromRank);
+		uint32_t n = ++m_remoteNotifyCount[key];
+		NS_LOG_DEBUG("GPU " << GetNode()->GetId() << " remote notification #" << n
+			<< " from GPU " << fromRank << " iter=" << iter
+			<< " t=" << Simulator::Now().GetNanoSeconds());
+		auto w = m_remoteWaiters.find(key);
+		if (w == m_remoteWaiters.end()) return;
+		for (int16_t bid : w->second){
+			Simulator::ScheduleNow(&CollectivesApplication::TryScheduleNextStep, this, bid);
+		}
+		m_remoteWaiters.erase(w);
+	}
+
 	void CollectivesApplication::OpenGateForStep(int16_t bid, int16_t sid, uint32_t iter){
 		int16_t gate = m_algo->mscclTBs[bid].transfers[sid].netGate;
 		if (gate == MSCCL_GATE_NONE) return;
@@ -1189,7 +1251,14 @@ namespace ns3 {
 		// construction is released as one simultaneous burst -- which is exactly what the
 		// HonorNetDeps attribute ablates. Skipping is safe for correctness: these express wire
 		// ordering only, and buffer readiness is still enforced by the depid/deps block below.
-		if (m_honorNetDeps && tran->netDepBid != MSCCL_NETDEP_NONE){
+		//
+		// One pacing gate per send, never two. The generator emits a LOCAL fallback (netdepid, or
+		// a 'p'-suffixed depid) alongside a remotedep, for runtimes that ignore remote gates. The
+		// fallback always lands earlier -- it is the best-effort clock that could not pin the send
+		// -- so when the remote gate is honored it is the one that decides, and the fallback is
+		// dropped. Unsuffixed depids are data dependences and are never dropped.
+		const bool remoteGated = m_honorRemoteDeps && tran->remoteDepRank != MSCCL_REMOTEDEP_NONE;
+		if (m_honorNetDeps && !remoteGated && tran->netDepBid != MSCCL_NETDEP_NONE){
 			TBState* netDepTB = &m_TBStates[tran->netDepBid];
 			// Same per-iteration step numbering as the data dependences below: the target names a
 			// step within this threadblock's own iteration, and COMPUTE_FLAG orders (iter, step)
@@ -1205,6 +1274,23 @@ namespace ns3 {
 				return;
 			}
 		}
+		// Remote pacing gate (XML remotedep/remotedeps). Same placement rationale again: it
+		// returns before the data-dependency block mutates global_step. Level-triggered like the
+		// gates: the count only grows within a pass, and DeliverRemoteNotify re-runs this check.
+		if (m_honorRemoteDeps && tran->remoteDepRank != MSCCL_REMOTEDEP_NONE){
+			auto key = std::make_pair(tbState->iter, tran->remoteDepRank);
+			auto got = m_remoteNotifyCount.find(key);
+			uint32_t have = (got == m_remoteNotifyCount.end()) ? 0 : got->second;
+			if (have < (uint32_t) tran->remoteDepOrdinal){
+				NS_LOG_DEBUG("GPU " << nodeId << " TB=" << (int)bid << " sid=" << sid
+					<< " BLOCKED on remote notification #" << tran->remoteDepOrdinal
+					<< " from GPU " << tran->remoteDepRank << " (have " << have << ")"
+					<< " iter=" << tbState->iter
+					<< " t=" << Simulator::Now().GetNanoSeconds());
+				m_remoteWaiters[key].insert(bid);
+				return;
+			}
+		}
 		// int16_t nDeps = tState->nPendingDeps;
 		int16_t nDeps = tran->numDependences;
 		// int16_t firstDepId = tState->firstPendingDep;
@@ -1213,6 +1299,11 @@ namespace ns3 {
 			for (int dep = firstDepId; dep < firstDepId + nDeps; ++dep){
 				int16_t depbid = tb->dependentBid[dep];
 				int16_t depsid = tb->dependentStep[dep]; // depsid is global step
+				// An epoch-pacing depid ("2p") is a wire-ordering gate that happens to ride the
+				// depid carrier, so it is ablated together with netdepid/netdeps, and yields to
+				// an honored remotedep like the netdep fallback above. Skipping only the CHECK is
+				// enough: the global_step bump below still counts this slot.
+				if ((!m_honorNetDeps || remoteGated) && tb->dependentPacing[dep]) continue;
 				// The goal flag names the dependence's step *in this threadblock's own
 				// iteration* -- exactly the kernel's COMPUTE_FLAG(workIndex, iter, dependentStep).
 				// Flags are monotone in (iter, step), so a producer that has already run ahead
@@ -1266,6 +1357,10 @@ namespace ns3 {
 		m_lastStepTime = Simulator::Now();
 		// update TBState
 		TBState* tbState = &m_TBStates[bid];
+		// Remote notifications fire on the whole step's completion (every part and lane has
+		// landed), under the pass the step belonged to -- tbState->iter has not rolled over yet.
+		if (m_honorRemoteDeps && m_algo->mscclTBs[bid].transfers[sid].numRemoteNotify > 0)
+			SendRemoteNotifies(bid, sid, tbState->iter);
 		tbState->busy = false;
 		tbState->local_step++;
 		// Publish the flag for the step that just finished, i.e. still under the iteration it
@@ -1777,6 +1872,13 @@ namespace ns3 {
 					if (netWait != MSCCL_GATE_NONE){
 						gateInfo << " Parked on gate " << netWait << " for iter " << pair.second.iter
 							<< " (open=" << (int)m_gateOpen[pair.second.iter][netWait] << ").";
+					}
+					const mscclTransfer* cur = &tb->transfers[pair.second.local_step];
+					if (m_honorRemoteDeps && cur->remoteDepRank != MSCCL_REMOTEDEP_NONE){
+						auto got = m_remoteNotifyCount.find(std::make_pair(pair.second.iter, cur->remoteDepRank));
+						gateInfo << " Remote gate: needs notification #" << cur->remoteDepOrdinal
+							<< " from GPU " << cur->remoteDepRank << " for iter " << pair.second.iter
+							<< ", has " << (got == m_remoteNotifyCount.end() ? 0 : got->second) << ".";
 					}
 				}
 				// With SyncBlocks on, one threadblock that cannot finish its iteration hangs
