@@ -1,0 +1,6 @@
+== sweep_mini_2gpu_1nic_ack_flowId+nic_64KB ==
+  events (switch_events_sweep_mini_2gpu_1nic_ack_flowId+nic_64KB.csv):
+    none
+  peak egress queue (switch_qlen_sweep_mini_2gpu_1nic_ack_flowId+nic_64KB.csv):
+    leaf->gpu        n=  12  max    211.8 KB  mean    82.3  p50    70.6  max/mean  2.57
+  per-NIC bandwidth: host_nic_bw_sweep_mini_2gpu_1nic_ack_flowId+nic_64KB.csv not found (re-run with --nicBwInterval=<ns>)

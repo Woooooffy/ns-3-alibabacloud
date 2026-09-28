@@ -2,10 +2,5 @@
   events (switch_events_sweep_mini_2gpu_1nic_2B_ack_flowId+nic_1GB.csv):
     none
   peak egress queue (switch_qlen_max_sweep_mini_2gpu_1nic_2B_ack_flowId+nic_1GB.csv):
-    leaf->gpu        n=  11  max    610.3 KB  mean   135.9  p50    91.3  max/mean  4.49
-Traceback (most recent call last):
-  File "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/check_congestion.py", line 129, in <module>
-    nicbw(label)
-  File "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/check_congestion.py", line 85, in nicbw
-    t, node, gbps = int(row["time_ns"]), int(row["node_id"]), float(row["gbps"])
-TypeError: float() argument must be a string or a real number, not 'NoneType'
+    leaf->gpu        n=  11  max    610.3 KB  mean   126.4  p50    70.6  max/mean  4.83
+  per-NIC bandwidth: host_nic_bw_sweep_mini_2gpu_1nic_2B_ack_flowId+nic_1GB.csv not found (re-run with --nicBwInterval=<ns>)

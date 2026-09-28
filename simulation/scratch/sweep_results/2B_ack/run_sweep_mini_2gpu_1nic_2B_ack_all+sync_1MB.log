@@ -3,16 +3,17 @@ Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
 NIC selection: schedule-pinned (one qp per connection)
 Network flow ids: on (custom headers + per-flow switch forwarding)
 Network deps (netdepid/netdeps): honored
+Remote deps (remotedep/remotenotify): honored
 Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_2B_a2a.xml
 Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_2gpu_1nic_2B_ack_all+sync_1MB.csv
 Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_2B_ack_all+sync_1MB.csv
 Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_2B_ack_all+sync_1MB.csv
-Total simulated time: 361054 nanoseconds
-Simulator end (last event of any kind): 363866 nanoseconds
+Total simulated time: 372577 nanoseconds
+Simulator end (last event of any kind): 376807 nanoseconds
 Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_2B_ack_all+sync_1MB.csv
-Fabric end (last switch data dequeue): 359156 ns
+Fabric end (last switch data dequeue): 370679 ns
 Switch-to-switch data bytes over 8 ports: min 1594368 / mean 1594368 / max 1594368 (max/mean 1)
-Busiest switch port: sw 8 port 1 -> node 13, 340131 ns of data at line rate (94.7031% of fabric end)
+Busiest switch port: sw 8 port 1 -> node 13, 340131 ns of data at line rate (91.7591% of fabric end)
 Flow-forwarding rule coverage: 5632 hit / 0 miss (100% of flow-id packets steered by the schedule)
 Pacing diagnostic (MSCCL XML "rate" -> host shaper)
   messages posted: 18  with a rate: 18 (100.0%)  without: 0
@@ -24,9 +25,9 @@ Pacing diagnostic (MSCCL XML "rate" -> host shaper)
     cc rate (no cap):       0 (0.0%)
     cc rate (message tail): 0 (0.0%)
   bytes shaped by the XML rate: 12.2 of 12.2 MB (100.0%)
-Ack requests (AckReq) over 3072 data packets: 18 closing a message, 100 filling the window (3.26% of packets)
-alltoall algorithm bandwidth: 46.4673 GB/s
-Algorithm XML: honoring 10 network dependence(s) over 18 send step(s).
+Ack requests (AckReq) over 3072 data packets: 18 closing a message, 0 filling the window (0.00% of packets)
+alltoall algorithm bandwidth: 45.0302 GB/s
+Algorithm XML: honoring 10 network dependence(s) and 1 epoch-pacing depid(s) over 18 send step(s); 4 remote gate(s) fed by 2 remote notification(s) (enforced only with HonorRemoteDeps).
 Switch JSON: switch 0, flow 0: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
 Switch JSON: switch 0, flow 1: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
 Switch JSON: switch 0, flow 12: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.

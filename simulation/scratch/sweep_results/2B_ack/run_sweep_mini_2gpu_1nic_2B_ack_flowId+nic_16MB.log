@@ -3,6 +3,7 @@ Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
 NIC selection: schedule-pinned (one qp per connection)
 Network flow ids: on (custom headers + per-flow switch forwarding)
 Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
 Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_2B_a2a_no_rate.xml
 Switch queue trace: (rows off)
 Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_2B_ack_flowId+nic_16MB.csv
@@ -22,9 +23,9 @@ Pacing diagnostic (MSCCL XML "rate" -> host shaper)
     cc rate (no cap):       49134 (100.0%)
     cc rate (message tail): 18 (0.0%)
   bytes shaped by the XML rate: 0.0 of 194.6 MB (0.0%)
-Ack requests (AckReq) over 49152 data packets: 96 closing a message, 5723 filling the window (11.64% of packets)
+Ack requests (AckReq) over 49152 data packets: 96 closing a message, 5669 filling the window (11.53% of packets)
 alltoall algorithm bandwidth: 49.2236 GB/s
-Algorithm XML: honoring 10 network dependence(s) over 18 send step(s).
+Algorithm XML: honoring 10 network dependence(s) and 1 epoch-pacing depid(s) over 18 send step(s); 4 remote gate(s) fed by 2 remote notification(s) (enforced only with HonorRemoteDeps).
 Switch JSON: switch 0, flow 0: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
 Switch JSON: switch 0, flow 1: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.
 Switch JSON: switch 0, flow 12: port 0 reaches node 12, not the declared next_hop 0 (gpu, node 0). Forwarding follows the port; next_hop looks stale.

@@ -1,0 +1,27 @@
+Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_a2a_p2p_no_rate.xml
+Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_2gpu_2nic_ack_p2p_1MB.csv
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_ack_p2p_1MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_2nic_ack_p2p_1MB.csv
+Total simulated time: 1021061 nanoseconds
+Simulator end (last event of any kind): 1023877 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_2nic_ack_p2p_1MB.csv
+Fabric end (last switch data dequeue): 1020030 ns
+Switch-to-switch data bytes over 8 ports: min 4247552 / mean 8495104 / max 12742656 (max/mean 1.5)
+Busiest switch port: sw 8 port 4 -> node 10, 1019412 ns of data at line rate (99.9395% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 56  with a rate: 0 (0.0%)  without: 56
+  packets paced: 14336 (56.7 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       14280 (99.6%)
+    cc rate (message tail): 56 (0.4%)
+  bytes shaped by the XML rate: 0.0 of 56.7 MB (0.0%)
+Ack requests (AckReq) over 14336 data packets: 56 closing a message, 684 filling the window (4.77% of packets)
+alltoall algorithm bandwidth: 65.7246 GB/s
+Algorithm XML: honoring 0 network dependence(s) over 56 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
+Skipping correctness check.
+Done simulation

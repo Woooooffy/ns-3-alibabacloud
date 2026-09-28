@@ -3,16 +3,17 @@ Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
 NIC selection: merged NIC (one qp per NIC, message split across them)
 Network flow ids: off (no header on the wire, plain ECMP)
 Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
 Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_2B_a2a_no_rate.xml
 Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_2gpu_1nic_2B_ack_baseline_16KB.csv
 Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_2B_ack_baseline_16KB.csv
 Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_2B_ack_baseline_16KB.csv
-Total simulated time: 15287 nanoseconds
-Simulator end (last event of any kind): 18099 nanoseconds
+Total simulated time: 11821 nanoseconds
+Simulator end (last event of any kind): 16051 nanoseconds
 Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_2B_ack_baseline_16KB.csv
-Fabric end (last switch data dequeue): 13391 ns
+Fabric end (last switch data dequeue): 9925 ns
 Switch-to-switch data bytes over 8 ports: min 16592 / mean 24888 / max 33184 (max/mean 1.33333)
-Busiest switch port: sw 8 port 1 -> node 13, 5309 ns of data at line rate (39.6493% of fabric end)
+Busiest switch port: sw 8 port 1 -> node 13, 5309 ns of data at line rate (53.4956% of fabric end)
 Pacing diagnostic (MSCCL XML "rate" -> host shaper)
   messages posted: 18  with a rate: 0 (0.0%)  without: 18
   packets paced: 48 (0.2 MB), gap set by:
@@ -22,7 +23,7 @@ Pacing diagnostic (MSCCL XML "rate" -> host shaper)
     cc rate (message tail): 18 (37.5%)
   bytes shaped by the XML rate: 0.0 of 0.2 MB (0.0%)
 Ack requests (AckReq) over 48 data packets: 18 closing a message, 0 filling the window (0.00% of packets)
-alltoall algorithm bandwidth: 17.1482 GB/s
-Algorithm XML: honoring 10 network dependence(s) over 18 send step(s).
+alltoall algorithm bandwidth: 22.1761 GB/s
+Algorithm XML: honoring 10 network dependence(s) and 1 epoch-pacing depid(s) over 18 send step(s); 4 remote gate(s) fed by 2 remote notification(s) (enforced only with HonorRemoteDeps).
 Skipping correctness check.
 Done simulation

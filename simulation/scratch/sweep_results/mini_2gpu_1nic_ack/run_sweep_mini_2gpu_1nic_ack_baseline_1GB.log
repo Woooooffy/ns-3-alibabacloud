@@ -1,0 +1,27 @@
+Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_a2a_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_ack_baseline_1GB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_ack_baseline_1GB.csv
+Total simulated time: 1568592399 nanoseconds
+Simulator end (last event of any kind): 1568596629 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_ack_baseline_1GB.csv
+Fabric end (last switch data dequeue): 1568590503 ns
+Switch-to-switch data bytes over 8 ports: min 7611613184 / mean 8698986496 / max 9786359808 (max/mean 1.125)
+Busiest switch port: sw 9 port 3 -> node 11, 1565817569 ns of data at line rate (99.8232% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 28672  with a rate: 0 (0.0%)  without: 28672
+  packets paced: 14680064 (58072.0 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       14679984 (100.0%)
+    cc rate (message tail): 80 (0.0%)
+  bytes shaped by the XML rate: 0.0 of 58072.0 MB (0.0%)
+Ack requests (AckReq) over 14680064 data packets: 28672 closing a message, 2649367 filling the window (18.05% of packets)
+alltoall algorithm bandwidth: 43.8096 GB/s
+Algorithm XML: honoring 228 network dependence(s) over 328 send step(s).
+Skipping correctness check.
+Done simulation

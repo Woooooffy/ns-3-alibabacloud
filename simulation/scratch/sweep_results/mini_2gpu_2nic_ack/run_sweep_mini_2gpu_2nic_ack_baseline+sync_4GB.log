@@ -1,0 +1,27 @@
+Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_a2a_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_ack_baseline+sync_4GB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_2nic_ack_baseline+sync_4GB.csv
+Total simulated time: 3827179258 nanoseconds
+Simulator end (last event of any kind): 3827182074 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_2nic_ack_baseline+sync_4GB.csv
+Fabric end (last switch data dequeue): 3827178227 ns
+Switch-to-switch data bytes over 8 ports: min 30446452736 / mean 34795945984 / max 39145439232 (max/mean 1.125)
+Busiest switch port: sw 9 port 4 -> node 10, 3131635138 ns of data at line rate (81.8262% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 114688  with a rate: 0 (0.0%)  without: 114688
+  packets paced: 58720256 (232288.0 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       58680127 (99.9%)
+    cc rate (message tail): 40129 (0.1%)
+  bytes shaped by the XML rate: 0.0 of 232288.0 MB (0.0%)
+Ack requests (AckReq) over 58720256 data packets: 114688 closing a message, 2490436 filling the window (4.24% of packets)
+alltoall algorithm bandwidth: 71.8226 GB/s
+Algorithm XML: honoring 86 network dependence(s) over 126 send step(s).
+Skipping correctness check.
+Done simulation

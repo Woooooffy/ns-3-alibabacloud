@@ -1,0 +1,34 @@
+Participants: 6 of 8 GPUs carry data, 2 relay only (schedule mini_2g2n_3A_a2a.xml)
+Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: schedule-pinned (one qp per connection)
+Network flow ids: on (custom headers + per-flow switch forwarding)
+Network deps (netdepid/netdeps): honored
+Remote deps (remotedep/remotenotify): honored
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_3A_a2a.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_3A_ack_all_1GB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_2nic_3A_ack_all_1GB.csv
+Total simulated time: 560468784 nanoseconds
+Simulator end (last event of any kind): 560471600 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_2nic_3A_ack_all_1GB.csv
+Fabric end (last switch data dequeue): 560467752 ns
+Switch-to-switch data bytes over 8 ports: min 4897898496 / mean 4897898496 / max 4897898496 (max/mean 1)
+Busiest switch port: sw 8 port 4 -> node 10, 391831879 ns of data at line rate (69.9116% of fabric end)
+Flow-forwarding rule coverage: 16252928 hit / 0 miss (100% of flow-id packets steered by the schedule)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 17408  with a rate: 17408 (100.0%)  without: 0
+    of those, one MTU or less (shaped only by the gap after): 0 (0.0%)
+    requested rate, byte-weighted mean: 58.6 Gbps over 34816.0 MB
+  packets paced: 8912896 (35292.0 MB), gap set by:
+    the message's cap:      7340032 (82.4%), 29064.0 MB, applied cap 53.8 Gbps
+    cc rate (cap slack):    1572864 (17.6%)
+    cc rate (no cap):       0 (0.0%)
+    cc rate (message tail): 0 (0.0%)
+  bytes shaped by the XML rate: 29064.0 of 35292.0 MB (82.4%)
+Ack requests (AckReq) over 8912896 data packets: 17408 closing a message, 396378 filling the window (4.45% of packets)
+alltoall algorithm bandwidth: 68.9685 GB/s
+MSCCL: 6 data GPUs, plus 2 relay GPU(s) carrying threadblocks but no input chunks (1, 7). Relays run their steps but hold no slice of the collective, so they are excluded from participant ranks.
+Algorithm XML: honoring 31 network dependence(s) and 4 epoch-pacing depid(s) over 58 send step(s); 0 remote gate(s) fed by 0 remote notification(s) (enforced only with HonorRemoteDeps).
+Switch JSON: pinned the scheduled egress NIC on 38 RDMA connection(s); 0 left unpinned due to conflicting plane assignments.
+Skipping correctness check.
+Done simulation

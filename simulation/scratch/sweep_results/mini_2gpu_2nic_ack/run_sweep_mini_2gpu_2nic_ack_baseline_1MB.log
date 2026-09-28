@@ -1,0 +1,28 @@
+Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_a2a_no_rate.xml
+Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_2gpu_2nic_ack_baseline_1MB.csv
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_ack_baseline_1MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_2nic_ack_baseline_1MB.csv
+Total simulated time: 767837 nanoseconds
+Simulator end (last event of any kind): 770653 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_2nic_ack_baseline_1MB.csv
+Fabric end (last switch data dequeue): 766806 ns
+Switch-to-switch data bytes over 8 ports: min 7433216 / mean 8495104 / max 9556992 (max/mean 1.125)
+Busiest switch port: sw 9 port 4 -> node 10, 764559 ns of data at line rate (99.707% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 126  with a rate: 0 (0.0%)  without: 126
+  packets paced: 14336 (56.7 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       14256 (99.4%)
+    cc rate (message tail): 80 (0.6%)
+  bytes shaped by the XML rate: 0.0 of 56.7 MB (0.0%)
+Ack requests (AckReq) over 14336 data packets: 126 closing a message, 671 filling the window (4.68% of packets)
+alltoall algorithm bandwidth: 87.3999 GB/s
+Algorithm XML: honoring 86 network dependence(s) and 10 epoch-pacing depid(s) over 126 send step(s); 0 remote gate(s) fed by 0 remote notification(s) (enforced only with HonorRemoteDeps).
+Skipping correctness check.
+Done simulation

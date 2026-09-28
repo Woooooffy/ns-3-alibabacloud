@@ -1,28 +1,29 @@
 Participants: 6 of 8 GPUs carry data (schedule mini_2g1n_2C_a2a_no_rate.xml)
-Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_2gpu_1nic_2C_ack_baseline_256KB.csv (every 200 ns, 8 NICs)
 Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
 NIC selection: merged NIC (one qp per NIC, message split across them)
 Network flow ids: off (no header on the wire, plain ECMP)
 Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
 Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_2C_a2a_no_rate.xml
 Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_2gpu_1nic_2C_ack_baseline_256KB.csv
 Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_2C_ack_baseline_256KB.csv
 Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_2C_ack_baseline_256KB.csv
-Total simulated time: 340857 nanoseconds
-Simulator end (last event of any kind): 345200 nanoseconds
+Total simulated time: 282113 nanoseconds
+Simulator end (last event of any kind): 286343 nanoseconds
 Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_2C_ack_baseline_256KB.csv
-Fabric end (last switch data dequeue): 338961 ns
-Switch-to-switch data bytes over 8 ports: min 597312 / mean 1194624 / max 1791936 (max/mean 1.5)
-Busiest switch port: sw 9 port 2 -> node 10, 286709 ns of data at line rate (84.5849% of fabric end)
+Fabric end (last switch data dequeue): 280217 ns
+Switch-to-switch data bytes over 8 ports: min 663680 / mean 1194624 / max 1725568 (max/mean 1.44444)
+Busiest switch port: sw 9 port 2 -> node 10, 276090 ns of data at line rate (98.5275% of fabric end)
 Pacing diagnostic (MSCCL XML "rate" -> host shaper)
-  messages posted: 70  with a rate: 0 (0.0%)  without: 70
+  messages posted: 48  with a rate: 0 (0.0%)  without: 48
   packets paced: 1920 (7.6 MB), gap set by:
     the message's cap:      0 (0.0%), 0.0 MB
     cc rate (cap slack):    0 (0.0%)
-    cc rate (no cap):       1870 (97.4%)
-    cc rate (message tail): 50 (2.6%)
+    cc rate (no cap):       1872 (97.5%)
+    cc rate (message tail): 48 (2.5%)
   bytes shaped by the XML rate: 0.0 of 7.6 MB (0.0%)
-alltoall algorithm bandwidth: 27.6866 GB/s
-Algorithm XML: honoring 37 network dependence(s) over 70 send step(s).
+Ack requests (AckReq) over 1920 data packets: 48 closing a message, 62 filling the window (3.23% of packets)
+alltoall algorithm bandwidth: 33.4518 GB/s
+Algorithm XML: honoring 24 network dependence(s) and 14 epoch-pacing depid(s) over 48 send step(s); 4 remote gate(s) fed by 2 remote notification(s) (enforced only with HonorRemoteDeps).
 Skipping correctness check.
 Done simulation
