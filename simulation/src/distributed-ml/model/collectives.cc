@@ -1199,8 +1199,8 @@ namespace ns3 {
 
 	void CollectivesApplication::DeliverRemoteNotify(int16_t fromRank, uint32_t iter){
 		auto key = std::make_pair(iter, fromRank);
-		uint32_t n = ++m_remoteNotifyCount[key];
-		NS_LOG_DEBUG("GPU " << GetNode()->GetId() << " remote notification #" << n
+		++m_remoteNotifyCount[key];
+		NS_LOG_DEBUG("GPU " << GetNode()->GetId() << " remote notification #" << m_remoteNotifyCount[key]
 			<< " from GPU " << fromRank << " iter=" << iter
 			<< " t=" << Simulator::Now().GetNanoSeconds());
 		auto w = m_remoteWaiters.find(key);
