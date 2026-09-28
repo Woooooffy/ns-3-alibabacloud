@@ -3,187 +3,955 @@ GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=0 t=
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=0 t=0
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=0 t=0
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=0 t=0
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=0 rateGBps=12.5 at t=0
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=1 rateGBps=12.5 at t=0
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=0 rateGBps=12.5 at t=0
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=1 rateGBps=12.5 at t=0
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=0 rateGBps=12.5 at t=0
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=1 rateGBps=12.5 at t=0
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=0 part=0 rateGBps=6.25 at t=0
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=0 part=0 rateGBps=6.25 at t=0
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=0 part=0 rateGBps=6.25 at t=0
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=0 part=0 rateGBps=6.25 at t=0
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=172868
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=173378
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=177054
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=342772
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=0 rateGBps=12.5 at t=342772
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=1 rateGBps=12.5 at t=342772
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=343358
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=347326
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=0 part=0 rateGBps=6.25 at t=347326
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=0 part=0 rateGBps=6.25 at t=347326
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=0 nElems=524288 at t=350826
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=0 nElems=524288 at t=351166
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=0 nElems=524288 at t=351222
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=0 nElems=524288 at t=352052
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=0 part=0 rateGBps=6.25 at t=352052
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=0 part=0 rateGBps=6.25 at t=352052
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=520374
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=690646
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=0 nElems=524288 at t=698001
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=0 nElems=524288 at t=698333
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=0 rateGBps=12.5 at t=698333
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=1 rateGBps=12.5 at t=698333
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=0 rateGBps=12.5 at t=698783
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=1 rateGBps=12.5 at t=698783
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=0 nElems=524288 at t=702681
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=0 nElems=524288 at t=703013
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=875475
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=876019
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=0 delay=5347ns t=1042269
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=1042269
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=1 part=0 rateGBps=12.5 at t=1042269
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=1 part=1 rateGBps=12.5 at t=1042269
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=1 part=0 rateGBps=6.25 at t=1042269
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=1 part=0 rateGBps=6.25 at t=1042269
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=0 delay=3292ns t=1042721
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=1042721
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=1 part=0 rateGBps=12.5 at t=1042721
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=1 part=1 rateGBps=12.5 at t=1042721
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=1045081
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=1045533
 GPU 2 remote notification #1 from GPU 0 iter=0 t=1046013
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=0 part=0 rateGBps=6.25 at t=1046013
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=0 part=0 rateGBps=6.25 at t=1046013
 GPU 5 remote notification #1 from GPU 3 iter=0 t=1047616
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=0 part=0 rateGBps=6.25 at t=1047616
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=0 part=0 rateGBps=6.25 at t=1047616
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=1 nElems=524288 at t=1217163
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=1 nElems=524288 at t=1387489
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=1 nElems=524288 at t=1433473
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=1650119
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=1 t=1650119
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=1 t=1650119
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=1 part=0 rateGBps=12.5 at t=1650119
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=1 part=1 rateGBps=12.5 at t=1650119
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=0 nElems=524288 at t=1650705
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=0 nElems=524288 at t=1656026
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=1 nElems=524288 at t=1728323
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=1 nElems=524288 at t=1730121
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=1 part=0 rateGBps=6.25 at t=1730121
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=1 part=0 rateGBps=6.25 at t=1730121
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=1 nElems=524288 at t=1731311
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=1732393
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=1 t=1732393
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=1 t=1732393
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=1 part=0 rateGBps=6.25 at t=1732393
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=1 part=0 rateGBps=6.25 at t=1732393
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=0 nElems=524288 at t=1733635
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=0 nElems=524288 at t=1736623
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=1 nElems=524288 at t=1822907
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=1 nElems=524288 at t=1992891
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=1 part=0 rateGBps=12.5 at t=1992891
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=1 part=1 rateGBps=12.5 at t=1992891
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=1 nElems=524288 at t=2082100
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=1 nElems=524288 at t=2082436
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=1 part=0 rateGBps=12.5 at t=2082436
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=1 part=1 rateGBps=12.5 at t=2082436
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=1 nElems=524288 at t=2144026
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=1 nElems=524288 at t=2144694
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=1 part=0 rateGBps=6.25 at t=2144694
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=1 part=0 rateGBps=6.25 at t=2144694
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=1 nElems=524288 at t=2252332
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=1 nElems=524288 at t=2405728
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=1 nElems=524288 at t=2422572
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=1 nElems=524288 at t=2733402
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=1 part=0 rateGBps=12.5 at t=2734484
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=1 part=1 rateGBps=12.5 at t=2734484
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=1 nElems=524288 at t=2738714
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=1 delay=5347ns t=2766392
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=2766392
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=2 part=0 rateGBps=12.5 at t=2766392
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=2 part=1 rateGBps=12.5 at t=2766392
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=2 part=0 rateGBps=6.25 at t=2766392
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=2 part=0 rateGBps=6.25 at t=2766392
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=1 nElems=524288 at t=2769868
 GPU 5 remote notification #1 from GPU 3 iter=1 t=2771739
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=1 part=0 rateGBps=6.25 at t=2771739
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=1 part=0 rateGBps=6.25 at t=2771739
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=2 nElems=524288 at t=2965162
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=1 nElems=524288 at t=3108145
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=1 nElems=524288 at t=3122724
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=1 nElems=524288 at t=3125052
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=2 nElems=524288 at t=3144692
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=2 nElems=524288 at t=3351060
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=2 nElems=524288 at t=3356040
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=1 delay=3292ns t=3418470
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=3418470
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=2 part=0 rateGBps=12.5 at t=3418470
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=2 part=1 rateGBps=12.5 at t=3418470
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=1 nElems=524288 at t=3421282
 GPU 2 remote notification #1 from GPU 0 iter=1 t=3421762
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=1 part=0 rateGBps=6.25 at t=3421762
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=1 part=0 rateGBps=6.25 at t=3421762
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=3421762
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=2 t=3421762
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=2 t=3421762
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=2 part=0 rateGBps=12.5 at t=3421762
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=2 part=1 rateGBps=12.5 at t=3421762
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=2 nElems=524288 at t=3594842
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=2 nElems=524288 at t=3595306
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=2 nElems=524288 at t=3764954
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=2 part=0 rateGBps=12.5 at t=3764954
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=2 part=1 rateGBps=12.5 at t=3764954
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=2 nElems=524288 at t=3765214
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=2 part=0 rateGBps=6.25 at t=3765214
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=2 part=0 rateGBps=6.25 at t=3765214
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=3768430
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=2 t=3768430
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=2 t=3768430
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=2 part=0 rateGBps=6.25 at t=3768430
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=2 part=0 rateGBps=6.25 at t=3768430
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=1 nElems=524288 at t=3772328
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=1 nElems=524288 at t=3772660
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=2 nElems=524288 at t=4116200
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=2 nElems=524288 at t=4117532
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=2 part=0 rateGBps=12.5 at t=4117532
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=2 part=1 rateGBps=12.5 at t=4117532
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=2 nElems=524288 at t=4158072
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=2 nElems=524288 at t=4294412
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=2 nElems=524288 at t=4365342
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=2 nElems=524288 at t=4371330
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=2 part=0 rateGBps=6.25 at t=4371330
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=2 part=0 rateGBps=6.25 at t=4371330
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=2 nElems=524288 at t=4452368
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=2 delay=5347ns t=4574708
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=2 nElems=524288 at t=4577520
 GPU 5 remote notification #1 from GPU 3 iter=2 t=4580055
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=2 part=0 rateGBps=6.25 at t=4580055
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=2 part=0 rateGBps=6.25 at t=4580055
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=2 nElems=524288 at t=5009874
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=2 part=0 rateGBps=12.5 at t=5011288
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=2 part=1 rateGBps=12.5 at t=5011288
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=5011288
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=3 part=0 rateGBps=12.5 at t=5011288
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=3 part=1 rateGBps=12.5 at t=5011288
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=3 part=0 rateGBps=6.25 at t=5011288
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=3 part=0 rateGBps=6.25 at t=5011288
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=2 nElems=524288 at t=5015518
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=2 nElems=524288 at t=5148010
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=2 nElems=524288 at t=5148012
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=3 nElems=524288 at t=5214980
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=3 nElems=524288 at t=5394933
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=2 nElems=524288 at t=5439596
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=3 nElems=524288 at t=5592810
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=3 nElems=524288 at t=5595134
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=2 delay=3292ns t=5695080
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=5695080
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=3 part=0 rateGBps=12.5 at t=5695080
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=3 part=1 rateGBps=12.5 at t=5695080
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=2 nElems=524288 at t=5697892
 GPU 2 remote notification #1 from GPU 0 iter=2 t=5698372
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=2 part=0 rateGBps=6.25 at t=5698372
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=2 part=0 rateGBps=6.25 at t=5698372
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=5698372
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=3 t=5698372
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=3 t=5698372
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=3 part=0 rateGBps=12.5 at t=5698372
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=3 part=1 rateGBps=12.5 at t=5698372
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=3 nElems=524288 at t=5871452
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=3 nElems=524288 at t=5871916
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=3 nElems=524288 at t=6041564
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=3 part=0 rateGBps=12.5 at t=6041564
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=3 part=1 rateGBps=12.5 at t=6041564
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=3 nElems=524288 at t=6041824
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=3 part=0 rateGBps=6.25 at t=6041824
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=3 part=0 rateGBps=6.25 at t=6041824
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=6045040
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=3 t=6045040
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=3 t=6045040
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=3 part=0 rateGBps=6.25 at t=6045040
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=3 part=0 rateGBps=6.25 at t=6045040
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=2 nElems=524288 at t=6048938
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=2 nElems=524288 at t=6049270
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=3 nElems=524288 at t=6393138
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=3 part=0 rateGBps=12.5 at t=6393138
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=3 part=1 rateGBps=12.5 at t=6393138
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=3 nElems=524288 at t=6393806
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=3 nElems=524288 at t=6435678
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=3 nElems=524288 at t=6570354
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=3 nElems=524288 at t=6641284
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=3 part=0 rateGBps=6.25 at t=6641284
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=3 part=0 rateGBps=6.25 at t=6641284
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=3 nElems=524288 at t=6647268
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=3 nElems=524288 at t=6728974
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=3 delay=5347ns t=6858286
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=3 nElems=524288 at t=6861098
 GPU 5 remote notification #1 from GPU 3 iter=3 t=6863633
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=3 part=0 rateGBps=6.25 at t=6863633
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=3 part=0 rateGBps=6.25 at t=6863633
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=3 part=0 rateGBps=12.5 at t=7282582
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=3 part=1 rateGBps=12.5 at t=7282582
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=7282582
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=4 part=0 rateGBps=12.5 at t=7282582
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=4 part=1 rateGBps=12.5 at t=7282582
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=4 part=0 rateGBps=6.25 at t=7282582
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=4 part=0 rateGBps=6.25 at t=7282582
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=3 nElems=524288 at t=7284488
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=3 nElems=524288 at t=7286812
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=3 nElems=524288 at t=7422300
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=3 nElems=524288 at t=7422302
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=4 nElems=524288 at t=7495089
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=4 nElems=524288 at t=7682328
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=3 nElems=524288 at t=7711562
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=4 nElems=524288 at t=7861456
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=4 nElems=524288 at t=7866768
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=3 delay=3292ns t=7966382
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=7966382
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=4 part=0 rateGBps=12.5 at t=7966382
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=4 part=1 rateGBps=12.5 at t=7966382
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=3 nElems=524288 at t=7969194
 GPU 2 remote notification #1 from GPU 0 iter=3 t=7969674
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=3 part=0 rateGBps=6.25 at t=7969674
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=3 part=0 rateGBps=6.25 at t=7969674
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=7969674
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=4 t=7969674
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=4 t=7969674
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=4 part=0 rateGBps=12.5 at t=7969674
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=4 part=1 rateGBps=12.5 at t=7969674
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=4 nElems=524288 at t=8142754
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=4 nElems=524288 at t=8143218
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=4 nElems=524288 at t=8312866
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=4 part=0 rateGBps=12.5 at t=8312866
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=4 part=1 rateGBps=12.5 at t=8312866
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=4 nElems=524288 at t=8313126
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=4 part=0 rateGBps=6.25 at t=8313126
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=4 part=0 rateGBps=6.25 at t=8313126
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=8316342
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=4 t=8316342
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=4 t=8316342
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=4 part=0 rateGBps=6.25 at t=8316342
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=4 part=0 rateGBps=6.25 at t=8316342
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=3 nElems=524288 at t=8320240
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=3 nElems=524288 at t=8320572
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=4 nElems=524288 at t=8664112
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=4 nElems=524288 at t=8665444
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=4 part=0 rateGBps=12.5 at t=8665444
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=4 part=1 rateGBps=12.5 at t=8665444
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=4 nElems=524288 at t=8705984
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=4 nElems=524288 at t=8842324
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=4 nElems=524288 at t=8913254
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=4 nElems=524288 at t=8919242
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=4 part=0 rateGBps=6.25 at t=8919242
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=4 part=0 rateGBps=6.25 at t=8919242
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=4 nElems=524288 at t=9000280
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=4 delay=5347ns t=9122620
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=4 nElems=524288 at t=9125432
 GPU 5 remote notification #1 from GPU 3 iter=4 t=9127967
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=4 part=0 rateGBps=6.25 at t=9127967
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=4 part=0 rateGBps=6.25 at t=9127967
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=4 nElems=524288 at t=9557786
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=4 part=0 rateGBps=12.5 at t=9559200
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=4 part=1 rateGBps=12.5 at t=9559200
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=9559200
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=5 part=0 rateGBps=12.5 at t=9559200
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=5 part=1 rateGBps=12.5 at t=9559200
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=5 part=0 rateGBps=6.25 at t=9559200
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=5 part=0 rateGBps=6.25 at t=9559200
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=4 nElems=524288 at t=9563430
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=4 nElems=524288 at t=9695922
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=4 nElems=524288 at t=9695924
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=5 nElems=524288 at t=9762892
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=5 nElems=524288 at t=9942845
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=4 nElems=524288 at t=9987508
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=5 nElems=524288 at t=10140722
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=5 nElems=524288 at t=10143046
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=4 delay=3292ns t=10242992
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=10242992
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=5 part=0 rateGBps=12.5 at t=10242992
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=5 part=1 rateGBps=12.5 at t=10242992
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=4 nElems=524288 at t=10245804
 GPU 2 remote notification #1 from GPU 0 iter=4 t=10246284
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=4 part=0 rateGBps=6.25 at t=10246284
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=4 part=0 rateGBps=6.25 at t=10246284
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=10246284
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=5 t=10246284
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=5 t=10246284
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=5 part=0 rateGBps=12.5 at t=10246284
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=5 part=1 rateGBps=12.5 at t=10246284
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=5 nElems=524288 at t=10419364
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=5 nElems=524288 at t=10419828
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=5 nElems=524288 at t=10589476
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=5 part=0 rateGBps=12.5 at t=10589476
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=5 part=1 rateGBps=12.5 at t=10589476
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=5 nElems=524288 at t=10589736
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=5 part=0 rateGBps=6.25 at t=10589736
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=5 part=0 rateGBps=6.25 at t=10589736
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=10592952
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=5 t=10592952
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=5 t=10592952
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=5 part=0 rateGBps=6.25 at t=10592952
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=5 part=0 rateGBps=6.25 at t=10592952
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=4 nElems=524288 at t=10596850
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=4 nElems=524288 at t=10597182
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=5 nElems=524288 at t=10941050
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=5 part=0 rateGBps=12.5 at t=10941050
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=5 part=1 rateGBps=12.5 at t=10941050
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=5 nElems=524288 at t=10941718
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=5 nElems=524288 at t=10983590
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=5 nElems=524288 at t=11118266
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=5 nElems=524288 at t=11189196
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=5 part=0 rateGBps=6.25 at t=11189196
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=5 part=0 rateGBps=6.25 at t=11189196
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=5 nElems=524288 at t=11195180
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=5 nElems=524288 at t=11276886
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=5 delay=5347ns t=11406198
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=5 nElems=524288 at t=11409010
 GPU 5 remote notification #1 from GPU 3 iter=5 t=11411545
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=5 part=0 rateGBps=6.25 at t=11411545
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=5 part=0 rateGBps=6.25 at t=11411545
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=5 part=0 rateGBps=12.5 at t=11830494
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=5 part=1 rateGBps=12.5 at t=11830494
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=11830494
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=6 part=0 rateGBps=12.5 at t=11830494
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=6 part=1 rateGBps=12.5 at t=11830494
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=6 part=0 rateGBps=6.25 at t=11830494
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=6 part=0 rateGBps=6.25 at t=11830494
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=5 nElems=524288 at t=11832400
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=5 nElems=524288 at t=11834724
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=5 nElems=524288 at t=11970212
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=5 nElems=524288 at t=11970214
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=6 nElems=524288 at t=12043001
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=6 nElems=524288 at t=12230240
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=5 nElems=524288 at t=12259474
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=6 nElems=524288 at t=12409368
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=6 nElems=524288 at t=12414680
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=5 delay=3292ns t=12514294
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=12514294
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=6 part=0 rateGBps=12.5 at t=12514294
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=6 part=1 rateGBps=12.5 at t=12514294
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=5 nElems=524288 at t=12517106
 GPU 2 remote notification #1 from GPU 0 iter=5 t=12517586
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=5 part=0 rateGBps=6.25 at t=12517586
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=5 part=0 rateGBps=6.25 at t=12517586
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=12517586
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=6 t=12517586
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=6 t=12517586
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=6 part=0 rateGBps=12.5 at t=12517586
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=6 part=1 rateGBps=12.5 at t=12517586
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=6 nElems=524288 at t=12690666
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=6 nElems=524288 at t=12691130
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=6 nElems=524288 at t=12860778
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=6 part=0 rateGBps=12.5 at t=12860778
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=6 part=1 rateGBps=12.5 at t=12860778
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=6 nElems=524288 at t=12861038
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=6 part=0 rateGBps=6.25 at t=12861038
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=6 part=0 rateGBps=6.25 at t=12861038
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=12864254
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=6 t=12864254
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=6 t=12864254
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=6 part=0 rateGBps=6.25 at t=12864254
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=6 part=0 rateGBps=6.25 at t=12864254
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=5 nElems=524288 at t=12868152
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=5 nElems=524288 at t=12868484
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=6 nElems=524288 at t=13212024
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=6 nElems=524288 at t=13213356
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=6 part=0 rateGBps=12.5 at t=13213356
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=6 part=1 rateGBps=12.5 at t=13213356
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=6 nElems=524288 at t=13253896
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=6 nElems=524288 at t=13390236
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=6 nElems=524288 at t=13461166
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=6 nElems=524288 at t=13467154
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=6 part=0 rateGBps=6.25 at t=13467154
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=6 part=0 rateGBps=6.25 at t=13467154
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=6 nElems=524288 at t=13548192
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=6 delay=5347ns t=13670532
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=6 nElems=524288 at t=13673344
 GPU 5 remote notification #1 from GPU 3 iter=6 t=13675879
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=6 part=0 rateGBps=6.25 at t=13675879
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=6 part=0 rateGBps=6.25 at t=13675879
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=6 nElems=524288 at t=14105698
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=6 part=0 rateGBps=12.5 at t=14107112
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=6 part=1 rateGBps=12.5 at t=14107112
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=14107112
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=7 part=0 rateGBps=12.5 at t=14107112
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=7 part=1 rateGBps=12.5 at t=14107112
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=7 part=0 rateGBps=6.25 at t=14107112
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=7 part=0 rateGBps=6.25 at t=14107112
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=6 nElems=524288 at t=14111342
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=6 nElems=524288 at t=14243834
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=6 nElems=524288 at t=14243836
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=7 nElems=524288 at t=14310804
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=7 nElems=524288 at t=14490757
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=6 nElems=524288 at t=14535420
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=7 nElems=524288 at t=14688634
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=7 nElems=524288 at t=14690958
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=6 delay=3292ns t=14790904
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=14790904
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=7 part=0 rateGBps=12.5 at t=14790904
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=7 part=1 rateGBps=12.5 at t=14790904
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=6 nElems=524288 at t=14793716
 GPU 2 remote notification #1 from GPU 0 iter=6 t=14794196
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=6 part=0 rateGBps=6.25 at t=14794196
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=6 part=0 rateGBps=6.25 at t=14794196
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=14794196
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=7 t=14794196
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=7 t=14794196
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=7 part=0 rateGBps=12.5 at t=14794196
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=7 part=1 rateGBps=12.5 at t=14794196
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=7 nElems=524288 at t=14967276
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=7 nElems=524288 at t=14967740
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=7 nElems=524288 at t=15137388
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=7 part=0 rateGBps=12.5 at t=15137388
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=7 part=1 rateGBps=12.5 at t=15137388
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=7 nElems=524288 at t=15137648
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=7 part=0 rateGBps=6.25 at t=15137648
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=7 part=0 rateGBps=6.25 at t=15137648
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=15140864
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=7 t=15140864
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=7 t=15140864
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=7 part=0 rateGBps=6.25 at t=15140864
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=7 part=0 rateGBps=6.25 at t=15140864
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=6 nElems=524288 at t=15144762
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=6 nElems=524288 at t=15145094
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=7 nElems=524288 at t=15488962
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=7 part=0 rateGBps=12.5 at t=15488962
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=7 part=1 rateGBps=12.5 at t=15488962
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=7 nElems=524288 at t=15489630
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=7 nElems=524288 at t=15531502
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=7 nElems=524288 at t=15666178
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=7 nElems=524288 at t=15737108
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=7 part=0 rateGBps=6.25 at t=15737108
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=7 part=0 rateGBps=6.25 at t=15737108
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=7 nElems=524288 at t=15743092
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=7 nElems=524288 at t=15824798
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=7 delay=5347ns t=15954110
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=7 nElems=524288 at t=15956922
 GPU 5 remote notification #1 from GPU 3 iter=7 t=15959457
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=7 part=0 rateGBps=6.25 at t=15959457
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=7 part=0 rateGBps=6.25 at t=15959457
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=7 part=0 rateGBps=12.5 at t=16378406
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=7 part=1 rateGBps=12.5 at t=16378406
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=16378406
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=8 part=0 rateGBps=12.5 at t=16378406
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=8 part=1 rateGBps=12.5 at t=16378406
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=8 part=0 rateGBps=6.25 at t=16378406
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=8 part=0 rateGBps=6.25 at t=16378406
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=7 nElems=524288 at t=16380312
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=7 nElems=524288 at t=16382636
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=7 nElems=524288 at t=16518124
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=7 nElems=524288 at t=16518126
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=8 nElems=524288 at t=16590913
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=8 nElems=524288 at t=16778152
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=7 nElems=524288 at t=16807386
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=8 nElems=524288 at t=16957280
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=8 nElems=524288 at t=16962592
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=7 delay=3292ns t=17062206
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=17062206
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=8 part=0 rateGBps=12.5 at t=17062206
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=8 part=1 rateGBps=12.5 at t=17062206
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=7 nElems=524288 at t=17065018
 GPU 2 remote notification #1 from GPU 0 iter=7 t=17065498
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=7 part=0 rateGBps=6.25 at t=17065498
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=7 part=0 rateGBps=6.25 at t=17065498
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=17065498
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=8 t=17065498
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=8 t=17065498
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=8 part=0 rateGBps=12.5 at t=17065498
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=8 part=1 rateGBps=12.5 at t=17065498
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=8 nElems=524288 at t=17238578
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=8 nElems=524288 at t=17239042
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=8 nElems=524288 at t=17408690
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=8 part=0 rateGBps=12.5 at t=17408690
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=8 part=1 rateGBps=12.5 at t=17408690
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=8 nElems=524288 at t=17408950
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=8 part=0 rateGBps=6.25 at t=17408950
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=8 part=0 rateGBps=6.25 at t=17408950
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=17412166
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=8 t=17412166
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=8 t=17412166
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=8 part=0 rateGBps=6.25 at t=17412166
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=8 part=0 rateGBps=6.25 at t=17412166
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=7 nElems=524288 at t=17416064
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=7 nElems=524288 at t=17416396
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=8 nElems=524288 at t=17759936
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=8 nElems=524288 at t=17761268
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=8 part=0 rateGBps=12.5 at t=17761268
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=8 part=1 rateGBps=12.5 at t=17761268
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=8 nElems=524288 at t=17801808
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=8 nElems=524288 at t=17938148
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=8 nElems=524288 at t=18009078
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=8 nElems=524288 at t=18015066
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=8 part=0 rateGBps=6.25 at t=18015066
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=8 part=0 rateGBps=6.25 at t=18015066
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=8 nElems=524288 at t=18096104
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=8 delay=5347ns t=18218444
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=8 nElems=524288 at t=18221256
 GPU 5 remote notification #1 from GPU 3 iter=8 t=18223791
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=8 part=0 rateGBps=6.25 at t=18223791
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=8 part=0 rateGBps=6.25 at t=18223791
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=8 nElems=524288 at t=18653610
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=8 part=0 rateGBps=12.5 at t=18655024
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=8 part=1 rateGBps=12.5 at t=18655024
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=18655024
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=9 part=0 rateGBps=12.5 at t=18655024
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=9 part=1 rateGBps=12.5 at t=18655024
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=9 part=0 rateGBps=6.25 at t=18655024
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=9 part=0 rateGBps=6.25 at t=18655024
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=8 nElems=524288 at t=18659254
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=8 nElems=524288 at t=18791746
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=8 nElems=524288 at t=18791748
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=9 nElems=524288 at t=18858716
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=9 nElems=524288 at t=19038669
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=8 nElems=524288 at t=19083332
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=9 nElems=524288 at t=19236546
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=9 nElems=524288 at t=19238870
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=8 delay=3292ns t=19338816
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=19338816
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=9 part=0 rateGBps=12.5 at t=19338816
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=9 part=1 rateGBps=12.5 at t=19338816
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=8 nElems=524288 at t=19341628
 GPU 2 remote notification #1 from GPU 0 iter=8 t=19342108
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=8 part=0 rateGBps=6.25 at t=19342108
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=8 part=0 rateGBps=6.25 at t=19342108
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=19342108
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=9 t=19342108
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=9 t=19342108
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=9 part=0 rateGBps=12.5 at t=19342108
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=9 part=1 rateGBps=12.5 at t=19342108
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=9 nElems=524288 at t=19515188
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=9 nElems=524288 at t=19515652
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=9 nElems=524288 at t=19685300
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=9 part=0 rateGBps=12.5 at t=19685300
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=9 part=1 rateGBps=12.5 at t=19685300
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=9 nElems=524288 at t=19685560
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=9 part=0 rateGBps=6.25 at t=19685560
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=9 part=0 rateGBps=6.25 at t=19685560
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=19688776
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=9 t=19688776
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=9 t=19688776
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=9 part=0 rateGBps=6.25 at t=19688776
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=9 part=0 rateGBps=6.25 at t=19688776
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=8 nElems=524288 at t=19692674
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=8 nElems=524288 at t=19693006
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=9 nElems=524288 at t=20036874
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=9 part=0 rateGBps=12.5 at t=20036874
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=9 part=1 rateGBps=12.5 at t=20036874
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=9 nElems=524288 at t=20037542
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=9 nElems=524288 at t=20079414
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=9 nElems=524288 at t=20214090
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=9 nElems=524288 at t=20285020
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=9 part=0 rateGBps=6.25 at t=20285020
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=9 part=0 rateGBps=6.25 at t=20285020
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=9 nElems=524288 at t=20291004
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=9 nElems=524288 at t=20372710
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=9 delay=5347ns t=20502022
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=9 nElems=524288 at t=20504834
 GPU 5 remote notification #1 from GPU 3 iter=9 t=20507369
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=9 part=0 rateGBps=6.25 at t=20507369
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=9 part=0 rateGBps=6.25 at t=20507369
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=9 part=0 rateGBps=12.5 at t=20926318
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=9 part=1 rateGBps=12.5 at t=20926318
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=20926318
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=10 part=0 rateGBps=12.5 at t=20926318
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=10 part=1 rateGBps=12.5 at t=20926318
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=10 part=0 rateGBps=6.25 at t=20926318
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=10 part=0 rateGBps=6.25 at t=20926318
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=9 nElems=524288 at t=20928224
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=9 nElems=524288 at t=20930548
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=9 nElems=524288 at t=21066036
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=9 nElems=524288 at t=21066038
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=10 nElems=524288 at t=21138825
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=10 nElems=524288 at t=21326064
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=9 nElems=524288 at t=21355298
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=10 nElems=524288 at t=21505192
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=10 nElems=524288 at t=21510504
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=9 delay=3292ns t=21610118
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=21610118
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=10 part=0 rateGBps=12.5 at t=21610118
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=10 part=1 rateGBps=12.5 at t=21610118
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=9 nElems=524288 at t=21612930
 GPU 2 remote notification #1 from GPU 0 iter=9 t=21613410
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=9 part=0 rateGBps=6.25 at t=21613410
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=9 part=0 rateGBps=6.25 at t=21613410
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=21613410
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=10 t=21613410
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=10 t=21613410
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=10 part=0 rateGBps=12.5 at t=21613410
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=10 part=1 rateGBps=12.5 at t=21613410
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=10 nElems=524288 at t=21786490
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=10 nElems=524288 at t=21786954
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=10 nElems=524288 at t=21956602
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=10 part=0 rateGBps=12.5 at t=21956602
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=10 part=1 rateGBps=12.5 at t=21956602
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=10 nElems=524288 at t=21956862
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=10 part=0 rateGBps=6.25 at t=21956862
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=10 part=0 rateGBps=6.25 at t=21956862
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=21960078
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=10 t=21960078
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=10 t=21960078
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=10 part=0 rateGBps=6.25 at t=21960078
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=10 part=0 rateGBps=6.25 at t=21960078
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=9 nElems=524288 at t=21963976
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=9 nElems=524288 at t=21964308
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=10 nElems=524288 at t=22307848
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=10 nElems=524288 at t=22309180
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=10 part=0 rateGBps=12.5 at t=22309180
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=10 part=1 rateGBps=12.5 at t=22309180
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=10 nElems=524288 at t=22349720
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=10 nElems=524288 at t=22486060
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=10 nElems=524288 at t=22556990
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=10 nElems=524288 at t=22562978
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=10 part=0 rateGBps=6.25 at t=22562978
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=10 part=0 rateGBps=6.25 at t=22562978
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=10 nElems=524288 at t=22644016
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=10 delay=5347ns t=22766356
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=10 nElems=524288 at t=22769168
 GPU 5 remote notification #1 from GPU 3 iter=10 t=22771703
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=10 part=0 rateGBps=6.25 at t=22771703
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=10 part=0 rateGBps=6.25 at t=22771703
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=10 nElems=524288 at t=23201522
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=10 part=0 rateGBps=12.5 at t=23202936
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=10 part=1 rateGBps=12.5 at t=23202936
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=23202936
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=11 part=0 rateGBps=12.5 at t=23202936
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=11 part=1 rateGBps=12.5 at t=23202936
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=11 part=0 rateGBps=6.25 at t=23202936
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=11 part=0 rateGBps=6.25 at t=23202936
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=10 nElems=524288 at t=23207166
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=10 nElems=524288 at t=23339658
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=10 nElems=524288 at t=23339660
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=11 nElems=524288 at t=23406628
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=11 nElems=524288 at t=23586581
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=10 nElems=524288 at t=23631244
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=11 nElems=524288 at t=23784458
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=11 nElems=524288 at t=23786782
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=10 delay=3292ns t=23886728
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=23886728
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=11 part=0 rateGBps=12.5 at t=23886728
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=11 part=1 rateGBps=12.5 at t=23886728
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=10 nElems=524288 at t=23889540
 GPU 2 remote notification #1 from GPU 0 iter=10 t=23890020
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=10 part=0 rateGBps=6.25 at t=23890020
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=10 part=0 rateGBps=6.25 at t=23890020
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=23890020
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=11 t=23890020
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=11 t=23890020
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=11 part=0 rateGBps=12.5 at t=23890020
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=11 part=1 rateGBps=12.5 at t=23890020
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=11 nElems=524288 at t=24063100
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=11 nElems=524288 at t=24063564
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=11 nElems=524288 at t=24233212
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=11 part=0 rateGBps=12.5 at t=24233212
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=11 part=1 rateGBps=12.5 at t=24233212
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=11 nElems=524288 at t=24233472
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=11 part=0 rateGBps=6.25 at t=24233472
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=11 part=0 rateGBps=6.25 at t=24233472
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=24236688
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=11 t=24236688
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=11 t=24236688
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=11 part=0 rateGBps=6.25 at t=24236688
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=11 part=0 rateGBps=6.25 at t=24236688
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=10 nElems=524288 at t=24240586
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=10 nElems=524288 at t=24240918
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=11 nElems=524288 at t=24584786
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=11 part=0 rateGBps=12.5 at t=24584786
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=11 part=1 rateGBps=12.5 at t=24584786
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=11 nElems=524288 at t=24585454
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=11 nElems=524288 at t=24627326
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=11 nElems=524288 at t=24762002
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=11 nElems=524288 at t=24832932
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=11 part=0 rateGBps=6.25 at t=24832932
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=11 part=0 rateGBps=6.25 at t=24832932
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=11 nElems=524288 at t=24838916
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=11 nElems=524288 at t=24920622
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=11 delay=5347ns t=25049934
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=11 nElems=524288 at t=25052746
 GPU 5 remote notification #1 from GPU 3 iter=11 t=25055281
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=11 part=0 rateGBps=6.25 at t=25055281
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=11 part=0 rateGBps=6.25 at t=25055281
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=11 part=0 rateGBps=12.5 at t=25474230
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=11 part=1 rateGBps=12.5 at t=25474230
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=25474230
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=12 part=0 rateGBps=12.5 at t=25474230
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=12 part=1 rateGBps=12.5 at t=25474230
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=12 part=0 rateGBps=6.25 at t=25474230
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=12 part=0 rateGBps=6.25 at t=25474230
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=11 nElems=524288 at t=25476136
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=11 nElems=524288 at t=25478460
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=11 nElems=524288 at t=25613948
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=11 nElems=524288 at t=25613950
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=12 nElems=524288 at t=25686737
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=12 nElems=524288 at t=25873976
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=11 nElems=524288 at t=25903210
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=12 nElems=524288 at t=26053104
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=12 nElems=524288 at t=26058416
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=11 delay=3292ns t=26158030
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=26158030
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=12 part=0 rateGBps=12.5 at t=26158030
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=12 part=1 rateGBps=12.5 at t=26158030
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=11 nElems=524288 at t=26160842
 GPU 2 remote notification #1 from GPU 0 iter=11 t=26161322
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=11 part=0 rateGBps=6.25 at t=26161322
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=11 part=0 rateGBps=6.25 at t=26161322
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=26161322
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=12 t=26161322
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=12 t=26161322
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=12 part=0 rateGBps=12.5 at t=26161322
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=12 part=1 rateGBps=12.5 at t=26161322
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=12 nElems=524288 at t=26334402
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=12 nElems=524288 at t=26334866
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=12 nElems=524288 at t=26504514
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=12 part=0 rateGBps=12.5 at t=26504514
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=12 part=1 rateGBps=12.5 at t=26504514
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=12 nElems=524288 at t=26504774
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=12 part=0 rateGBps=6.25 at t=26504774
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=12 part=0 rateGBps=6.25 at t=26504774
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=26507990
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=12 t=26507990
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=12 t=26507990
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=12 part=0 rateGBps=6.25 at t=26507990
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=12 part=0 rateGBps=6.25 at t=26507990
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=11 nElems=524288 at t=26511888
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=11 nElems=524288 at t=26512220
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=12 nElems=524288 at t=26855760
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=12 nElems=524288 at t=26857092
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=12 part=0 rateGBps=12.5 at t=26857092
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=12 part=1 rateGBps=12.5 at t=26857092
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=12 nElems=524288 at t=26897632
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=12 nElems=524288 at t=27033972
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=12 nElems=524288 at t=27104902
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=12 nElems=524288 at t=27110890
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=12 part=0 rateGBps=6.25 at t=27110890
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=12 part=0 rateGBps=6.25 at t=27110890
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=12 nElems=524288 at t=27191928
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=12 delay=5347ns t=27314268
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=12 nElems=524288 at t=27317080
 GPU 5 remote notification #1 from GPU 3 iter=12 t=27319615
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=12 part=0 rateGBps=6.25 at t=27319615
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=12 part=0 rateGBps=6.25 at t=27319615
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=12 nElems=524288 at t=27749434
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=12 part=0 rateGBps=12.5 at t=27750848
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=12 part=1 rateGBps=12.5 at t=27750848
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=27750848
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=13 part=0 rateGBps=12.5 at t=27750848
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=13 part=1 rateGBps=12.5 at t=27750848
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=13 part=0 rateGBps=6.25 at t=27750848
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=13 part=0 rateGBps=6.25 at t=27750848
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=12 nElems=524288 at t=27755078
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=12 nElems=524288 at t=27887570
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=12 nElems=524288 at t=27887572
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=13 nElems=524288 at t=27954540
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=13 nElems=524288 at t=28134493
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=12 nElems=524288 at t=28179156
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=13 nElems=524288 at t=28332370
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=13 nElems=524288 at t=28334694
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=12 delay=3292ns t=28434640
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=28434640
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=13 part=0 rateGBps=12.5 at t=28434640
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=13 part=1 rateGBps=12.5 at t=28434640
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=12 nElems=524288 at t=28437452
 GPU 2 remote notification #1 from GPU 0 iter=12 t=28437932
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=12 part=0 rateGBps=6.25 at t=28437932
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=12 part=0 rateGBps=6.25 at t=28437932
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=28437932
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=13 t=28437932
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=13 t=28437932
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=13 part=0 rateGBps=12.5 at t=28437932
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=13 part=1 rateGBps=12.5 at t=28437932
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=13 nElems=524288 at t=28611012
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=13 nElems=524288 at t=28611476
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=13 nElems=524288 at t=28781124
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=13 part=0 rateGBps=12.5 at t=28781124
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=13 part=1 rateGBps=12.5 at t=28781124
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=13 nElems=524288 at t=28781384
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=13 part=0 rateGBps=6.25 at t=28781384
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=13 part=0 rateGBps=6.25 at t=28781384
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=28784600
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=13 t=28784600
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=13 t=28784600
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=13 part=0 rateGBps=6.25 at t=28784600
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=13 part=0 rateGBps=6.25 at t=28784600
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=12 nElems=524288 at t=28788498
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=12 nElems=524288 at t=28788830
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=13 nElems=524288 at t=29132698
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=13 part=0 rateGBps=12.5 at t=29132698
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=13 part=1 rateGBps=12.5 at t=29132698
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=13 nElems=524288 at t=29133366
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=13 nElems=524288 at t=29175238
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=13 nElems=524288 at t=29309914
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=13 nElems=524288 at t=29380844
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=13 part=0 rateGBps=6.25 at t=29380844
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=13 part=0 rateGBps=6.25 at t=29380844
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=13 nElems=524288 at t=29386828
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=13 nElems=524288 at t=29468534
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=13 delay=5347ns t=29597846
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=13 nElems=524288 at t=29600658
 GPU 5 remote notification #1 from GPU 3 iter=13 t=29603193
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=13 part=0 rateGBps=6.25 at t=29603193
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=13 part=0 rateGBps=6.25 at t=29603193
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=13 part=0 rateGBps=12.5 at t=30022142
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=13 part=1 rateGBps=12.5 at t=30022142
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=30022142
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=14 part=0 rateGBps=12.5 at t=30022142
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=14 part=1 rateGBps=12.5 at t=30022142
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=14 part=0 rateGBps=6.25 at t=30022142
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=14 part=0 rateGBps=6.25 at t=30022142
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=13 nElems=524288 at t=30024048
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=13 nElems=524288 at t=30026372
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=13 nElems=524288 at t=30161860
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=13 nElems=524288 at t=30161862
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=14 nElems=524288 at t=30234649
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=14 nElems=524288 at t=30421888
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=13 nElems=524288 at t=30451122
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=14 nElems=524288 at t=30601016
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=14 nElems=524288 at t=30606328
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=13 delay=3292ns t=30705942
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=30705942
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=14 part=0 rateGBps=12.5 at t=30705942
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=14 part=1 rateGBps=12.5 at t=30705942
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=13 nElems=524288 at t=30708754
 GPU 2 remote notification #1 from GPU 0 iter=13 t=30709234
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=13 part=0 rateGBps=6.25 at t=30709234
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=13 part=0 rateGBps=6.25 at t=30709234
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=30709234
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=14 t=30709234
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=14 t=30709234
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=14 part=0 rateGBps=12.5 at t=30709234
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=14 part=1 rateGBps=12.5 at t=30709234
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=14 nElems=524288 at t=30882314
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=14 nElems=524288 at t=30882778
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=14 nElems=524288 at t=31052426
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=14 part=0 rateGBps=12.5 at t=31052426
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=14 part=1 rateGBps=12.5 at t=31052426
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=14 nElems=524288 at t=31052686
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=14 part=0 rateGBps=6.25 at t=31052686
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=14 part=0 rateGBps=6.25 at t=31052686
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=31055902
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=14 t=31055902
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=14 t=31055902
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=14 part=0 rateGBps=6.25 at t=31055902
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=14 part=0 rateGBps=6.25 at t=31055902
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=13 nElems=524288 at t=31059800
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=13 nElems=524288 at t=31060132
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=14 nElems=524288 at t=31403672
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=14 nElems=524288 at t=31405004
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=14 part=0 rateGBps=12.5 at t=31405004
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=14 part=1 rateGBps=12.5 at t=31405004
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=14 nElems=524288 at t=31445544
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=14 nElems=524288 at t=31581884
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=14 nElems=524288 at t=31652814
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=14 nElems=524288 at t=31658802
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=14 part=0 rateGBps=6.25 at t=31658802
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=14 part=0 rateGBps=6.25 at t=31658802
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=14 nElems=524288 at t=31739840
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=14 delay=5347ns t=31862180
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=14 nElems=524288 at t=31864992
 GPU 5 remote notification #1 from GPU 3 iter=14 t=31867527
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=14 part=0 rateGBps=6.25 at t=31867527
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=14 part=0 rateGBps=6.25 at t=31867527
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=14 nElems=524288 at t=32297346
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=14 part=0 rateGBps=12.5 at t=32298760
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=14 part=1 rateGBps=12.5 at t=32298760
 GPU 3: iteration barrier releasing 8 threadblock(s) at t=32298760
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=15 part=0 rateGBps=12.5 at t=32298760
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=15 part=1 rateGBps=12.5 at t=32298760
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=15 part=0 rateGBps=6.25 at t=32298760
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=15 part=0 rateGBps=6.25 at t=32298760
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=14 nElems=524288 at t=32302990
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=14 nElems=524288 at t=32435482
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=14 nElems=524288 at t=32435484
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=15 nElems=524288 at t=32502452
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=15 nElems=524288 at t=32682405
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=14 nElems=524288 at t=32727068
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=15 nElems=524288 at t=32880282
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=15 nElems=524288 at t=32882606
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=14 delay=3292ns t=32982552
 GPU 0: iteration barrier releasing 8 threadblock(s) at t=32982552
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=15 part=0 rateGBps=12.5 at t=32982552
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=15 part=1 rateGBps=12.5 at t=32982552
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=14 nElems=524288 at t=32985364
 GPU 2 remote notification #1 from GPU 0 iter=14 t=32985844
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=14 part=0 rateGBps=6.25 at t=32985844
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=14 part=0 rateGBps=6.25 at t=32985844
 GPU 2: iteration barrier releasing 8 threadblock(s) at t=32985844
 GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=15 t=32985844
 GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=15 t=32985844
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=15 part=0 rateGBps=12.5 at t=32985844
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=15 part=1 rateGBps=12.5 at t=32985844
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=15 nElems=524288 at t=33158924
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=15 nElems=524288 at t=33159388
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=15 nElems=524288 at t=33329036
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=15 part=0 rateGBps=12.5 at t=33329036
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=15 part=1 rateGBps=12.5 at t=33329036
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=15 nElems=524288 at t=33329296
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=15 part=0 rateGBps=6.25 at t=33329296
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=15 part=0 rateGBps=6.25 at t=33329296
 GPU 5: iteration barrier releasing 12 threadblock(s) at t=33332512
 GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=15 t=33332512
 GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=15 t=33332512
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=15 part=0 rateGBps=6.25 at t=33332512
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=15 part=0 rateGBps=6.25 at t=33332512
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=14 nElems=524288 at t=33336410
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=14 nElems=524288 at t=33336742
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=15 nElems=524288 at t=33680610
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=15 part=0 rateGBps=12.5 at t=33680610
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=15 part=1 rateGBps=12.5 at t=33680610
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=15 nElems=524288 at t=33681278
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=15 nElems=524288 at t=33723150
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=15 nElems=524288 at t=33857826
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=15 nElems=524288 at t=33928756
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=15 part=0 rateGBps=6.25 at t=33928756
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=15 part=0 rateGBps=6.25 at t=33928756
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=15 nElems=524288 at t=33934740
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=15 nElems=524288 at t=34016446
 GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=15 delay=5347ns t=34145758
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=15 nElems=524288 at t=34148570
 GPU 5 remote notification #1 from GPU 3 iter=15 t=34151105
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=15 part=0 rateGBps=6.25 at t=34151105
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=15 part=0 rateGBps=6.25 at t=34151105
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=15 part=0 rateGBps=12.5 at t=34570054
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=15 part=1 rateGBps=12.5 at t=34570054
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=15 nElems=524288 at t=34571960
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=15 nElems=524288 at t=34574284
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=15 nElems=524288 at t=34707806
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=15 nElems=524288 at t=34709138
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=15 nElems=524288 at t=34746548
 GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=15 delay=3292ns t=34913720
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=15 nElems=524288 at t=34916532
 GPU 2 remote notification #1 from GPU 0 iter=15 t=34917012
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=15 part=0 rateGBps=6.25 at t=34917012
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=15 part=0 rateGBps=6.25 at t=34917012
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=15 nElems=524288 at t=35267070
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=15 nElems=524288 at t=35267402
