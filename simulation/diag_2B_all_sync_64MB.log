@@ -1,0 +1,189 @@
+Algorithm XML: honoring 10 network dependence(s) and 1 epoch-pacing depid(s) over 18 send step(s); 4 remote gate(s) fed by 2 remote notification(s) (enforced only with HonorRemoteDeps).
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=0 t=0
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=0 t=0
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=0 t=0
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=0 t=0
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=0 delay=5347ns t=1042269
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=1042269
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=0 delay=3292ns t=1042721
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=1042721
+GPU 2 remote notification #1 from GPU 0 iter=0 t=1046013
+GPU 5 remote notification #1 from GPU 3 iter=0 t=1047616
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=1650119
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=1 t=1650119
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=1 t=1650119
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=1732393
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=1 t=1732393
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=1 t=1732393
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=1 delay=5347ns t=2766392
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=2766392
+GPU 5 remote notification #1 from GPU 3 iter=1 t=2771739
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=1 delay=3292ns t=3418470
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=3418470
+GPU 2 remote notification #1 from GPU 0 iter=1 t=3421762
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=3421762
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=2 t=3421762
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=2 t=3421762
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=3768430
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=2 t=3768430
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=2 t=3768430
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=2 delay=5347ns t=4574708
+GPU 5 remote notification #1 from GPU 3 iter=2 t=4580055
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=5011288
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=2 delay=3292ns t=5695080
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=5695080
+GPU 2 remote notification #1 from GPU 0 iter=2 t=5698372
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=5698372
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=3 t=5698372
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=3 t=5698372
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=6045040
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=3 t=6045040
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=3 t=6045040
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=3 delay=5347ns t=6858286
+GPU 5 remote notification #1 from GPU 3 iter=3 t=6863633
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=7282582
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=3 delay=3292ns t=7966382
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=7966382
+GPU 2 remote notification #1 from GPU 0 iter=3 t=7969674
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=7969674
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=4 t=7969674
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=4 t=7969674
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=8316342
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=4 t=8316342
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=4 t=8316342
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=4 delay=5347ns t=9122620
+GPU 5 remote notification #1 from GPU 3 iter=4 t=9127967
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=9559200
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=4 delay=3292ns t=10242992
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=10242992
+GPU 2 remote notification #1 from GPU 0 iter=4 t=10246284
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=10246284
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=5 t=10246284
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=5 t=10246284
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=10592952
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=5 t=10592952
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=5 t=10592952
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=5 delay=5347ns t=11406198
+GPU 5 remote notification #1 from GPU 3 iter=5 t=11411545
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=11830494
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=5 delay=3292ns t=12514294
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=12514294
+GPU 2 remote notification #1 from GPU 0 iter=5 t=12517586
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=12517586
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=6 t=12517586
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=6 t=12517586
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=12864254
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=6 t=12864254
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=6 t=12864254
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=6 delay=5347ns t=13670532
+GPU 5 remote notification #1 from GPU 3 iter=6 t=13675879
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=14107112
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=6 delay=3292ns t=14790904
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=14790904
+GPU 2 remote notification #1 from GPU 0 iter=6 t=14794196
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=14794196
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=7 t=14794196
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=7 t=14794196
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=15140864
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=7 t=15140864
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=7 t=15140864
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=7 delay=5347ns t=15954110
+GPU 5 remote notification #1 from GPU 3 iter=7 t=15959457
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=16378406
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=7 delay=3292ns t=17062206
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=17062206
+GPU 2 remote notification #1 from GPU 0 iter=7 t=17065498
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=17065498
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=8 t=17065498
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=8 t=17065498
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=17412166
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=8 t=17412166
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=8 t=17412166
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=8 delay=5347ns t=18218444
+GPU 5 remote notification #1 from GPU 3 iter=8 t=18223791
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=18655024
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=8 delay=3292ns t=19338816
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=19338816
+GPU 2 remote notification #1 from GPU 0 iter=8 t=19342108
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=19342108
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=9 t=19342108
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=9 t=19342108
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=19688776
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=9 t=19688776
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=9 t=19688776
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=9 delay=5347ns t=20502022
+GPU 5 remote notification #1 from GPU 3 iter=9 t=20507369
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=20926318
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=9 delay=3292ns t=21610118
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=21610118
+GPU 2 remote notification #1 from GPU 0 iter=9 t=21613410
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=21613410
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=10 t=21613410
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=10 t=21613410
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=21960078
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=10 t=21960078
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=10 t=21960078
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=10 delay=5347ns t=22766356
+GPU 5 remote notification #1 from GPU 3 iter=10 t=22771703
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=23202936
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=10 delay=3292ns t=23886728
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=23886728
+GPU 2 remote notification #1 from GPU 0 iter=10 t=23890020
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=23890020
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=11 t=23890020
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=11 t=23890020
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=24236688
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=11 t=24236688
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=11 t=24236688
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=11 delay=5347ns t=25049934
+GPU 5 remote notification #1 from GPU 3 iter=11 t=25055281
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=25474230
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=11 delay=3292ns t=26158030
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=26158030
+GPU 2 remote notification #1 from GPU 0 iter=11 t=26161322
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=26161322
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=12 t=26161322
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=12 t=26161322
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=26507990
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=12 t=26507990
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=12 t=26507990
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=12 delay=5347ns t=27314268
+GPU 5 remote notification #1 from GPU 3 iter=12 t=27319615
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=27750848
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=12 delay=3292ns t=28434640
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=28434640
+GPU 2 remote notification #1 from GPU 0 iter=12 t=28437932
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=28437932
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=13 t=28437932
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=13 t=28437932
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=28784600
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=13 t=28784600
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=13 t=28784600
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=13 delay=5347ns t=29597846
+GPU 5 remote notification #1 from GPU 3 iter=13 t=29603193
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=30022142
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=13 delay=3292ns t=30705942
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=30705942
+GPU 2 remote notification #1 from GPU 0 iter=13 t=30709234
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=30709234
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=14 t=30709234
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=14 t=30709234
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=31055902
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=14 t=31055902
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=14 t=31055902
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=14 delay=5347ns t=31862180
+GPU 5 remote notification #1 from GPU 3 iter=14 t=31867527
+GPU 3: iteration barrier releasing 8 threadblock(s) at t=32298760
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=14 delay=3292ns t=32982552
+GPU 0: iteration barrier releasing 8 threadblock(s) at t=32982552
+GPU 2 remote notification #1 from GPU 0 iter=14 t=32985844
+GPU 2: iteration barrier releasing 8 threadblock(s) at t=32985844
+GPU 2 TB=6 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=15 t=32985844
+GPU 2 TB=7 sid=0 BLOCKED on remote notification #1 from GPU 0 (have 0) iter=15 t=32985844
+GPU 5: iteration barrier releasing 12 threadblock(s) at t=33332512
+GPU 5 TB=8 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=15 t=33332512
+GPU 5 TB=9 sid=0 BLOCKED on remote notification #1 from GPU 3 (have 0) iter=15 t=33332512
+GPU 3 TB=0 sid=0 remote notify -> GPU 5 iter=15 delay=5347ns t=34145758
+GPU 5 remote notification #1 from GPU 3 iter=15 t=34151105
+GPU 0 TB=1 sid=0 remote notify -> GPU 2 iter=15 delay=3292ns t=34913720
+GPU 2 remote notification #1 from GPU 0 iter=15 t=34917012
