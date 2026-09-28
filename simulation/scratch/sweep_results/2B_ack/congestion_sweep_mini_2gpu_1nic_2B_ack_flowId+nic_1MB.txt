@@ -2,5 +2,5 @@
   events (switch_events_sweep_mini_2gpu_1nic_2B_ack_flowId+nic_1MB.csv):
     none
   peak egress queue (switch_qlen_sweep_mini_2gpu_1nic_2B_ack_flowId+nic_1MB.csv):
-    leaf->gpu        n=  11  max    153.7 KB  mean    43.8  p50    50.1  max/mean  3.51
-  per-NIC bandwidth: no paired fabric samples
+    leaf->gpu        n=  11  max    589.6 KB  mean   101.2  p50    41.5  max/mean  5.83
+  per-NIC bandwidth: host_nic_bw_sweep_mini_2gpu_1nic_2B_ack_flowId+nic_1MB.csv not found (re-run with --nicBwInterval=<ns>)
