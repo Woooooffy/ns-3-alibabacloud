@@ -1516,6 +1516,20 @@ namespace ns3 {
 		if (!m_algo->isValid){
 			NS_FATAL_ERROR("No valid algorithm found.");
 		}
+		// The parser accepts switch-multicast threadblocks (send="a,b,..."), but neither the
+		// sender's connection model nor the switches' replication exists yet. Everything below
+		// treats `sendpeer` as one node id, so stop here, by name, rather than further in with an
+		// unrelated error (or, if a guard were missed, a run that hangs on the other receivers).
+		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
+			const mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
+			if (tb->nSendPeers > 1){
+				std::ostringstream peers;
+				for (int16_t i = 0; i < tb->nSendPeers; ++i) peers << (i ? "," : "") << tb->sendPeers[i];
+				NS_FATAL_ERROR("Node " << GetNode()->GetId() << " TB " << bid << " multicasts to {" << peers.str()
+					<< "}. The XML and switch JSON parsed and validated, but the multicast transport (one send"
+					<< " stream replicated by the switches, and its acknowledgement) is not implemented yet.");
+			}
+		}
 		DerivePipelining();
 		Bootstrap();
 

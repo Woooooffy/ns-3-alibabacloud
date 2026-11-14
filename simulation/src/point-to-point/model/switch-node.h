@@ -2,6 +2,7 @@
 #define SWITCH_NODE_H
 
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <ns3/node.h>
 #include "qbb-net-device.h"
@@ -25,6 +26,11 @@ class SwitchNode : public Node{
 	// neighbor (e.g. a leaf's multiple uplinks to one spine) every one of them satisfies the
 	// rule; the port is picked per flow by FlowHash, exactly as ECMP picks among nexthops.
 	std::unordered_map<uint32_t, std::vector<uint32_t> > m_flowForwardingTable;
+	// Flow ids whose rule means "copy to EVERY port in the list" (a switch-multicast branch
+	// point, from a format-2 switch JSON) rather than "pick one of these parallel ports".
+	// Replication is not modelled yet, so SendToDev refuses such a packet instead of
+	// forwarding it as a spread rule, which would deliver it to one receiver only.
+	std::unordered_set<uint32_t> m_replicateFlows;
 	// Packets that arrived carrying a flow id while custom forwarding was on, split by whether
 	// a rule matched. A miss is not an error -- it just means this switch is not on the path the
 	// schedule chose for that flow, so the packet takes ECMP -- but a large miss count means the
@@ -65,7 +71,9 @@ public:
 	void SetEcmpSeed(uint32_t seed);
 	void AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx);
 	void ClearTable();
-	void AddFlowForwardingRule(uint32_t flowId, const std::vector<uint32_t>& ports);
+	// replicate=false: `ports` are parallel links toward one next hop, one picked per flow.
+	// replicate=true: a multicast branch point, the packet goes out every port (not modelled yet).
+	void AddFlowForwardingRule(uint32_t flowId, const std::vector<uint32_t>& ports, bool replicate = false);
 	uint64_t GetFlowRuleHits() const { return m_flowRuleHits; }
 	uint64_t GetFlowRuleMisses() const { return m_flowRuleMisses; }
 	bool SwitchReceiveFromDevice(Ptr<NetDevice> device, Ptr<Packet> packet, CustomHeader &ch);

@@ -1,0 +1,691 @@
+{
+  "format": 2,
+  "switch_id_map": {
+    "0": 12,
+    "1": 13,
+    "2": 14,
+    "3": 15
+  },
+  "flows": {
+    "0": {
+      "src_gpu": 0,
+      "branches": [
+        {
+          "dst_gpu": 1,
+          "switches": [
+            8
+          ]
+        }
+      ]
+    },
+    "1": {
+      "src_gpu": 1,
+      "branches": [
+        {
+          "dst_gpu": 0,
+          "switches": [
+            8
+          ]
+        }
+      ]
+    },
+    "2": {
+      "src_gpu": 2,
+      "branches": [
+        {
+          "dst_gpu": 3,
+          "switches": [
+            9
+          ]
+        }
+      ]
+    },
+    "3": {
+      "src_gpu": 2,
+      "branches": [
+        {
+          "dst_gpu": 4,
+          "switches": [
+            12,
+            15,
+            13
+          ]
+        },
+        {
+          "dst_gpu": 6,
+          "switches": [
+            12,
+            15,
+            13
+          ]
+        }
+      ]
+    },
+    "4": {
+      "src_gpu": 3,
+      "branches": [
+        {
+          "dst_gpu": 2,
+          "switches": [
+            9
+          ]
+        }
+      ]
+    },
+    "5": {
+      "src_gpu": 4,
+      "branches": [
+        {
+          "dst_gpu": 5,
+          "switches": [
+            10
+          ]
+        }
+      ]
+    },
+    "6": {
+      "src_gpu": 5,
+      "branches": [
+        {
+          "dst_gpu": 0,
+          "switches": [
+            13,
+            15,
+            12
+          ]
+        },
+        {
+          "dst_gpu": 2,
+          "switches": [
+            13,
+            15,
+            12
+          ]
+        },
+        {
+          "dst_gpu": 7,
+          "switches": [
+            13
+          ]
+        }
+      ]
+    },
+    "7": {
+      "src_gpu": 5,
+      "branches": [
+        {
+          "dst_gpu": 4,
+          "switches": [
+            10
+          ]
+        }
+      ]
+    },
+    "8": {
+      "src_gpu": 6,
+      "branches": [
+        {
+          "dst_gpu": 7,
+          "switches": [
+            11
+          ]
+        }
+      ]
+    },
+    "9": {
+      "src_gpu": 7,
+      "branches": [
+        {
+          "dst_gpu": 1,
+          "switches": [
+            13,
+            14,
+            12
+          ]
+        },
+        {
+          "dst_gpu": 3,
+          "switches": [
+            13,
+            14,
+            12
+          ]
+        },
+        {
+          "dst_gpu": 5,
+          "switches": [
+            13
+          ]
+        }
+      ]
+    },
+    "10": {
+      "src_gpu": 7,
+      "branches": [
+        {
+          "dst_gpu": 6,
+          "switches": [
+            11
+          ]
+        }
+      ]
+    },
+    "11": {
+      "src_gpu": 1,
+      "branches": [
+        {
+          "dst_gpu": 3,
+          "switches": [
+            12
+          ]
+        },
+        {
+          "dst_gpu": 5,
+          "switches": [
+            12,
+            15,
+            13
+          ]
+        },
+        {
+          "dst_gpu": 7,
+          "switches": [
+            12,
+            15,
+            13
+          ]
+        }
+      ]
+    },
+    "12": {
+      "src_gpu": 2,
+      "branches": [
+        {
+          "dst_gpu": 1,
+          "switches": [
+            12
+          ]
+        }
+      ]
+    },
+    "13": {
+      "src_gpu": 4,
+      "branches": [
+        {
+          "dst_gpu": 6,
+          "switches": [
+            13
+          ]
+        }
+      ]
+    },
+    "14": {
+      "src_gpu": 6,
+      "branches": [
+        {
+          "dst_gpu": 0,
+          "switches": [
+            13,
+            14,
+            12
+          ]
+        },
+        {
+          "dst_gpu": 2,
+          "switches": [
+            13,
+            14,
+            12
+          ]
+        },
+        {
+          "dst_gpu": 4,
+          "switches": [
+            13
+          ]
+        }
+      ]
+    },
+    "15": {
+      "src_gpu": 0,
+      "branches": [
+        {
+          "dst_gpu": 3,
+          "switches": [
+            12
+          ]
+        },
+        {
+          "dst_gpu": 4,
+          "switches": [
+            12,
+            14,
+            13
+          ]
+        },
+        {
+          "dst_gpu": 7,
+          "switches": [
+            12,
+            14,
+            13
+          ]
+        }
+      ]
+    },
+    "16": {
+      "src_gpu": 3,
+      "branches": [
+        {
+          "dst_gpu": 0,
+          "switches": [
+            12
+          ]
+        },
+        {
+          "dst_gpu": 5,
+          "switches": [
+            12,
+            15,
+            13
+          ]
+        },
+        {
+          "dst_gpu": 6,
+          "switches": [
+            12,
+            15,
+            13
+          ]
+        }
+      ]
+    },
+    "17": {
+      "src_gpu": 4,
+      "branches": [
+        {
+          "dst_gpu": 1,
+          "switches": [
+            13,
+            14,
+            12
+          ]
+        },
+        {
+          "dst_gpu": 2,
+          "switches": [
+            13,
+            14,
+            12
+          ]
+        }
+      ]
+    }
+  },
+  "switches": {
+    "0": {
+      "3": {
+        "ports": [
+          5
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 3
+          }
+        ]
+      },
+      "6": {
+        "ports": [
+          0,
+          2
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 0
+          },
+          {
+            "type": "gpu",
+            "id": 2
+          }
+        ]
+      },
+      "9": {
+        "ports": [
+          1,
+          3
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 1
+          },
+          {
+            "type": "gpu",
+            "id": 3
+          }
+        ]
+      },
+      "11": {
+        "ports": [
+          3,
+          5
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 3
+          },
+          {
+            "type": "switch",
+            "id": 3
+          }
+        ]
+      },
+      "12": {
+        "ports": [
+          1
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 1
+          }
+        ]
+      },
+      "14": {
+        "ports": [
+          0,
+          2
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 0
+          },
+          {
+            "type": "gpu",
+            "id": 2
+          }
+        ]
+      },
+      "15": {
+        "ports": [
+          3,
+          4
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 3
+          },
+          {
+            "type": "switch",
+            "id": 2
+          }
+        ]
+      },
+      "16": {
+        "ports": [
+          0,
+          5
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 0
+          },
+          {
+            "type": "switch",
+            "id": 3
+          }
+        ]
+      },
+      "17": {
+        "ports": [
+          1,
+          2
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 1
+          },
+          {
+            "type": "gpu",
+            "id": 2
+          }
+        ]
+      }
+    },
+    "1": {
+      "3": {
+        "ports": [
+          0,
+          2
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 4
+          },
+          {
+            "type": "gpu",
+            "id": 6
+          }
+        ]
+      },
+      "6": {
+        "ports": [
+          3,
+          5
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 7
+          },
+          {
+            "type": "switch",
+            "id": 3
+          }
+        ]
+      },
+      "9": {
+        "ports": [
+          1,
+          4
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 5
+          },
+          {
+            "type": "switch",
+            "id": 2
+          }
+        ]
+      },
+      "11": {
+        "ports": [
+          1,
+          3
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 5
+          },
+          {
+            "type": "gpu",
+            "id": 7
+          }
+        ]
+      },
+      "13": {
+        "ports": [
+          2
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 6
+          }
+        ]
+      },
+      "14": {
+        "ports": [
+          0,
+          4
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 4
+          },
+          {
+            "type": "switch",
+            "id": 2
+          }
+        ]
+      },
+      "15": {
+        "ports": [
+          0,
+          3
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 4
+          },
+          {
+            "type": "gpu",
+            "id": 7
+          }
+        ]
+      },
+      "16": {
+        "ports": [
+          1,
+          2
+        ],
+        "next_hops": [
+          {
+            "type": "gpu",
+            "id": 5
+          },
+          {
+            "type": "gpu",
+            "id": 6
+          }
+        ]
+      },
+      "17": {
+        "ports": [
+          4
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 2
+          }
+        ]
+      }
+    },
+    "2": {
+      "9": {
+        "ports": [
+          0
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 0
+          }
+        ]
+      },
+      "14": {
+        "ports": [
+          0
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 0
+          }
+        ]
+      },
+      "15": {
+        "ports": [
+          1
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 1
+          }
+        ]
+      },
+      "17": {
+        "ports": [
+          0
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 0
+          }
+        ]
+      }
+    },
+    "3": {
+      "3": {
+        "ports": [
+          1
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 1
+          }
+        ]
+      },
+      "6": {
+        "ports": [
+          0
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 0
+          }
+        ]
+      },
+      "11": {
+        "ports": [
+          1
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 1
+          }
+        ]
+      },
+      "16": {
+        "ports": [
+          1
+        ],
+        "next_hops": [
+          {
+            "type": "switch",
+            "id": 1
+          }
+        ]
+      }
+    }
+  }
+}

@@ -93,21 +93,32 @@ namespace ns3
 		// schedule intended a given connection to leave by (see ResolveScheduledNics).
 		struct FlowEndpoints {
 			uint32_t srcGpu;
-			int16_t peer;
+			int16_t peer;                // the tb's sendpeer: a rank, or MSCCL_PEER_MULTICAST
 			int chan;
+			std::vector<int16_t> peers;  // every receiver, ascending (one entry for a unicast)
 		};
 		// (sender gpu id, peer, channel) -- the identity of one persistent RDMA connection,
 		// which is the granularity at which a NIC can be pinned (RdmaHw binds a qp to one NIC
 		// for its lifetime). A schedule that sent one such connection's flows out different
 		// NICs could not be honored; ResolveScheduledNics detects and reports that rather than
-		// silently following whichever flow it saw first.
+		// silently following whichever flow it saw first. A multicast connection is named by
+		// its receiver set: `peer` is then MSCCL_PEER_MULTICAST and `group` holds the set
+		// (empty for a unicast), since two trees from one GPU may share a channel number.
 		struct ConnectionKey {
 			uint32_t srcGpu;
 			int16_t peer;
 			int chan;
+			std::vector<int16_t> group;
 			bool operator<(const ConnectionKey& o) const {
-				return std::tie(srcGpu, peer, chan) < std::tie(o.srcGpu, o.peer, o.chan);
+				return std::tie(srcGpu, peer, chan, group) < std::tie(o.srcGpu, o.peer, o.chan, o.group);
 			}
+		};
+		// One route of a format-2 switch JSON's "flows" section: the sender and the receiver
+		// set, plus the raw TE-CCL id of the switch every branch starts at (the tree's root).
+		struct JsonFlow {
+			int srcGpu;
+			std::vector<int16_t> dsts;  // ascending
+			int rootTecclId;
 		};
 
 		NodeContainer m_gpuNodes;
@@ -127,6 +138,8 @@ namespace ns3
 		};
 		std::vector<RemoteWait> m_remoteWaits;
 		int m_nSendSteps = 0;                // send-bearing steps seen, the summary's denominator
+		int m_nMulticastBlocks = 0;          // threadblocks whose `send` lists >= 2 receivers
+		int m_nMulticastSendSteps = 0;       // send-bearing steps in those threadblocks
 		int m_nInputChunks = 0;              // per-GPU input chunk count (i_chunks); tester n_chunks
 		int m_nScratchChunks = 0;            // max per-GPU scratch chunk count (s_chunks) over active GPUs
 		int m_nChunksPerLoop = 0;            // nchunksperloop from the <algo> root
@@ -158,6 +171,19 @@ namespace ns3
 		std::map<uint32_t, std::vector<uint32_t>>& SwitchPortCache(Ptr<Node> node);
 		bool ResolveOutPorts(Ptr<SwitchNode> sw, Ptr<Node> target, std::vector<uint32_t>& outIfIndices);
 		bool ResolvePortNeighbor(Ptr<SwitchNode> sw, uint32_t ifIndex, uint32_t& neighborNodeId);
+		// Format-2 switch JSON ("format": 2, written by TE-CCL's multicast-aware ncclize). Its
+		// per-switch "ports" list means REPLICATE to every port, the opposite of format 1's port
+		// array (spread over parallel links), so the two are parsed by separate paths.
+		// JsonDoc wraps the parsed nlohmann::json root; defined in the .cc so that json.hpp stays
+		// out of this header.
+		struct JsonDoc;
+		AlgoParseResult ParseSwitchJsonFormat2(const JsonDoc& doc, const char* file_path,
+			bool installSwitchRules, bool pinNics);
+		// Follows flow `flowId`'s installed ports from its root switch through the real ns-3
+		// wiring and checks it reaches exactly `flow.dsts`, each once. Format 2 only.
+		AlgoParseResult CheckMulticastTree(uint32_t flowId, const JsonFlow& flow,
+			const std::map<int, int>& tecclToSwitchIdx,
+			const std::map<uint32_t, std::map<int, std::vector<uint32_t>>>& rules);
 		// If `sw` is the ingress hop of `flowId` (i.e. it neighbors that flow's sending GPU),
 		// record the GPU-side NIC facing it as that connection's scheduled egress NIC.
 		void ResolveScheduledNics(Ptr<SwitchNode> sw, uint32_t flowId);

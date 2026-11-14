@@ -91,4 +91,14 @@ namespace ns3
 		return true;
 	}
 
+	void GPU::PushGroupNic(const std::vector<int16_t>& group, int chan, uint32_t ifIndex){
+		m_groupNic[std::make_pair(group, chan)] = ifIndex;
+	}
+	bool GPU::GetGroupNic(const std::vector<int16_t>& group, int chan, uint32_t& ifIndex) const{
+		auto it = m_groupNic.find(std::make_pair(group, chan));
+		if (it == m_groupNic.end()) return false;
+		ifIndex = it->second;
+		return true;
+	}
+
 }

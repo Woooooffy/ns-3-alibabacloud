@@ -137,6 +137,14 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 			++m_flowRuleMisses;
 		} else {
 			++m_flowRuleHits;
+			// Unreachable while CollectivesApplication refuses multicast schedules at start; kept
+			// so that lifting that guard without modelling replication fails here, loudly, rather
+			// than hashing the packet onto one branch of its tree.
+			if (m_replicateFlows.count(ch.udp.mscclFlowId)){
+				NS_FATAL_ERROR("Switch " << m_id << ": flow " << ch.udp.mscclFlowId << " is a multicast "
+					<< "branch point (replicate to " << search->second.size() << " ports), but switch "
+					<< "replication is not implemented yet.");
+			}
 			// The rule pins this flow to a next-hop *neighbor*; when several parallel ports reach
 			// that neighbor, any of them keeps the dictated path, so hash within the candidate set
 			// rather than always taking one port and leaving the other uplinks idle.
@@ -248,8 +256,10 @@ void SwitchNode::ClearTable(){
 	m_rtTable.clear();
 }
 
-void SwitchNode::AddFlowForwardingRule(uint32_t flowId, const std::vector<uint32_t>& ports){
+void SwitchNode::AddFlowForwardingRule(uint32_t flowId, const std::vector<uint32_t>& ports, bool replicate){
 	m_flowForwardingTable[flowId] = ports;
+	if (replicate) m_replicateFlows.insert(flowId);
+	else m_replicateFlows.erase(flowId);
 }
 
 // This function can only be called in switch mode

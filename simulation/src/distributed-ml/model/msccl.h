@@ -46,6 +46,16 @@ static_assert(MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL >= MSCCL_MAX_N
 // sentinel for mscclTransfer::mscclFlowId meaning "no flow id assigned"
 #define MSCCL_FLOW_ID_NONE 0xFFFFFFFFu
 
+// Switch multicast (TE-CCL ncclize multicast_output_design.md): `<tb send="2,3">` is ONE send
+// stream that the fabric replicates to every listed receiver. Such a threadblock stores its
+// receivers in mscclThreadBlock::sendPeers and carries this sentinel in `sendpeer`, so every
+// code path that treats `sendpeer` as a single node id rejects it (it is < 0) instead of
+// silently sending to the first receiver only.
+#define MSCCL_PEER_MULTICAST (-2)
+// Receivers one multicast threadblock may list. Bounds a fan-out to every other GPU of a
+// 257-GPU topology; the parser rejects a longer list rather than truncating it.
+#define MSCCL_MAX_MULTICAST_PEERS 256
+
 #define MSCCL_SEND 0
 #define MSCCL_RECV 1
 #define MSCCL_RECV_COPY_SEND 2
@@ -201,8 +211,15 @@ inline std::ostream& operator<<(std::ostream& os, const mscclTransfer& t) {
 }
 
 struct mscclThreadBlock {
+  // The single receiver of a unicast threadblock, -1 for none, or MSCCL_PEER_MULTICAST when
+  // the XML lists several (see sendPeers).
   int16_t sendpeer;
   int16_t recvpeer;
+  // Every receiver of this threadblock's sends, ascending: 0 entries for no sender, 1 for a
+  // unicast (== sendpeer), >= 2 for a switch multicast. The full set is the identity of a
+  // multicast connection, the way `sendpeer` is the identity of a unicast one.
+  int16_t nSendPeers;
+  int16_t sendPeers[MSCCL_MAX_MULTICAST_PEERS];
   uint16_t nsteps;
   int8_t channelId; // associated channel. -1 indicates a threadblock with only local copies
   // step is used to index into this array. transfers[step] is the addr to transfer.
@@ -233,8 +250,13 @@ static_assert(MSCCL_MAX_THREAD_BLOCK_ID <=
 // print method
 inline std::ostream& operator<<(std::ostream& os, const mscclThreadBlock& tb) {
   os << "mscclThreadBlock { "
-     << "sendpeer=" << tb.sendpeer
-     << ", recvpeer=" << tb.recvpeer
+     << "sendpeer=" << tb.sendpeer;
+  if (tb.nSendPeers > 1) {
+    os << " (multicast to";
+    for (int16_t i = 0; i < tb.nSendPeers; ++i) os << (i ? "," : " ") << tb.sendPeers[i];
+    os << ")";
+  }
+  os << ", recvpeer=" << tb.recvpeer
      << ", nsteps=" << tb.nsteps
      << ", channelId=" << static_cast<int>(tb.channelId)
      << " }\n";
