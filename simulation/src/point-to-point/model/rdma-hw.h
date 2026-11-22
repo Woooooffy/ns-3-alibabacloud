@@ -60,6 +60,12 @@ public:
 	std::vector<RdmaInterfaceMgr> m_nic; // list of running nic controlled by this RdmaHw
 	std::unordered_map<uint64_t, Ptr<RdmaQueuePair> > m_qpMap; // mapping from uint64_t to qp
 	std::unordered_map<uint64_t, Ptr<RdmaRxQueuePair> > m_rxQpMap; // mapping from uint64_t to rx qp
+	// Switch-multicast qps by (sport, pg). An ack is matched to its qp by (ack source IP, dport,
+	// pg) through m_qpMap, and a multicast qp's acks come from every receiver while m_qpMap
+	// knows it under one destination only. sport is unique per node (MSCCL allocates it
+	// node-globally), so it alone identifies the qp.
+	std::unordered_map<uint32_t, Ptr<RdmaQueuePair> > m_mcastQpByPort;
+	static uint32_t GetMcastPortKey(uint16_t sport, uint16_t pg) { return ((uint32_t) sport << 16) | pg; }
 	std::unordered_map<uint32_t, std::vector<int> > m_rtTable; // map from ip address (u32) to possible ECMP port (index of dev)
 	std::unordered_map<uint32_t, std::vector<int> > m_rtTable_nxthop_nvswitch; // map from ip address (u32) to possible ECMP port (index of dev) connected to nvswitch
 	// Rotation used by ResolveNic to hand this node's NICs out to new qps evenly when the
@@ -137,6 +143,20 @@ public:
 	static AckReqStats m_ackReqStats;
 	static void PrintAckReqStats(std::ostream& os);
 
+	// Switch-multicast transport, job-global like the two above. With sender-side ack
+	// aggregation every receiver's ack reaches the sender, so acks / (qps x receivers) is the
+	// per-receiver ack rate and the whole count is the ack load an in-switch merge would save.
+	struct McastStats {
+		uint64_t qps = 0, members = 0;  // multicast qps created, and receivers over all of them
+		uint64_t udQps = 0;             // of qps: UD (no acks)
+		uint64_t acks = 0, naks = 0;    // per-receiver acks/NAKs received by multicast qps
+		uint64_t naksHeld = 0;          // NAKs held because another receiver was slower
+		uint64_t rewinds = 0;           // go-back-N rewinds of a multicast qp (immediate or held)
+		uint64_t udGaps = 0;            // UD receivers that saw a sequence gap (lost packet)
+	};
+	static McastStats m_mcastStats;
+	static void PrintMcastStats(std::ostream& os);
+
 	// nvls
 	void enable_nvls();
 	void disable_nvls();
@@ -169,7 +189,10 @@ public:
 	// intend to reuse it (push further messages directly via qp->PushMessage(...), bypassing
 	// this method) can hold onto it; one-shot callers (e.g. RdmaClient) can simply ignore it,
 	// since autoClose defaults to true and behaves exactly as before.
-	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true, uint32_t pinnedNic = RdmaQueuePair::NIC_UNPINNED);
+	// `mcast` non-null makes it a switch-multicast qp: `_dip` then only labels the packets (the
+	// switches forward them by flow id), and `pinnedNic` is mandatory and binding -- the NIC
+	// facing the tree's root -- since routes toward one receiver say nothing about the tree.
+	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true, uint32_t pinnedNic = RdmaQueuePair::NIC_UNPINNED, const RdmaMulticastSpec* mcast = nullptr);
 	// explicit whole-qp teardown for reused/persistent qps (autoClose == false); thin
 	// wrapper over QpComplete that exists purely for call-site clarity.
 	void CloseQueuePair(Ptr<RdmaQueuePair> qp);

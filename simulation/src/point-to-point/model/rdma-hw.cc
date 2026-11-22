@@ -382,9 +382,30 @@ Ptr<RdmaQueuePair> RdmaHw::GetQp(uint32_t dip, uint16_t sport, uint16_t pg){
 		return it->second;
 	return NULL;
 }
-Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose, uint32_t pinnedNic){
+Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose, uint32_t pinnedNic, const RdmaMulticastSpec* mcast){
 	// create qp
 	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
+	if (mcast){
+		// Bound outright, before GetNicIdxOfQp below runs: ResolveNic would check the request
+		// against the routes toward `dip`, which is a single receiver and can even be reached
+		// over NVLink, while the tree leaves by the NIC facing its root switch.
+		if (mcast->memberIps.size() < 2)
+			NS_FATAL_ERROR("RdmaHw on node " << m_node->GetId() << ": a multicast qp needs at least two receivers.");
+		if (pinnedNic == RdmaQueuePair::NIC_UNPINNED || pinnedNic >= m_nic.size())
+			NS_FATAL_ERROR("RdmaHw on node " << m_node->GetId() << ": multicast qp (sport " << sport
+				<< ") has no usable NIC (" << pinnedNic << "); it must leave by the NIC facing its tree's root,"
+				<< " which the switch JSON pins (needs --nicSel=schedule).");
+		qp->m_pinnedNicIdx = pinnedNic;
+		qp->m_mcastMemberIps = mcast->memberIps;
+		qp->m_mcastAcked.assign(mcast->memberIps.size(), 0);
+		qp->m_mcastNakHeld.assign(mcast->memberIps.size(), 0);
+		qp->m_mcastNakSeq.assign(mcast->memberIps.size(), 0);
+		qp->m_noAck = mcast->noAck;
+		m_mcastQpByPort[GetMcastPortKey(sport, pg)] = qp;
+		m_mcastStats.qps++;
+		m_mcastStats.members += mcast->memberIps.size();
+		if (mcast->noAck) m_mcastStats.udQps++;
+	}
 	// Must be set before the GetNicIdxOfQp below, which is what actually resolves and caches
 	// this qp's NIC binding: that call places the qp in a NIC's queue-pair group and seeds
 	// m_rate/m_max_rate from the chosen device. NIC_UNPINNED here means "no scheduled NIC",
@@ -452,6 +473,7 @@ void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
 	// remove qp from the m_qpMap
 	uint64_t key = GetQpKey(qp->dip.Get(), qp->sport, qp->m_pg);
 	m_qpMap.erase(key);
+	if (qp->IsMulticast()) m_mcastQpByPort.erase(GetMcastPortKey(qp->sport, qp->m_pg));
 	qp_cnp.erase(key);
 	last_qp_cnp.erase(key);
 	last_qp_rate.erase(key);
@@ -527,10 +549,11 @@ int RdmaHw::SendPacketComplete(Ptr<Packet> p, CustomHeader &ch)
 	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev;
 	SendComplete(qp);
 
-	if (m_ack_interval == 0){
+	if (m_ack_interval == 0 || qp->m_noAck){
 		// No-ack mode: the receiver never sends an Ack back (see
 		// ReceiverCheckSeq), so infer completion locally from this node's own
-		// send completion instead of waiting for one.
+		// send completion instead of waiting for one. A UD multicast qp behaves this way
+		// even with acks on for everyone else.
 		ch.SetMscclFlowIdPresent(qp->m_emitFlowIdHdr); // same correction as ReceiveUdp; qp is this packet's own sender
 		uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 		qp->Acknowledge(seq + payload_size);
@@ -600,7 +623,9 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 
 		Ipv4Header head;	// Prepare IPv4 header
 		head.SetDestination(Ipv4Address(ch.sip));
-		head.SetSource(Ipv4Address(ch.dip));
+		// A multicast stream's packets all carry one receiver's address, so echoing ch.dip would
+		// make every receiver's ack look like that one's; the sender aggregates by source.
+		head.SetSource(Ipv4Address(rxQp->m_ackFromSelf ? rxQp->sip : ch.dip));
 		head.SetProtocol(x == 1 ? 0xFC : 0xFD); //ack=0xFC nack=0xFD
 		head.SetTtl(64);
 		head.SetPayloadSize(newp->GetSize());
@@ -677,19 +702,37 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 	int i;
 	Ptr<RdmaQueuePair> qp = GetQp(ch.sip, port, qIndex);
 	if (qp == NULL){
-		return 0;
+		// A multicast qp is in m_qpMap under one receiver's address only; the others' acks
+		// find it by port (see m_mcastQpByPort).
+		auto mit = m_mcastQpByPort.find(GetMcastPortKey(port, qIndex));
+		if (mit == m_mcastQpByPort.end()) return 0;
+		qp = mit->second;
 	}
 
 	uint32_t nic_idx = GetNicIdxOfQp(qp);
 	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev;
+	// Whether to rewind the qp (go-back-N to snd_una). For a unicast, on every NACK. For a
+	// multicast, when a receiver that NAKed is the slowest one -- which may be decided by a
+	// different receiver's plain ack, the one that leaves the NAKing receiver behind.
+	bool rewind = (ch.l3Prot == 0xFD);
 	if (m_ack_interval == 0)
 		std::cout << "ERROR: shouldn't receive ack\n";
 	else {
-		if (!m_backto0){
-			qp->Acknowledge(seq);
-		}else {
-			uint64_t goback_seq = seq / m_chunk * m_chunk;
-			qp->Acknowledge(goback_seq);
+		const uint64_t ackSeq = m_backto0 ? seq / m_chunk * m_chunk : seq;
+		if (qp->IsMulticast()){
+			// Sender-side ack aggregation: snd_una becomes the minimum over the receivers.
+			const bool isNak = (ch.l3Prot == 0xFD);
+			if (!qp->AcknowledgeMember(ch.sip, ackSeq, isNak, rewind)){
+				NS_LOG_WARN("RdmaHw on node " << m_node->GetId() << ": ack for multicast qp (sport " << port
+					<< ") from " << Ipv4Address(ch.sip) << ", which is not one of its receivers; ignored.");
+				return 0;
+			}
+			if (isNak) m_mcastStats.naks++;
+			else m_mcastStats.acks++;
+			if (isNak && !rewind) m_mcastStats.naksHeld++;
+			if (rewind) m_mcastStats.rewinds++;
+		} else {
+			qp->Acknowledge(ackSeq);
 		}
 		while (!qp->m_messages.empty() && qp->IsCurMessageFinished()){
 			QpCompleteMessage(qp);
@@ -698,7 +741,7 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 			QpComplete(qp);
 		}
 	}
-	if (ch.l3Prot == 0xFD) // NACK
+	if (rewind) // NACK (or, on a multicast qp, a held NACK whose receiver is now the slowest)
 		RecoverQueue(qp);
 
 	// handle cnp
@@ -763,7 +806,7 @@ int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size
 	uint64_t expected = q->ReceiverNextExpectedSeq;
 	if (seq == expected){
 		q->ReceiverNextExpectedSeq = expected + size;
-		if (m_ack_interval == 0){
+		if (m_ack_interval == 0 || q->m_noAck){
 			// No-ack mode: never generate a periodic Ack; the sender infers
 			// completion locally from its own send completion instead.
 			return 5;
@@ -774,6 +817,21 @@ int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size
 			return 1; //Generate ACK
 		}
 		return 5;
+	} else if (seq > expected && q->m_noAck) {
+		// UD multicast: nothing will resend the missing bytes, so this stream can never complete
+		// and the recv step waiting on it hangs (or trips MscclChannel::Close's pending-recv
+		// check). Say so where it happens, once per receiver, instead of leaving only the hang.
+		if (!q->m_gapReported){
+			q->m_gapReported = true;
+			RdmaHw::m_mcastStats.udGaps++;
+			printf("%lu node %u: UD multicast receive gap from %u.%u.%u.%u sport %u: expected seq %lu, got %lu."
+				" UD assumes a lossless fabric, so the lost bytes are never resent.\n",
+				(unsigned long) Simulator::Now().GetTimeStep(), m_node->GetId(),
+				(q->dip >> 24) & 0xff, (q->dip >> 16) & 0xff, (q->dip >> 8) & 0xff, q->dip & 0xff,
+				(unsigned) q->dport, (unsigned long) expected, (unsigned long) seq);
+			fflush(stdout);
+		}
+		return 4; // neither delivered nor acknowledged
 	} else if (seq > expected) {
 		// Generate NACK
 		if (Simulator::Now() >= q->m_nackTimer || q->m_lastNACK != expected){
@@ -901,7 +959,7 @@ Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
 	// exactly what IsWinBound will see next. Acks off: the receiver ignores AckReq and the
 	// window never gates, so leave the bit alone and keep no-ack runs bit-identical.
 	bool fillsWindow = false;
-	if (m_ack_interval != 0){
+	if (m_ack_interval != 0 && !qp->m_noAck){
 		const uint64_t w = qp->GetWin();
 		fillsWindow = w != 0 && qp->GetOnTheFly() + payload_size >= w;
 		m_ackReqStats.dataPkts++;
@@ -1146,6 +1204,19 @@ void RdmaHw::PrintAckReqStats(std::ostream& os){
 	   << 100.0 * st.windowFill / st.dataPkts << "% of packets)" << std::endl;
 	os.flags(flags);
 	os.precision(prec);
+}
+
+RdmaHw::McastStats RdmaHw::m_mcastStats;
+
+void RdmaHw::PrintMcastStats(std::ostream& os){
+	const McastStats& st = m_mcastStats;
+	if (st.qps == 0) return; // no multicast in this run: keep its output unchanged
+	os << "Multicast transport: " << st.qps << " qp(s) to " << st.members << " receiver(s) in all ("
+	   << st.udQps << " UD, " << (st.qps - st.udQps) << " sender-aggregated acks); "
+	   << st.acks << " receiver ack(s) and " << st.naks << " NAK(s) reached the senders ("
+	   << st.naksHeld << " held for a slower receiver; " << st.rewinds << " go-back-N rewind(s))";
+	if (st.udGaps > 0) os << "; " << st.udGaps << " UD receiver(s) LOST packets (unrecoverable)";
+	os << std::endl;
 }
 
 /**

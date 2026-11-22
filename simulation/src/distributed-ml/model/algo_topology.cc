@@ -1183,9 +1183,7 @@ namespace ns3
 			}
 			if (m_nMulticastBlocks > 0){
 				NS_LOG_UNCOND("Algorithm XML: " << m_nMulticastBlocks << " switch-multicast threadblock(s) carrying "
-					<< m_nMulticastSendSteps << " send step(s); every receiver posts a matching recv stream."
-					<< " NOTE: the multicast transport is not implemented yet, so the run will stop at"
-					<< " application start.");
+					<< m_nMulticastSendSteps << " send step(s); every receiver posts a matching recv stream.");
 			}
 		}
 

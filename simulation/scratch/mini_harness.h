@@ -302,6 +302,16 @@ struct Options {
     // reverse-path ack load. (Against a bare-BDP window, N=8 capped a lone qp at ~55% of a
     // 50 Gbps tapered uplink, and N >= window/MTU deadlocked mid-message.)
     uint32_t ackEveryNPkts = 8;
+    // Reliability of switch-multicast connections (schedules with <tb send="a,b,...">); inert
+    // otherwise. agg: every receiver acks, the sender advances on the slowest one. ud: no acks
+    // on the multicast connection (unicast keeps them), loss unrecoverable. --l2Ack=0 removes
+    // acks everywhere, which makes the two identical -- that is the third, all-lossless point.
+    std::string mcast = "agg";
+    // Debug: drop one copy of the multicast packet with this flow id and sequence number (byte
+    // offset on its qp), once, on the last branch of the first switch that copies it. Exercises
+    // NAK gating under agg and the loss report under ud. 4294967295 = off.
+    uint32_t dbgDropMcastFlow = 0xFFFFFFFFu;
+    uint64_t dbgDropMcastSeq = 0;
 
     static Options For(const std::string& stem, uint32_t ranks) {
         Options o;
@@ -334,6 +344,9 @@ struct Options {
         cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
         cmd.AddValue("l2Ack", "Ack mode: 0 = no-ack (sender self-acknowledges at send completion), nonzero = acks on", l2AckInterval);
         cmd.AddValue("ackEveryNPkts", "Mid-message ack coalescing in packets; message-closing packets are acked regardless (0 = only those)", ackEveryNPkts);
+        cmd.AddValue("mcast", "Switch-multicast reliability: agg (receivers ack, sender takes the minimum) | ud (no acks on multicast connections)", mcast);
+        cmd.AddValue("dbgDropMcastFlow", "Debug: flow id of a multicast packet to drop once on one branch (4294967295 = off)", dbgDropMcastFlow);
+        cmd.AddValue("dbgDropMcastSeq", "Debug: sequence number (byte offset on its qp) of that packet; not its qp's last packet", dbgDropMcastSeq);
     }
 
     // TE-CCL names its outputs with a short collective tag; the scratches and the sweep
@@ -352,6 +365,8 @@ struct Options {
             NS_FATAL_ERROR("Unknown --nicSel value '" << nicSel << "' (expected schedule|merged|rr).");
         if (coll != "allgather" && coll != "alltoall")
             NS_FATAL_ERROR("Unknown --coll value '" << coll << "' (expected allgather|alltoall).");
+        if (mcast != "agg" && mcast != "ud")
+            NS_FATAL_ERROR("Unknown --mcast value '" << mcast << "' (expected agg|ud).");
         if (checkLog != "silent" && checkLog != "minimal" && checkLog != "verbose")
             NS_FATAL_ERROR("Unknown --checkLog value '" << checkLog << "' (expected silent|minimal|verbose).");
         g_qlenRows = qlenRows;
@@ -492,6 +507,15 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     app_helper.SetAttribute("NetworkFlowIds", BooleanValue(opt.flowId));
     app_helper.SetAttribute("HonorNetDeps", BooleanValue(opt.netDeps));
     app_helper.SetAttribute("HonorRemoteDeps", BooleanValue(opt.remoteDeps));
+    app_helper.SetAttribute("MulticastTransport", StringValue(opt.mcast == "ud" ? "UD" : "AGG"));
+    // Set per switch rather than through Config::SetDefault: the scratches create their
+    // switches before SetRdmaDefaults runs, so a default would come too late.
+    if (opt.dbgDropMcastFlow != 0xFFFFFFFFu) {
+        for (uint32_t i = 0; i < regswtches.GetN(); ++i) {
+            regswtches.Get(i)->SetAttribute("DebugDropMcastFlowId", UintegerValue(opt.dbgDropMcastFlow));
+            regswtches.Get(i)->SetAttribute("DebugDropMcastSeq", UintegerValue(opt.dbgDropMcastSeq));
+        }
+    }
     ApplicationContainer apps = app_helper.Install<GPU>(topo);
 
     // The ctor's `verbose` flag only seeds the log mode; SetLogMode below is what governs.
@@ -721,6 +745,7 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     // produce runs indistinguishable from --rate=0. This says which of those happened.
     RdmaHw::PrintPaceStats(std::cout);
     RdmaHw::PrintAckReqStats(std::cout);
+    RdmaHw::PrintMcastStats(std::cout); // prints nothing unless the schedule multicasts
 
     // algorithm bandwidth: total data moved per rank / time
     const std::string collName = isAllgather ? "allgather" : "alltoall";

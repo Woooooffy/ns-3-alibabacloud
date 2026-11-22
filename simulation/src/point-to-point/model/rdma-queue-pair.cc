@@ -6,6 +6,7 @@
 #include <ns3/simulator.h>
 #include "ns3/ppp-header.h"
 #include "rdma-queue-pair.h"
+#include <algorithm>
 
 namespace ns3 {
 
@@ -247,6 +248,30 @@ void RdmaQueuePair::Acknowledge(uint64_t ack){
 	if (ack > snd_una){
 		snd_una = ack;
 	}
+}
+
+bool RdmaQueuePair::AcknowledgeMember(uint32_t ip, uint64_t ack, bool isNak, bool& rewind){
+	auto it = std::find(m_mcastMemberIps.begin(), m_mcastMemberIps.end(), ip);
+	if (it == m_mcastMemberIps.end()) return false;
+	const size_t i = (size_t) (it - m_mcastMemberIps.begin());
+	if (ack > m_mcastAcked[i]) m_mcastAcked[i] = ack;
+	if (isNak){
+		m_mcastNakHeld[i] = 1;
+		m_mcastNakSeq[i] = ack;
+	}
+	const uint64_t lowest = *std::min_element(m_mcastAcked.begin(), m_mcastAcked.end());
+	Acknowledge(lowest);
+	rewind = false;
+	for (size_t j = 0; j < m_mcastAcked.size(); ++j){
+		if (!m_mcastNakHeld[j]) continue;
+		if (m_mcastAcked[j] > m_mcastNakSeq[j]){
+			m_mcastNakHeld[j] = 0; // it has since received what it asked for
+		} else if (m_mcastAcked[j] == lowest){
+			m_mcastNakHeld[j] = 0; // it is the slowest now: rewind to it
+			rewind = true;
+		}
+	}
+	return true;
 }
 
 uint64_t RdmaQueuePair::GetOnTheFly(){

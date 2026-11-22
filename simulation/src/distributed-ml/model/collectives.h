@@ -147,6 +147,21 @@ namespace ns3 {
 		NIC_ROUND_ROBIN
 	};
 
+	// How a switch-multicast connection (a `<tb send="a,b,...">`) is made reliable. The data path
+	// is the same either way -- one qp per tree, copied to every receiver by the switches.
+	enum MulticastTransport : uint8_t {
+		// Every receiver acks as on a unicast; the sender keeps one cumulative ack per receiver
+		// and advances on their minimum, acting on a NAK only from the slowest receiver. This is
+		// the aggregation rule of in-switch designs such as Cepheus, run at the sender instead,
+		// so the sender's NIC sees every receiver's ack rather than one merged stream.
+		MCAST_ACK_AGGREGATION,
+		// Unreliable datagram (InfiniBand UD multicast; Khalilov et al., SC 2024): no acks on
+		// this connection at either end, completion at transmit, and loss is unrecoverable --
+		// it assumes a lossless fabric. Unicast connections keep acks unless L2AckInterval is
+		// 0, which turns acks off everywhere.
+		MCAST_UD
+	};
+
 	// Ceiling on lanes per RDMA connection (see CollectivesApplication::GetRdmaLaneCount).
 	// Mirrors NCCL_IB_MAX_DEVS_PER_NIC: a merged virtual device fuses at most this many
 	// physical ports, so a connection over one never needs more parallel qps than this.
@@ -199,6 +214,11 @@ namespace ns3 {
 			// into OnBytesArrivedFromPeer, ignoring RdmaHw's wire-level sequence number entirely
 			// (see OnBytesArrivedFromPeer's comment).
 			void SetupRdmaSendPeer(int16_t peer);
+			// The switch-multicast counterpart, for the multicast threadblock `bid`: ONE qp for the
+			// whole tree (its packets carry the tree's flow id and the switches copy them), and an
+			// rx qp on every receiver hanging this sender's bytes on that receiver's FIFO for us.
+			// Called once per (channel, receiver set) from SetupRdmaPeers.
+			void SetupRdmaGroupSendPeer(int16_t bid);
 			// Brackets the maxAllowedCount sub-transfers of one send step, so the step-level
 			// effects that fire when its bytes are off the wire -- the network gate and the
 			// netFlag -- happen once, after every sub-transfer of every lane has drained, rather
@@ -270,6 +290,9 @@ namespace ns3 {
 			// per lane, in lane order: index i is pinned to the i'th NIC that reaches the peer,
 			// mirroring how a merged multi-port device stripes its qps over its ports.
 			std::map<int16_t, std::vector<Ptr<RdmaQueuePair>>> m_rdmaQpByPeer;
+			// Switch-multicast connections, keyed by receiver set (ascending, as in
+			// mscclThreadBlock::sendPeers). Always one lane: a tree leaves by one NIC.
+			std::map<std::vector<int16_t>, std::vector<Ptr<RdmaQueuePair>>> m_rdmaQpByGroup;
 			// lanes still outstanding for a (bid, sid) step, recv side and send side.
 			// m_recvLanesLeft is safe to key on (bid, sid) alone under pipelining: a threadblock
 			// stays busy until its recv completes, so it can never have the same step
@@ -380,6 +403,10 @@ namespace ns3 {
 			bool ConnectionCarriesFlowIds(int16_t peer, int8_t chan);
 			bool GetHonorNetDeps() const { return m_honorNetDeps; }
 			bool GetHonorRemoteDeps() const { return m_honorRemoteDeps; }
+			MulticastTransport GetMulticastTransport() const { return m_mcastTransport; }
+			// The receiver set of multicast threadblock `bid` (mscclThreadBlock::sendPeers), or
+			// empty if it is not one.
+			std::vector<int16_t> GetSendGroup(int16_t bid) const;
 			// When this rank's most recent step completed. After Simulator::Run() it is the
 			// rank's collective finish time; the max over ranks is the collective's runtime,
 			// unlike Simulator::Now(), which also counts whatever event ran last (a periodic
@@ -534,6 +561,8 @@ namespace ns3 {
 			// nothing and remotedep waits on nothing, so the run is identical to one on a
 			// schedule without remote gates.
 			bool m_honorRemoteDeps = true;
+			// MulticastTransport attribute: how switch-multicast connections get reliability.
+			MulticastTransport m_mcastTransport = MCAST_ACK_AGGREGATION;
 			// RemoteNotifyDelay attribute: latency of one notification. Negative (the default)
 			// means half the notifier->waiter base RTT, i.e. one-way propagation plus
 			// serialization of the path, as if the notification were a tiny RDMA write.

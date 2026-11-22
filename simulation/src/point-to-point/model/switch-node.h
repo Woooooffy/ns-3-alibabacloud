@@ -28,9 +28,10 @@ class SwitchNode : public Node{
 	std::unordered_map<uint32_t, std::vector<uint32_t> > m_flowForwardingTable;
 	// Flow ids whose rule means "copy to EVERY port in the list" (a switch-multicast branch
 	// point, from a format-2 switch JSON) rather than "pick one of these parallel ports".
-	// Replication is not modelled yet, so SendToDev refuses such a packet instead of
-	// forwarding it as a spread rule, which would deliver it to one receiver only.
 	std::unordered_set<uint32_t> m_replicateFlows;
+	// Debug: drop one copy of one multicast packet (see ReplicateToPorts). NO_FLOW_ID = off.
+	uint32_t m_debugDropMcastFlowId;
+	uint64_t m_debugDropMcastSeq;
 	// Packets that arrived carrying a flow id while custom forwarding was on, split by whether
 	// a rule matched. A miss is not an error -- it just means this switch is not on the path the
 	// schedule chose for that flow, so the packet takes ECMP -- but a large miss count means the
@@ -59,6 +60,8 @@ protected:
 private:
 	int GetOutDev(Ptr<const Packet>, CustomHeader &ch);
 	void SendToDev(Ptr<Packet>p, CustomHeader &ch);
+	void ReplicateToPorts(Ptr<Packet> p, CustomHeader &ch, const std::vector<uint32_t>& ports);
+	void EnqueueOut(Ptr<Packet> p, CustomHeader &ch, int idx);
 	static uint32_t EcmpHash(const uint8_t* key, size_t len, uint32_t seed);
 	uint32_t FlowHash(const CustomHeader &ch) const; // 5-tuple hash shared by ECMP and flow forwarding
 	void CheckAndSendPfc(uint32_t inDev, uint32_t qIndex);
@@ -72,7 +75,7 @@ public:
 	void AddTableEntry(Ipv4Address &dstAddr, uint32_t intf_idx);
 	void ClearTable();
 	// replicate=false: `ports` are parallel links toward one next hop, one picked per flow.
-	// replicate=true: a multicast branch point, the packet goes out every port (not modelled yet).
+	// replicate=true: a multicast branch point, the packet goes out every port.
 	void AddFlowForwardingRule(uint32_t flowId, const std::vector<uint32_t>& ports, bool replicate = false);
 	uint64_t GetFlowRuleHits() const { return m_flowRuleHits; }
 	uint64_t GetFlowRuleMisses() const { return m_flowRuleMisses; }

@@ -56,8 +56,8 @@ namespace ns3
 		bool GetPeerNic(int16_t peer, int chan, uint32_t& ifIndex) const;
 		// The same for a switch-multicast connection, which is named by its receiver set
 		// (ascending, as in mscclThreadBlock::sendPeers) rather than by one peer. The NIC is the
-		// one facing the tree's root switch. Nothing reads this yet: the multicast transport is
-		// not implemented, and CollectivesApplication refuses a multicast schedule at start.
+		// one facing the tree's root switch; MscclChannel::SetupRdmaGroupSendPeer binds the tree's
+		// qp to it.
 		void PushGroupNic(const std::vector<int16_t>& group, int chan, uint32_t ifIndex);
 		bool GetGroupNic(const std::vector<int16_t>& group, int chan, uint32_t& ifIndex) const;
 

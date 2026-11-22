@@ -16,6 +16,16 @@
 
 namespace ns3 {
 
+// What makes a qp a switch-multicast qp, handed to RdmaHw::AddQueuePair. One such qp carries one
+// multicast tree's stream: the switches copy its packets (by flow id) to every receiver listed.
+struct RdmaMulticastSpec {
+	std::vector<uint32_t> memberIps; // every receiver's IP, in the tree's receiver order
+	// UD: no acknowledgements for this qp at either end. The sender self-acknowledges on
+	// transmit, as global no-ack mode does, and a lost packet is unrecoverable. False: every
+	// receiver acks and the sender aggregates them (RdmaQueuePair::AcknowledgeMember).
+	bool noAck = false;
+};
+
 class RdmaQueuePair : public Object {
 public:
 	Time startTime;
@@ -84,6 +94,27 @@ public:
 	// qps so draining between Send() calls is just normal idle, not teardown -- those qps
 	// are only closed explicitly, via RdmaHw::CloseQueuePair, at channel teardown.
 	bool m_autoClose;
+
+	// Switch multicast (empty / false for a unicast qp). Set by RdmaHw::AddQueuePair from an
+	// RdmaMulticastSpec. With acks on, every receiver acknowledges independently and the qp's
+	// cumulative ack is the MINIMUM over them -- ack aggregation done at the sender, so window
+	// credit, message retirement and the step's network completion all follow the slowest
+	// receiver. (Aggregating in the switches instead, as Cepheus does, would change how many
+	// acks reach this NIC, not when the minimum arrives.)
+	std::vector<uint32_t> m_mcastMemberIps;
+	std::vector<uint64_t> m_mcastAcked;    // per receiver, highest cumulative ack seen
+	std::vector<uint8_t>  m_mcastNakHeld;  // per receiver, a NAK not yet acted on
+	std::vector<uint64_t> m_mcastNakSeq;   // ...and the sequence number it asked for
+	bool m_noAck = false;                  // UD multicast: see RdmaMulticastSpec::noAck
+	bool IsMulticast() const { return !m_mcastMemberIps.empty(); }
+	// Records receiver `ip`'s cumulative ack (a NAK is one too, at its expected seq) and advances
+	// snd_una to the minimum over all receivers. A NAK rewinds the qp only once its receiver is
+	// the slowest: rewinding earlier would go back to a point the slowest receiver has not even
+	// reached, so the resend would not help it. Until then the NAK is HELD, not dropped -- a
+	// receiver re-NAKs only when a later packet reaches it, so a dropped NAK near the end of a
+	// stream would never be repeated. A held NAK is forgotten once its receiver acks past it.
+	// `rewind` says whether to go back to snd_una now. Returns false if `ip` is not a member.
+	bool AcknowledgeMember(uint32_t ip, uint64_t ack, bool isNak, bool& rewind);
 
 	// A persistent QP (reused across multiple logical transfers to the same peer) enqueues
 	// one RdmaMessage per transfer; snd_nxt/snd_una progress continuously across message
@@ -242,6 +273,14 @@ public:
 	// it right alongside m_perPktFn above). RdmaHw::ReceiveUdp needs it to size the payload,
 	// since the header cannot be detected from the wire. Defaults false, matching the tx side.
 	bool m_expectFlowIdHdr = false;
+	// Receiving end of a switch-multicast qp, both set by the sender at setup like the field
+	// above. m_noAck: UD -- never ack or NACK; a sequence gap is a lost packet nobody will
+	// resend, reported once (m_gapReported). m_ackFromSelf: stamp this receiver's own IP as the
+	// ack's source rather than the data packet's destination, which on a multicast stream names
+	// one receiver for all of them; the sender tells receivers apart by it.
+	bool m_noAck = false;
+	bool m_ackFromSelf = false;
+	bool m_gapReported = false;
 
 	static TypeId GetTypeId (void);
 	RdmaRxQueuePair();

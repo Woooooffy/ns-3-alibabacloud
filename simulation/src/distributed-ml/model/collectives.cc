@@ -356,6 +356,11 @@ namespace ns3 {
 	}
 
 	void MscclChannel::Send(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter, uint16_t part){
+		if (sendpeer == MSCCL_PEER_MULTICAST){
+			// Switch multicast is RDMA-only: there is no socket-path equivalent of a tree.
+			SendRdma(bid, sid, sendpeer, nElems, srcbuf, srcoff, dstbuf, dstoff, mscclFlowId, rateGBps, gridByteOff, iter, part);
+			return;
+		}
 		if (sendpeer < 0){
 			NS_FATAL_ERROR("Send peer is negative in Send");
 		}
@@ -504,6 +509,65 @@ namespace ns3 {
 		}
 	}
 
+	// One persistent qp for a whole multicast tree. What differs from SetupRdmaSendPeer:
+	//   - one rx qp per RECEIVER, all keyed by this one sport, each delivering into that
+	//     receiver's FIFO for this sender -- the receivers cannot tell a tree from a unicast;
+	//   - always one lane, on the NIC facing the tree's root (GPU::GetGroupNic, from the switch
+	//     JSON), because the tree is one stream leaving by one link;
+	//   - the packets always carry the flow id: it is the only thing telling a switch to copy;
+	//   - window and base RTT are the largest over the receivers, since with aggregated acks the
+	//     qp advances at the pace of the farthest one;
+	//   - `dip` is the first receiver's address. It only labels the packets: the switches forward
+	//     them by flow id, and receivers accept them whatever it says.
+	void MscclChannel::SetupRdmaGroupSendPeer(int16_t bid){
+		const std::vector<int16_t> group = m_app->GetSendGroup(bid);
+		if (group.size() < 2 || m_rdmaQpByGroup.count(group)) return;
+		const int16_t myId = static_cast<int16_t>(m_app->GetNode()->GetId());
+		const bool ud = (m_app->GetMulticastTransport() == MCAST_UD);
+		const uint16_t sport = static_cast<uint16_t>(MSCCL_RDMA_SPORT_BASE + m_app->AllocateRdmaSport());
+
+		RdmaMulticastSpec spec;
+		spec.noAck = ud;
+		uint32_t win = 0;
+		uint64_t baseRtt = 0;
+		for (int16_t member : group){
+			if (!m_app->IsRdmaPeer(member)){
+				NS_FATAL_ERROR("Node " << myId << " chan " << (int)m_id << " TB " << bid << ": multicast receiver "
+					<< member << " is not an RDMA fabric peer of this GPU, so no switch can reach it.");
+			}
+			Ptr<Node> peerNode = NodeList::GetNode(static_cast<uint32_t>(member));
+			Ptr<CollectivesApplication> peerApp =
+				DynamicCast<CollectivesApplication>(peerNode->GetApplication(0));
+			MscclChannel* peerChan = peerApp->GetChannel(m_id);
+			// Same parameter mapping as SetupRdmaSendPeer: this receiver is "sip", we are "dip".
+			Ptr<RdmaRxQueuePair> rxQp = peerApp->GetRdmaDriver()->m_rdma->GetRxQp(
+				m_app->GetPeerIp(member).Get(), m_app->GetMyIp().Get(), MSCCL_RDMA_DPORT, sport, MSCCL_RDMA_PG, true);
+			rxQp->m_perPktFn = [peerChan, myId](const uint8_t* payload, uint32_t sz, uint64_t /*seqOffset*/){
+				peerChan->OnBytesArrivedFromPeer(myId, 0, payload, sz);
+			};
+			rxQp->m_expectFlowIdHdr = true;
+			rxQp->m_noAck = ud;
+			rxQp->m_ackFromSelf = !ud;
+			spec.memberIps.push_back(m_app->GetPeerIp(member).Get());
+			win = std::max(win, m_app->GetPeerWin(member));
+			baseRtt = std::max(baseRtt, m_app->GetPeerBaseRtt(member));
+		}
+
+		uint32_t nic = RdmaQueuePair::NIC_UNPINNED;
+		DynamicCast<GPU>(m_app->GetNode())->GetGroupNic(group, m_id, nic);
+		Ptr<RdmaQueuePair> qp = m_app->GetRdmaDriver()->AddQueuePair(
+			m_app->GetNode()->GetId(), static_cast<uint32_t>(group[0]), /* tag */ 0, /* size */ 0, MSCCL_RDMA_PG,
+			m_app->GetMyIp(), m_app->GetPeerIp(group[0]), sport, MSCCL_RDMA_DPORT,
+			win, baseRtt, MSCCL_FLOW_ID_NONE, Callback<void>(), Callback<void>(),
+			nullptr, /* autoClose */ false, nic, &spec);
+		qp->m_emitFlowIdHdr = true;
+		m_rdmaQpByGroup[group] = std::vector<Ptr<RdmaQueuePair>>{qp};
+
+		NS_LOG_INFO("Node " << myId << " chan " << (int)m_id << ": established multicast qp (sport=" << sport
+			<< ", " << (ud ? "UD" : "aggregated acks") << ") for TB " << bid << " to " << group.size()
+			<< " receivers on NIC " << nic);
+	}
+
 	// Cuts on element boundaries, spreading any remainder one element at a time over the low
 	// lanes, so every lane's slice is a whole number of elements and the slices tile the
 	// transfer exactly. Depends only on its arguments, so sender and receiver agree without
@@ -549,13 +613,24 @@ namespace ns3 {
 	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter, uint16_t part){
 		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
 
-		auto it = m_rdmaQpByPeer.find(sendpeer);
-		if (it == m_rdmaQpByPeer.end()){
-			NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
-				<< ": SendRdma to peer " << sendpeer << " but no persistent qp was established -- "
-				<< "peer " << sendpeer << " is missing from this channel's sendPeerInfo in the algorithm XML.");
+		std::vector<Ptr<RdmaQueuePair>>* qpsFound = nullptr;
+		if (sendpeer == MSCCL_PEER_MULTICAST){
+			auto g = m_rdmaQpByGroup.find(m_app->GetSendGroup(bid));
+			if (g == m_rdmaQpByGroup.end()){
+				NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << " TB " << bid
+					<< ": multicast send but no multicast qp was established (SetupRdmaGroupSendPeer).");
+			}
+			qpsFound = &g->second;
+		} else {
+			auto it = m_rdmaQpByPeer.find(sendpeer);
+			if (it == m_rdmaQpByPeer.end()){
+				NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+					<< ": SendRdma to peer " << sendpeer << " but no persistent qp was established -- "
+					<< "peer " << sendpeer << " is missing from this channel's sendPeerInfo in the algorithm XML.");
+			}
+			qpsFound = &it->second;
 		}
-		std::vector<Ptr<RdmaQueuePair>>& qps = it->second;
+		std::vector<Ptr<RdmaQueuePair>>& qps = *qpsFound;
 		const uint8_t nLanes = static_cast<uint8_t>(qps.size());
 
 		// srcDataPtr is passed into PushMessage so RdmaHw can resolve it BEFORE the first
@@ -696,6 +771,9 @@ namespace ns3 {
 			pair.first->Close();
 		}
 		// tear down persistent RDMA connections
+		for (auto& pair: m_rdmaQpByGroup){
+			for (Ptr<RdmaQueuePair>& qp : pair.second) m_app->GetRdmaDriver()->CloseQueuePair(qp);
+		}
 		for (auto& pair: m_rdmaQpByPeer){
 			for (Ptr<RdmaQueuePair>& qp : pair.second) m_app->GetRdmaDriver()->CloseQueuePair(qp);
 		}
@@ -798,6 +876,18 @@ namespace ns3 {
 					BooleanValue(true),
 					MakeBooleanAccessor(&CollectivesApplication::m_networkFlowIds),
 					MakeBooleanChecker())
+				.AddAttribute(
+					"MulticastTransport",
+					"Reliability of switch-multicast connections (<tb send=\"a,b,...\">); unicast "
+					"connections are unaffected. AGG: every receiver acks and the sender advances on the "
+					"minimum, acting on a NAK only from the slowest receiver (ack aggregation at the "
+					"sender). UD: no acks on the multicast connection, completion at transmit, loss "
+					"unrecoverable (assumes a lossless fabric). With L2AckInterval=0 the two coincide.",
+					EnumValue(MCAST_ACK_AGGREGATION),
+					MakeEnumAccessor(&CollectivesApplication::m_mcastTransport),
+					MakeEnumChecker(
+						MCAST_ACK_AGGREGATION, "AGG",
+						MCAST_UD, "UD"))
 				.AddAttribute(
 					"HonorNetDeps",
 					"Honor the XML netdepid/netdeps network dependences: hold a step until the "
@@ -958,6 +1048,12 @@ namespace ns3 {
 		return false;
 	}
 
+	std::vector<int16_t> CollectivesApplication::GetSendGroup(int16_t bid) const {
+		const mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
+		if (tb->nSendPeers < 2) return {};
+		return std::vector<int16_t>(tb->sendPeers, tb->sendPeers + tb->nSendPeers);
+	}
+
 	bool CollectivesApplication::IsRdmaPeer(int16_t peer){
 		return DynamicCast<GPU>(GetNode())->HasPeerIpAddr(peer);
 	}
@@ -1043,7 +1139,9 @@ namespace ns3 {
 		int8_t chanId = tb->channelId;
 		MscclChannel* chan = &m_channels[chanId];
 		mscclTransfer* tran = &tb->transfers[sid];
-		uint16_t sendPeer = tb->sendpeer;
+		// Signed: a multicast threadblock's sendpeer is MSCCL_PEER_MULTICAST (-2), which a
+		// uint16_t would turn into 65534 and route down the socket path.
+		int16_t sendPeer = tb->sendpeer;
 		uint16_t recvPeer = tb->recvpeer;
 		const uint32_t iter = m_TBStates[bid].iter;
 		const uint32_t gridByteOff = GridByteOffsetForIter(iter);
@@ -1060,7 +1158,7 @@ namespace ns3 {
 		const bool sendBearing =
 			tran->type == MSCCL_SEND || tran->type == MSCCL_RECV_COPY_SEND ||
 			tran->type == MSCCL_RECV_REDUCE_SEND || tran->type == MSCCL_RECV_REDUCE_COPY_SEND;
-		const bool rdmaSend = sendBearing && IsRdmaPeer((int16_t) sendPeer);
+		const bool rdmaSend = sendBearing && (tb->nSendPeers > 1 || IsRdmaPeer(sendPeer));
 
 		// Send-bearing ops produce a network completion later (MscclChannel::OnRdmaSendComplete).
 		// Capture the flag it should publish now, while (iter, global_step) still describe this
@@ -1516,18 +1614,39 @@ namespace ns3 {
 		if (!m_algo->isValid){
 			NS_FATAL_ERROR("No valid algorithm found.");
 		}
-		// The parser accepts switch-multicast threadblocks (send="a,b,..."), but neither the
-		// sender's connection model nor the switches' replication exists yet. Everything below
-		// treats `sendpeer` as one node id, so stop here, by name, rather than further in with an
-		// unrelated error (or, if a guard were missed, a run that hangs on the other receivers).
-		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
-			const mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
-			if (tb->nSendPeers > 1){
-				std::ostringstream peers;
-				for (int16_t i = 0; i < tb->nSendPeers; ++i) peers << (i ? "," : "") << tb->sendPeers[i];
-				NS_FATAL_ERROR("Node " << GetNode()->GetId() << " TB " << bid << " multicasts to {" << peers.str()
-					<< "}. The XML and switch JSON parsed and validated, but the multicast transport (one send"
-					<< " stream replicated by the switches, and its acknowledgement) is not implemented yet.");
+		// Switch-multicast threadblocks (send="a,b,...") run only where the pieces they rely on are
+		// in force. Each check names the knob, since every failure here would otherwise surface as
+		// a hang or a run that silently delivered to one receiver.
+		{
+			int16_t mcastBid = -1;
+			for (int16_t bid = 0; bid < m_algo->nBlocks && mcastBid < 0; ++bid){
+				if (m_algo->mscclTBs[bid].nSendPeers > 1) mcastBid = bid;
+			}
+			if (mcastBid >= 0){
+				const std::string where = "Node " + std::to_string(GetNode()->GetId()) + " TB "
+					+ std::to_string(mcastBid) + " is a switch multicast, ";
+				if (!m_networkFlowIds){
+					NS_FATAL_ERROR(where << "which needs NetworkFlowIds (--flowId=1): the flow id is the only"
+						<< " thing that tells a switch to copy the packet to every branch.");
+				}
+				if (m_nicSelection != NIC_SCHEDULED){
+					NS_FATAL_ERROR(where << "which needs NicSelection=SCHEDULED (--nicSel=schedule): a tree"
+						<< " leaves by the NIC facing its root, which only the switch JSON names, and its"
+						<< " receivers must see it as a single lane.");
+				}
+				Ptr<RdmaHw> rdma = GetRdmaDriver()->m_rdma;
+				if (m_mcastTransport == MCAST_ACK_AGGREGATION && rdma->m_ack_interval != 0 && rdma->m_cc_mode != 12){
+					// With acks on, every receiver's ack runs the congestion-control handler on the one
+					// tree qp, and none of the modes was written for N receivers driving one rate.
+					NS_FATAL_ERROR(where << "with aggregated acks under congestion-control mode " << rdma->m_cc_mode
+						<< "; only CcMode 12 (no congestion control) is supported for multicast.");
+				}
+				static bool s_noted = false;
+				if (!s_noted && m_mcastTransport == MCAST_ACK_AGGREGATION && rdma->m_ack_interval == 0){
+					s_noted = true;
+					NS_LOG_UNCOND("Multicast: L2AckInterval=0 turns acks off everywhere, so the aggregated-ack"
+						" transport has nothing to aggregate and behaves exactly like UD (--mcast=ud).");
+				}
 			}
 		}
 		DerivePipelining();
@@ -1551,7 +1670,7 @@ namespace ns3 {
 				for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
 					mscclTransfer* tran = &tb->transfers[sid];
 					if (tran->netGate == MSCCL_GATE_NONE && tran->netWait == MSCCL_GATE_NONE) continue;
-					if (tb->sendpeer < 0 || !IsRdmaPeer(tb->sendpeer)){
+					if (tb->nSendPeers < 2 && (tb->sendpeer < 0 || !IsRdmaPeer(tb->sendpeer))){
 						NS_FATAL_ERROR("Node " << GetNode()->GetId() << " TB " << (int)bid << " step " << sid
 							<< " carries a network gate (netGate=" << tran->netGate << ", netWait=" << tran->netWait
 							<< ") but its sendpeer (" << tb->sendpeer << ") is not an RDMA peer. Gates are only"
@@ -1631,6 +1750,12 @@ namespace ns3 {
 				int16_t peer = chanInfo->sendPeerInfo[s].peer;
 				if (IsRdmaPeer(peer)) chan->SetupRdmaSendPeer(peer);
 			}
+		}
+		// Multicast threadblocks are not in the channels' send-peer summaries (there is no one
+		// peer to file them under), so they are found from the threadblocks themselves.
+		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
+			const mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
+			if (tb->nSendPeers > 1) m_channels[tb->channelId].SetupRdmaGroupSendPeer(bid);
 		}
 	}
 
