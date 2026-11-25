@@ -1,0 +1,48 @@
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=0 rateGBps=12.5 at t=0
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=1 rateGBps=12.5 at t=0
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=0 rateGBps=12.5 at t=0
+Node 2 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=1 rateGBps=12.5 at t=0
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=0 rateGBps=12.5 at t=0
+Node 3 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=1 rateGBps=12.5 at t=0
+Node 3 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=0 part=0 rateGBps=6.25 at t=0
+Node 3 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=0 part=0 rateGBps=6.25 at t=0
+Node 5 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=0 part=0 rateGBps=6.25 at t=0
+Node 5 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=0 part=0 rateGBps=6.25 at t=0
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=172868
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=173378
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=177054
+Node 2 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=342772
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=0 rateGBps=12.5 at t=342772
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=1 rateGBps=12.5 at t=342772
+Node 3 chan 0: RDMA send to 2 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=343358
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=347326
+Node 0 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=0 part=0 rateGBps=6.25 at t=347326
+Node 0 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=0 part=0 rateGBps=6.25 at t=347326
+Node 3 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=0 nElems=524288 at t=350826
+Node 3 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=0 nElems=524288 at t=351166
+Node 5 chan 1: RDMA send to 0 physically drained (sender side) bid=7 sid=0 iter=0 nElems=524288 at t=351222
+Node 5 chan 0: RDMA send to 0 physically drained (sender side) bid=6 sid=0 iter=0 nElems=524288 at t=352052
+Node 5 chan 1: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=11 sid=0 iter=0 part=0 rateGBps=6.25 at t=352052
+Node 5 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=10 sid=0 iter=0 part=0 rateGBps=6.25 at t=352052
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=520374
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=690646
+Node 2 chan 1: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=7 sid=0 iter=0 part=0 rateGBps=6.25 at t=690646
+Node 2 chan 0: RDMA send to 5 totalBytes=2097152 over 1 lane(s) bid=6 sid=0 iter=0 part=0 rateGBps=6.25 at t=690646
+Node 0 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=0 nElems=524288 at t=698001
+Node 0 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=0 nElems=524288 at t=698333
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=0 rateGBps=12.5 at t=698333
+Node 0 chan 0: RDMA send to 3 totalBytes=2097152 over 1 lane(s) bid=5 sid=0 iter=0 part=1 rateGBps=12.5 at t=698333
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=0 rateGBps=12.5 at t=698783
+Node 3 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=4 sid=0 iter=0 part=1 rateGBps=12.5 at t=698783
+Node 5 chan 1: RDMA send to 3 physically drained (sender side) bid=11 sid=0 iter=0 nElems=524288 at t=704157
+Node 5 chan 0: RDMA send to 3 physically drained (sender side) bid=10 sid=0 iter=0 nElems=524288 at t=704493
+Node 5 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=9 sid=0 iter=0 part=0 rateGBps=6.25 at t=704493
+Node 5 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=8 sid=0 iter=0 part=0 rateGBps=6.25 at t=704493
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=1091662
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=1106827
+Node 2 chan 1: RDMA send to 5 physically drained (sender side) bid=7 sid=0 iter=0 nElems=524288 at t=1282739
+Node 2 chan 0: RDMA send to 5 physically drained (sender side) bid=6 sid=0 iter=0 nElems=524288 at t=1287573
+Node 5 chan 1: RDMA send to 2 physically drained (sender side) bid=9 sid=0 iter=0 nElems=524288 at t=1303912
+Node 5 chan 0: RDMA send to 2 physically drained (sender side) bid=8 sid=0 iter=0 nElems=524288 at t=1304912
+Node 3 chan 0: RDMA send to 0 physically drained (sender side) bid=4 sid=0 iter=0 nElems=524288 at t=1378511
+Node 0 chan 0: RDMA send to 3 physically drained (sender side) bid=5 sid=0 iter=0 nElems=524288 at t=1385641

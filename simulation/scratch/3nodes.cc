@@ -15,12 +15,19 @@ using namespace ns3;
 
 int main(int argc, char *argv[]) {
 	NS_LOG_COMPONENT_DEFINE("3NODES_TEST");
-    LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
+//    LogComponentEnable("CollectivesApplication", LOG_LEVEL_ALL);
 	// LogComponentEnable("SwitchNode", LOG_LEVEL_ALL);
-    LogComponentEnable("RdmaHw", LOG_LEVEL_ALL);
-    uint32_t inputBytes = (1 << 20);
+  //  LogComponentEnable("RdmaHw", LOG_LEVEL_ALL);
+    uint32_t inputBytes = (1 << 20) * 4;
+		uint32_t protoChunkBytes = (1 << 20) * 2;
+		uint32_t maxMsgsInFlight = 8;
 	CommandLine cmd;
 	cmd.AddValue("inputBytes", "Total input size in bytes", inputBytes);
+	cmd.AddValue("protoChunkBytes", "chunk size for algo pipelining", protoChunkBytes);
+	// Transport pipelining depth (NCCL_STEPS analogue). 1 serializes messages on a qp, which
+	// costs a full RTT of idle wire at every message boundary -- only visible once algorithm
+	// pipelining puts more than one message on a qp at a time.
+	cmd.AddValue("maxMsgsInFlight", "messages a qp may have in flight at once", maxMsgsInFlight);
 	cmd.Parse(argc, argv);
 
     NodeContainer gpunodes;
@@ -41,7 +48,7 @@ int main(int argc, char *argv[]) {
     // transmission delay in RdmaFabricHelper's BDP/RTT calculation.
     link_helper0.SetDeviceAttribute("Mtu", UintegerValue(1500));
     link_helper0.SetChannelAttribute("Delay", StringValue("1us"));
-    link_helper0.SetDeviceAttribute("DataRate", StringValue("71Gbps"));
+    link_helper0.SetDeviceAttribute("DataRate", StringValue("65Gbps"));
 
     NetDeviceContainer devs0_0 = link_helper0.Install(gpunodes.Get(0), regswtches.Get(0));
 
@@ -53,6 +60,7 @@ int main(int argc, char *argv[]) {
     Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(1));
     Config::SetDefault("ns3::RdmaHw::L2ChunkSize", UintegerValue(4000));
     Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
+    Config::SetDefault("ns3::RdmaHw::MaxMsgsInFlight", UintegerValue(maxMsgsInFlight));
 
     // ---- RDMA fabric: addressing, switch/nvswitch routing, RdmaHw/RdmaDriver ----
     // (also installs the internet stack on gpunodes -- do not call
@@ -109,6 +117,7 @@ int main(int argc, char *argv[]) {
     app_helper.SetAttribute("DataType", EnumValue(dtype));
     app_helper.SetAttribute("ChunkSize", UintegerValue(CHUNK_SIZE));
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(CORRECTNESS_CHECK));
+		app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(protoChunkBytes));
     ApplicationContainer apps = app_helper.Install<GPU>(gpunodes);
 
     NS_LOG_INFO("Finished installing collective apps.");

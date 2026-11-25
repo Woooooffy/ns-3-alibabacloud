@@ -8,6 +8,7 @@
 #include "ns3/uinteger.h"
 #include "ns3/double.h"
 #include "switch-node.h"
+#include <set>
 #include "qbb-net-device.h"
 #include "ppp-header.h"
 #include "ns3/int-header.h"
@@ -35,8 +36,14 @@ TypeId SwitchNode::GetTypeId (void)
 			MakeUintegerAccessor(&SwitchNode::m_ccMode),
 			MakeUintegerChecker<uint32_t>())
 	.AddAttribute("AckHighPrio",
-			"Set high priority for ACK/NACK or not",
-			UintegerValue(0),
+			"Send ACK/NACK in queue 0, the strict-priority control class (with PFC and QCN), "
+			"instead of the data queue of the packet's priority group. On by default because "
+			"that is how RoCE fabrics carry them: an ack queued FIFO behind reverse-direction "
+			"data inflates the sender's RTT past the window the fabric helper sized, and with no "
+			"standing queue to absorb it every such delay idles the wire -- 1A flowId+nic ran "
+			"86% -> 93% of its host link on turning this on. Queue 0 also bypasses MMU "
+			"admission and PFC, as a control class should.",
+			UintegerValue(1),
 			MakeUintegerAccessor(&SwitchNode::m_ackHighPrio),
 			MakeUintegerChecker<uint32_t>())
 	.AddAttribute("MaxRtt",
@@ -49,6 +56,18 @@ TypeId SwitchNode::GetTypeId (void)
 			BooleanValue(false),
 			MakeBooleanAccessor(&SwitchNode::m_customFlowForwarding),
 			MakeBooleanChecker())
+	.AddAttribute("DebugDropMcastFlowId",
+			"Debug: drop one copy (on the last port of its replicate rule) of the first multicast "
+			"packet with this flow id and DebugDropMcastSeq, once per run. 4294967295 = off.",
+			UintegerValue(MscclFlowIdHeader::NO_FLOW_ID),
+			MakeUintegerAccessor(&SwitchNode::m_debugDropMcastFlowId),
+			MakeUintegerChecker<uint32_t>())
+	.AddAttribute("DebugDropMcastSeq",
+			"Debug: the sequence number (byte offset on its qp) of the packet DebugDropMcastFlowId drops. "
+			"Pick one that is not its qp's last packet: a loss is only detected when a later packet arrives.",
+			UintegerValue(0),
+			MakeUintegerAccessor(&SwitchNode::m_debugDropMcastSeq),
+			MakeUintegerChecker<uint64_t>())
   ;
   return tid;
 }
@@ -67,6 +86,28 @@ SwitchNode::SwitchNode(){
 		m_lastPktSize[i] = m_lastPktTs[i] = 0;
 	for (uint32_t i = 0; i < pCnt; i++)
 		m_u[i] = 0;
+	// Zeroed for the same reason NVSwitchNode's constructor zeroes them: the monitors below
+	// early-out by comparing the live counter against these, so reading them uninitialized
+	// makes the first sample of every port either spuriously printed or spuriously skipped.
+	for (uint32_t i = 0; i < pCnt; i++)
+		last_txBytes[i] = last_port_qlen[i] = 0;
+}
+
+uint32_t SwitchNode::FlowHash(const CustomHeader &ch) const {
+	union {
+		uint8_t u8[4+4+2+2];
+		uint32_t u32[3];
+	} buf;
+	buf.u32[0] = ch.sip;
+	buf.u32[1] = ch.dip;
+	if (ch.l3Prot == 0x6)
+		buf.u32[2] = ch.tcp.sport | ((uint32_t)ch.tcp.dport << 16);
+	else if (ch.l3Prot == 0x11)
+		buf.u32[2] = ch.udp.sport | ((uint32_t)ch.udp.dport << 16);
+	else if (ch.l3Prot == 0xFC || ch.l3Prot == 0xFD)
+		buf.u32[2] = ch.ack.sport | ((uint32_t)ch.ack.dport << 16);
+
+	return EcmpHash(buf.u8, 12, m_ecmpSeed);
 }
 
 int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){
@@ -81,20 +122,7 @@ int SwitchNode::GetOutDev(Ptr<const Packet> p, CustomHeader &ch){
 	auto &nexthops = entry->second;
 
 	// pick one next hop based on hash
-	union {
-		uint8_t u8[4+4+2+2];
-		uint32_t u32[3];
-	} buf;
-	buf.u32[0] = ch.sip;
-	buf.u32[1] = ch.dip;
-	if (ch.l3Prot == 0x6)
-		buf.u32[2] = ch.tcp.sport | ((uint32_t)ch.tcp.dport << 16);
-	else if (ch.l3Prot == 0x11)
-		buf.u32[2] = ch.udp.sport | ((uint32_t)ch.udp.dport << 16);
-	else if (ch.l3Prot == 0xFC || ch.l3Prot == 0xFD)
-		buf.u32[2] = ch.ack.sport | ((uint32_t)ch.ack.dport << 16);
-
-	uint32_t idx = EcmpHash(buf.u8, 12, m_ecmpSeed) % nexthops.size();
+	uint32_t idx = FlowHash(ch) % nexthops.size();
 	return nexthops[idx];
 }
 
@@ -117,9 +145,24 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 	int idx = -1;
 	if (m_customFlowForwarding && ch.l3Prot == 0x11 && ch.udp.mscclFlowId != MscclFlowIdHeader::NO_FLOW_ID){ // UDP data packet: try custom flow match before falling back to ECMP
 		auto search = m_flowForwardingTable.find(ch.udp.mscclFlowId);
-		if (search != m_flowForwardingTable.end()){
-			idx = static_cast<int>(search->second);
-			NS_LOG_INFO("Switch " << m_id << " msccl flow-forwarding rule matched for flow " << ch.udp.mscclFlowId << ", sending out port " << idx);
+		if (search == m_flowForwardingTable.end() || search->second.empty()){
+			++m_flowRuleMisses;
+		} else {
+			++m_flowRuleHits;
+			const std::vector<uint32_t>& ports = search->second;
+			if (m_replicateFlows.count(ch.udp.mscclFlowId)){
+				// A multicast branch point: one copy out of every listed port. Each copy is
+				// admitted, PFC-checked and queued on its own, so a full egress drops only its
+				// branch -- and the ingress buffer is charged once per copy (a slight over-count
+				// against a shared-buffer switch, which would hold one cell for all of them).
+				ReplicateToPorts(p, ch, ports);
+				return;
+			}
+			// The rule pins this flow to a next-hop *neighbor*; when several parallel ports reach
+			// that neighbor, any of them keeps the dictated path, so hash within the candidate set
+			// rather than always taking one port and leaving the other uplinks idle.
+			idx = static_cast<int>(ports[ports.size() == 1 ? 0 : FlowHash(ch) % ports.size()]);
+			NS_LOG_INFO("Switch " << m_id << " msccl flow-forwarding rule matched for flow " << ch.udp.mscclFlowId << ", sending out port " << idx << " (of " << ports.size() << " port(s) toward the rule's next hop)");
 			if (idx != GetOutDev(p, ch)){
 				NS_LOG_DEBUG("Switch " << m_id << " flow-forwarding rule for flow " << ch.udp.mscclFlowId << " sends out port " << idx << "; ECMP lookup would have sent to port " << GetOutDev(p, ch));
 			}
@@ -130,36 +173,80 @@ void SwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		NS_LOG_INFO("Switch " << m_id << " default ECMP lookup: sending out port " << idx << " for destination IP " << Ipv4Address(ch.dip));
 	}
 	if (idx >= 0){
-		NS_ASSERT_MSG(m_devices[idx]->IsLinkUp(), "The routing table look up should return link that is up");
-
-		// determine the qIndex
-		uint32_t qIndex;
-		if (ch.l3Prot == 0xFF || ch.l3Prot == 0xFE || (m_ackHighPrio && (ch.l3Prot == 0xFD || ch.l3Prot == 0xFC))){  //QCN or PFC or NACK, go highest priority
-			qIndex = 0;
-		}else{
-			qIndex = (ch.l3Prot == 0x06 ? 1 : ch.udp.pg); // if TCP, put to queue 1
-		}
-		// std::cout << "qIndex is: " << qIndex << std::endl;
-
-		// admission control
-		FlowIdTag t;
-		p->PeekPacketTag(t);
-		uint32_t inDev = t.GetFlowId();
-		if (qIndex != 0){ //not highest priority
-			if (m_mmu->CheckIngressAdmission(inDev, qIndex, p->GetSize()) && m_mmu->CheckEgressAdmission(idx, qIndex, p->GetSize())){			// Admission control
-				m_mmu->UpdateIngressAdmission(inDev, qIndex, p->GetSize());
-				m_mmu->UpdateEgressAdmission(idx, qIndex, p->GetSize());
-			}else{
-				return; // Drop
-			}
-			CheckAndSendPfc(inDev, qIndex);
-		}
-		m_bytes[inDev][idx][qIndex] += p->GetSize();
-		m_devices[idx]->SwitchSend(qIndex, p, ch);
+		EnqueueOut(p, ch, idx);
 	}else
 	{
+		// No routing-table entry for this destination. This is a black hole: the packet is
+		// gone, the receiver sees a sequence gap, and in no-ack mode (L2AckInterval=0) the
+		// resulting NACK surfaces only as RdmaHw's "shouldn't receive ack". Silence here cost
+		// a long diagnosis once; say it out loud, but once per (switch, destination) so a
+		// systematic hole does not drown the run in output.
+		static std::set<std::pair<uint32_t, uint32_t>> reported;
+		if (reported.insert(std::make_pair(m_id, ch.dip)).second){
+			printf("%lu %u Drop: no route to %u.%u.%u.%u (dropped at switch, black hole)\n",
+				Simulator::Now().GetTimeStep(), m_id,
+				(ch.dip >> 24) & 0xff, (ch.dip >> 16) & 0xff, (ch.dip >> 8) & 0xff, ch.dip & 0xff);
+			fflush(stdout);
+		}
 		return; // Drop
 	}
+}
+
+// One copy of a multicast packet per port of its replicate rule. The copies are taken before `p`
+// itself is queued (it goes out the last port), so none of them sees a later change to it.
+void SwitchNode::ReplicateToPorts(Ptr<Packet> p, CustomHeader &ch, const std::vector<uint32_t>& ports){
+	// Debug drop (DebugDropMcastFlowId/DebugDropMcastSeq): lose the copy on this rule's LAST port
+	// of the first packet matching both, once per run across all switches. It exists to put a
+	// single, known loss on a single branch, which a lossless run never produces: with
+	// aggregated acks that receiver alone must NAK and the sender must rewind to it; with UD
+	// the receiver must report a gap and the run must not complete.
+	static bool s_debugDropFired = false;
+	int dropPort = -1;
+	if (!s_debugDropFired && m_debugDropMcastFlowId != MscclFlowIdHeader::NO_FLOW_ID
+		&& ch.udp.mscclFlowId == m_debugDropMcastFlowId && ch.udp.seq == m_debugDropMcastSeq){
+		s_debugDropFired = true;
+		dropPort = static_cast<int>(ports.back());
+		printf("%lu %u DEBUG: dropped multicast flow %u seq %lu on port %d (DebugDropMcastFlowId)\n",
+			(unsigned long) Simulator::Now().GetTimeStep(), m_id, ch.udp.mscclFlowId,
+			(unsigned long) ch.udp.seq, dropPort);
+		fflush(stdout);
+	}
+	for (size_t i = 0; i < ports.size(); ++i){
+		const int port = static_cast<int>(ports[i]);
+		if (port == dropPort) continue;
+		EnqueueOut(i + 1 == ports.size() ? p : p->Copy(), ch, port);
+	}
+}
+
+// Queue choice, MMU admission, PFC and transmit for one packet on one egress port. Shared by the
+// unicast path and every multicast copy, so both get identical queueing and PFC.
+void SwitchNode::EnqueueOut(Ptr<Packet> p, CustomHeader &ch, int idx){
+	NS_ASSERT_MSG(m_devices[idx]->IsLinkUp(), "The routing table look up should return link that is up");
+
+	// determine the qIndex
+	uint32_t qIndex;
+	if (ch.l3Prot == 0xFF || ch.l3Prot == 0xFE || (m_ackHighPrio && (ch.l3Prot == 0xFD || ch.l3Prot == 0xFC))){  //QCN or PFC or NACK, go highest priority
+		qIndex = 0;
+	}else{
+		qIndex = (ch.l3Prot == 0x06 ? 1 : ch.udp.pg); // if TCP, put to queue 1
+	}
+	// std::cout << "qIndex is: " << qIndex << std::endl;
+
+	// admission control
+	FlowIdTag t;
+	p->PeekPacketTag(t);
+	uint32_t inDev = t.GetFlowId();
+	if (qIndex != 0){ //not highest priority
+		if (m_mmu->CheckIngressAdmission(inDev, qIndex, p->GetSize()) && m_mmu->CheckEgressAdmission(idx, qIndex, p->GetSize())){			// Admission control
+			m_mmu->UpdateIngressAdmission(inDev, qIndex, p->GetSize());
+			m_mmu->UpdateEgressAdmission(idx, qIndex, p->GetSize());
+		}else{
+			return; // Drop
+		}
+		CheckAndSendPfc(inDev, qIndex);
+	}
+	m_bytes[inDev][idx][qIndex] += p->GetSize();
+	m_devices[idx]->SwitchSend(qIndex, p, ch);
 }
 
 uint32_t SwitchNode::EcmpHash(const uint8_t* key, size_t len, uint32_t seed) {
@@ -213,8 +300,10 @@ void SwitchNode::ClearTable(){
 	m_rtTable.clear();
 }
 
-void SwitchNode::AddFlowForwardingRule(uint32_t flowId, uint32_t port){
-	m_flowForwardingTable[flowId] = port;
+void SwitchNode::AddFlowForwardingRule(uint32_t flowId, const std::vector<uint32_t>& ports, bool replicate){
+	m_flowForwardingTable[flowId] = ports;
+	if (replicate) m_replicateFlows.insert(flowId);
+	else m_replicateFlows.erase(flowId);
 }
 
 // This function can only be called in switch mode
@@ -363,7 +452,9 @@ int SwitchNode::log2apprx(int x, int b, int m, int l){
 */
 void SwitchNode::PrintSwitchQlen(FILE* qlen_output){
 	uint32_t n_dev = this->GetNDevices();
-	for(uint32_t i = 1; i < n_dev; ++i){
+	// From port 0, not 1: switches get no InternetStackHelper and therefore no loopback
+	// device, so device 0 is the first real link and skipping it dropped a port from the log.
+	for(uint32_t i = 0; i < n_dev; ++i){
 		uint64_t port_len = 0;
 		for(uint32_t j=0; j < qCnt; ++j){
 			port_len += m_mmu->egress_bytes[i][j];
@@ -385,7 +476,8 @@ void SwitchNode::PrintSwitchQlen(FILE* qlen_output){
 */
 void SwitchNode::PrintSwitchBw(FILE* bw_output, uint32_t bw_mon_interval){
 	uint32_t n_dev = this->GetNDevices();
-	for(uint32_t i = 1; i < n_dev; ++i){
+	// From port 0 -- see PrintSwitchQlen above.
+	for(uint32_t i = 0; i < n_dev; ++i){
 		if(last_txBytes[i] == m_txBytes[i]){
 			continue;
 		}

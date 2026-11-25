@@ -337,6 +337,11 @@ void QbbHelper::GetTraceFromPacket(TraceFormat &tr, Ptr<QbbNetDevice> dev, Ptr<c
 		case 0x11:
 			tr.data.sport = hdr.udp.sport;
 			tr.data.dport = hdr.udp.dport;
+			// Tracing only, and knowingly approximate: whether a packet carries a
+			// MscclFlowIdHeader is a property of its RDMA connection, which this trace hook has
+			// no handle on (see CustomHeader::SetMscclFlowIdPresent). The parse assumes present,
+			// so a connection that emits none has its payload reported 4 bytes high here. Nothing
+			// in the simulation reads this field; the receiver's own sizing is exact.
 			tr.data.payload = p->GetSize() - hdr.GetSerializedSize();
 			// SeqTsHeader
 			tr.data.seq = hdr.udp.seq;

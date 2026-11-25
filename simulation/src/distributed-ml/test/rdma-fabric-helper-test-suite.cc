@@ -91,6 +91,56 @@ void RdmaFabric3NodesTestCase::DoRun() {
 
 /**
  * @ingroup rdma-fabric-helper-tests
+ * The 3nodes topology again, with acks on: each peer window must carry N*MTU of coalescing
+ * headroom plus one MTU of serialization per hop for the ack's way back, on top of the
+ * 3nodes.cc BDP (38500 B), so neither lag can stall the sender, while
+ * the base RTT stays the pure path RTT. The golden-value case above runs with acks off
+ * (L2AckInterval's default of 0) and so also pins that no-ack windows are unchanged.
+ */
+class RdmaFabricAckHeadroomTestCase : public TestCase {
+  public:
+    RdmaFabricAckHeadroomTestCase();
+
+  private:
+    void DoRun() override;
+};
+
+RdmaFabricAckHeadroomTestCase::RdmaFabricAckHeadroomTestCase()
+    : TestCase("RdmaFabricHelper adds ack-coalescing headroom to the BDP window when acks are on") {
+}
+
+void RdmaFabricAckHeadroomTestCase::DoRun() {
+    NodeContainer gpus;
+    for (uint32_t i = 0; i < 3; ++i) {
+        gpus.Add(CreateObject<GPU>());
+    }
+    NodeContainer switches;
+    switches.Add(CreateObject<SwitchNode>());
+
+    QbbHelper qbb = MakeQbbHelper(1500, "1us", "71Gbps");
+    qbb.Install(gpus.Get(0), switches.Get(0));
+    qbb.Install(gpus.Get(1), switches.Get(0));
+    qbb.Install(gpus.Get(2), switches.Get(0));
+
+    // RdmaHw reads these at construction, inside Build, so they must precede it. Defaults are
+    // process-global across test cases: restore them below so case order cannot matter.
+    Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(1500));
+    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(1));
+    Config::SetDefault("ns3::RdmaHw::AckEveryNPackets", UintegerValue(8));
+    RdmaFabricHelper().Build(gpus, switches, NodeContainer());
+    Config::SetDefault("ns3::RdmaHw::L2AckInterval", UintegerValue(0));
+    Config::SetDefault("ns3::RdmaHw::AckEveryNPackets", UintegerValue(8));
+
+    Ptr<GPU> gpu0 = DynamicCast<GPU>(gpus.Get(0));
+    // 38499.75 B BDP (71 Gbps x 4338 ns) + 8 * 1500 B coalescing + 2999.75 B for the ack's
+    // way back (71 Gbps x 338 ns, one MTU of serialization per hop) = 53499.5 -> 53500.
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(1), 53500u, "acked window must be BDP + N*MTU + return-path serialization");
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerWin(2), 53500u, "acked window must be BDP + N*MTU + return-path serialization");
+    NS_TEST_ASSERT_MSG_EQ(gpu0->GetPeerBaseRtt(1), 4338u, "base RTT must stay the pure path RTT, without headroom");
+}
+
+/**
+ * @ingroup rdma-fabric-helper-tests
  * Builds the exact 4-GPU/4-switch topology from
  * topology/examples/fat_tree_pod.topo (k=4, no core switches, qbb link
  * Mtu=1500 matching `rdma Mtu=1500`) and asserts the same-rack vs.
@@ -199,6 +249,7 @@ class RdmaFabricHelperTestSuite : public TestSuite {
 RdmaFabricHelperTestSuite::RdmaFabricHelperTestSuite()
     : TestSuite("rdma-fabric-helper", Type::UNIT) {
     AddTestCase(new RdmaFabric3NodesTestCase, TestCase::Duration::QUICK);
+    AddTestCase(new RdmaFabricAckHeadroomTestCase, TestCase::Duration::QUICK);
     AddTestCase(new RdmaFabricFatTreePodTestCase, TestCase::Duration::QUICK);
     AddTestCase(new RdmaFabricMultiRailTestCase, TestCase::Duration::QUICK);
 }

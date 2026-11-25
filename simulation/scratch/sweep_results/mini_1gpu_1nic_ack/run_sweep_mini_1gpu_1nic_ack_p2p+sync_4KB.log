@@ -1,0 +1,196 @@
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...
+-- Using default output directory /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build
+-- [33mProceeding without cmake-format[0m
+-- find_external_library: SQLite3 was found.
+-- Some or all of the gtk libraries were not found. (missing: GTK3_GTK_LIBRARY GTK3_GTK_INCLUDE_DIR GTK3_GDK_INCLUDE_DIR GTK3_GDKCONFIG_INCLUDE_DIR GTK3_GDK_LIBRARY) 
+-- [33mGTK3 was not found. Continuing without it.[0m
+-- LibXML2 was found.
+-- LibRT was found.
+-- [33mVisualizer requires Python bindings[0m
+-- Found PkgConfig: /usr/bin/pkg-config (found version "1.8.0") 
+-- [33mGSL was not found. Continuing without it.[0m
+-- [33mdocs: doxygen documentation not enabled due to missing dependencies: dia[0m
+-- Failed to locate sphinx-build executable (missing: SPHINX_EXECUTABLE) 
+-- [33mdocs: sphinx documentation not enabled due to missing dependencies: Sphinx[0m
+-- Precompiled headers were enabled
+-- Processing src/antenna
+-- Processing src/aodv
+-- Processing src/applications
+-- Processing src/bridge
+-- Processing src/brite
+-- [33mfind_external_library: brite was not found. Missing headers: "Brite.h" and missing libraries: "brite".[0m
+-- [33mSkipping src/brite[0m
+-- Processing src/buildings
+-- Processing src/click
+-- [33mfind_external_library: click was not found. Missing headers: "simclick.h" and missing libraries: "nsclick;click".[0m
+-- [33mSkipping src/click[0m
+-- Processing src/config-store
+-- Processing src/core
+-- Boost Units have been found.
+-- Processing src/csma
+-- Processing src/csma-layout
+-- Processing src/distributed-ml
+-- Processing src/dsdv
+-- Processing src/dsr
+-- Processing src/energy
+-- Processing src/fd-net-device
+-- Checking for module 'libdpdk'
+--   Package 'libdpdk', required by 'virtual:world', not found
+-- Processing src/flow-monitor
+-- Processing src/internet
+-- Processing src/internet-apps
+-- Processing src/lr-wpan
+-- Processing src/lte
+-- Processing src/mesh
+-- Processing src/mobility
+-- Processing src/netanim
+-- Processing src/network
+-- Processing src/nix-vector-routing
+-- Processing src/olsr
+-- Processing src/openflow
+-- [33mfind_external_library: openflow was not found. Missing headers: "openflow.h" and missing libraries: "openflow".[0m
+-- [33mSkipping src/openflow[0m
+-- Processing src/point-to-point
+-- Processing src/point-to-point-layout
+-- Processing src/propagation
+-- Processing src/sixlowpan
+-- Processing src/spectrum
+-- Processing src/stats
+-- Processing src/tap-bridge
+-- Processing src/test
+-- Processing src/topology-read
+-- Processing src/traffic-control
+-- Processing src/uan
+-- Processing src/virtual-net-device
+-- Processing src/wave
+-- Processing src/wifi
+-- Processing src/wimax
+-- ---- Summary of optional ns-3 features:
+Build profile                 : debug
+Build directory               : /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build
+BRITE Integration             : [31mOFF (missing dependency)[0m
+DES Metrics event collection  : OFF (not requested)
+DPDK NetDevice                : OFF (not requested)
+Emulation FdNetDevice         : [32mON[0m
+Examples                      : OFF (not requested)
+File descriptor NetDevice     : [32mON[0m
+GNU Scientific Library (GSL)  : [31mOFF (missing dependency)[0m
+GtkConfigStore                : [31mOFF (missing dependency)[0m
+LibXml2 support               : [32mON[0m
+MPI Support                   : OFF (not requested)
+Multithreaded Simulation      : OFF (not requested)
+ns-3 Click Integration        : [31mOFF (missing dependency)[0m
+ns-3 OpenFlow Integration     : [31mOFF (missing dependency)[0m
+Netmap emulation FdNetDevice  : [31mOFF (missing dependency)[0m
+PyViz visualizer              : [31mOFF (missing dependency)[0m
+Python API Scanning Support   : OFF (not requested)
+Python Bindings               : OFF (not requested)
+Real Time Simulator           : [32mON[0m
+SQLite support                : [32mON[0m
+Tap Bridge                    : [32mON[0m
+Tap FdNetDevice               : [32mON[0m
+Tests                         : OFF (not requested)
+
+
+Modules configured to be built:
+antenna                   aodv                      applications              
+bridge                    buildings                 config-store              
+core                      csma                      csma-layout               
+distributed-ml            dsdv                      dsr                       
+energy                    fd-net-device             flow-monitor              
+internet                  internet-apps             lr-wpan                   
+lte                       mesh                      mobility                  
+netanim                   network                   nix-vector-routing        
+olsr                      point-to-point            point-to-point-layout     
+propagation               sixlowpan                 spectrum                  
+stats                     tap-bridge                topology-read             
+traffic-control           uan                       virtual-net-device        
+wave                      wifi                      wimax                     
+
+
+Modules that cannot be built:
+brite                     click                     mpi                       
+mtp                       openflow                  p4                        
+test                      visualizer                
+
+
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/cmake-cache
+[0/2] Re-checking globbed directories...
+[1/39] Linking CXX shared library ../build/lib/libns3.36.1-stats-debug.so
+[2/39] Linking CXX shared library ../build/lib/libns3.36.1-network-debug.so
+[3/39] Linking CXX shared library ../build/lib/libns3.36.1-virtual-net-device-debug.so
+[4/39] Linking CXX shared library ../build/lib/libns3.36.1-config-store-debug.so
+[5/39] Linking CXX shared library ../build/lib/libns3.36.1-bridge-debug.so
+[6/39] Linking CXX shared library ../build/lib/libns3.36.1-topology-read-debug.so
+[7/39] Linking CXX shared library ../build/lib/libns3.36.1-fd-net-device-debug.so
+[8/39] Linking CXX shared library ../build/lib/libns3.36.1-csma-debug.so
+[9/39] Linking CXX shared library ../build/lib/libns3.36.1-energy-debug.so
+[10/39] Linking CXX shared library ../build/lib/libns3.36.1-mobility-debug.so
+[11/39] Linking CXX shared library ../build/lib/libns3.36.1-propagation-debug.so
+[12/39] Linking CXX shared library ../build/lib/libns3.36.1-traffic-control-debug.so
+[13/39] Linking CXX shared library ../build/lib/libns3.36.1-uan-debug.so
+[14/39] Linking CXX shared library ../build/lib/libns3.36.1-buildings-debug.so
+[15/39] Linking CXX shared library ../build/lib/libns3.36.1-spectrum-debug.so
+[16/39] Linking CXX shared library ../build/lib/libns3.36.1-lr-wpan-debug.so
+[17/39] Building CXX object scratch/CMakeFiles/scratch_mini_1gpu_1nic.dir/mini_1gpu_1nic.cc.o
+In file included from /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/include/ns3/point-to-point-module.h:8,
+                 from /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/mini_harness.h:28,
+                 from /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/mini_1gpu_1nic.cc:28:
+/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/include/ns3/sim-setting.h: In member function ‘void SimSetting::Serialize(FILE*)’:
+/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/include/ns3/sim-setting.h:19:35: warning: variable ‘j’ set but not used [-Wunused-but-set-variable]
+   19 |                         for (auto j : i.second)
+      |                                   ^
+[18/39] Linking CXX shared library ../build/lib/libns3.36.1-internet-debug.so
+[19/39] Linking CXX shared library ../build/lib/libns3.36.1-dsdv-debug.so
+[20/39] Linking CXX shared library ../build/lib/libns3.36.1-tap-bridge-debug.so
+[21/39] Linking CXX shared library ../build/lib/libns3.36.1-nix-vector-routing-debug.so
+[22/39] Linking CXX shared library ../build/lib/libns3.36.1-sixlowpan-debug.so
+[23/39] Linking CXX shared library ../build/lib/libns3.36.1-flow-monitor-debug.so
+[24/39] Linking CXX shared library ../build/lib/libns3.36.1-olsr-debug.so
+[25/39] Linking CXX shared library ../build/lib/libns3.36.1-internet-apps-debug.so
+[26/39] Linking CXX shared library ../build/lib/libns3.36.1-applications-debug.so
+[27/39] Linking CXX shared library ../build/lib/libns3.36.1-wimax-debug.so
+[28/39] Linking CXX shared library ../build/lib/libns3.36.1-point-to-point-debug.so
+[29/39] Linking CXX shared library ../build/lib/libns3.36.1-wifi-debug.so
+[30/39] Linking CXX shared library ../build/lib/libns3.36.1-csma-layout-debug.so
+[31/39] Linking CXX shared library ../build/lib/libns3.36.1-point-to-point-layout-debug.so
+[32/39] Linking CXX shared library ../build/lib/libns3.36.1-distributed-ml-debug.so
+[33/39] Linking CXX shared library ../build/lib/libns3.36.1-aodv-debug.so
+[34/39] Linking CXX shared library ../build/lib/libns3.36.1-wave-debug.so
+[35/39] Linking CXX shared library ../build/lib/libns3.36.1-dsr-debug.so
+[36/39] Linking CXX shared library ../build/lib/libns3.36.1-mesh-debug.so
+[37/39] Linking CXX shared library ../build/lib/libns3.36.1-lte-debug.so
+[38/39] Linking CXX shared library ../build/lib/libns3.36.1-netanim-debug.so
+[39/39] Linking CXX executable ../build/scratch/ns3.36.1-mini_1gpu_1nic-debug
+Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_1gpu_1nic_ack_p2p+sync_4KB.csv (every 100 ns, 4 NICs)
+Topology: mini_1g1n (4 GPUs, 4 switches, 0 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_1g1n_a2a_p2p_no_rate.xml
+Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_1gpu_1nic_ack_p2p+sync_4KB.csv
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_1gpu_1nic_ack_p2p+sync_4KB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_1gpu_1nic_ack_p2p+sync_4KB.csv
+Total simulated time: 6445 nanoseconds
+Simulator end (last event of any kind): 9300 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_1gpu_1nic_ack_p2p+sync_4KB.csv
+Fabric end (last switch data dequeue): 5414 ns
+Switch-to-switch data bytes over 8 ports: min 4148 / mean 8296 / max 12444 (max/mean 1.5)
+Busiest switch port: sw 4 port 2 -> node 6, 1991 ns of data at line rate (36.7758% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 12  with a rate: 0 (0.0%)  without: 12
+  packets paced: 12 (0.0 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       0 (0.0%)
+    cc rate (message tail): 12 (100.0%)
+  bytes shaped by the XML rate: 0.0 of 0.0 MB (0.0%)
+Ack requests (AckReq) over 12 data packets: 12 closing a message, 0 filling the window (0.00% of packets)
+alltoall algorithm bandwidth: 10.1685 GB/s
+-- GLOB mismatch!
+Algorithm XML: honoring 0 network dependence(s) over 12 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
+Skipping correctness check.
+Done simulation

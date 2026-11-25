@@ -6,7 +6,13 @@
 #include "json.hpp"
 #include "ns3/switch-node.h"
 #include "ns3/qbb-channel.h"
+#include <algorithm>
 #include <fstream>
+#include <sstream>
+#include <vector>
+#include <map>
+#include <set>
+#include <utility>
 
 namespace ns3
 {
@@ -38,6 +44,11 @@ namespace ns3
 		NS_FATAL_ERROR("XML support not enabled"); \
 	} while (0)
 	#endif
+
+	// See the declaration: keeps json.hpp out of algo_topology.h.
+	struct AlgoTopology::JsonDoc {
+		const nlohmann::json& root;
+	};
 
 	AlgoTopology::AlgoTopology(){}
 
@@ -106,9 +117,180 @@ namespace ns3
   	return AlgoParseResult::ALGO_PARSE_SUCCESS;
 	}
 
+	#ifdef HAVE_LIBXML2
+	// Strict integer list for the <tb> send/recv attributes: comma-separated, each token a whole
+	// base-10 integer (surrounding blanks allowed), no empty tokens. These used to go through
+	// atoi, which reads a multicast's send="2,3" as 2 and silently drops every other receiver --
+	// the run then hangs on the receivers that never get their bytes.
+	static bool ParseIntList(const char* text, std::vector<int>& out){
+		out.clear();
+		const std::string s(text);
+		size_t start = 0;
+		while (true){
+			const size_t comma = s.find(',', start);
+			const std::string tok = s.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+			const char* b = tok.c_str();
+			char* end = nullptr;
+			const long v = strtol(b, &end, 10);
+			if (end == b) return false; // empty token or not a number
+			while (*end == ' ' || *end == '\t') ++end;
+			if (*end != '\0') return false;
+			out.push_back((int) v);
+			if (comma == std::string::npos) break;
+			start = comma + 1;
+		}
+		return !out.empty();
+	}
+
+	// Post-parse validation of one GPU's network gates (see mscclTransfer::netGate/netWait).
+	// Gates are node-local, so this runs once per <gpu> after all of its threadblocks are read.
+	// Also records mscclAlgo->maxNetGate, which is what the runtime sizes its gate vectors from.
+	static AlgoParseResult ValidateNetGates(struct mscclAlgorithm* algo, int gpuId){
+		algo->maxNetGate = MSCCL_GATE_NONE;
+		// gate id -> the (bid, sid) that declares it. A gate has exactly one owner; two owners
+		// would make "the gate is open" mean whichever message completed first.
+		std::map<int16_t, std::pair<int, int>> owner;
+		for (int bid = 0; bid < algo->nBlocks; ++bid){
+			struct mscclThreadBlock* tb = &algo->mscclTBs[bid];
+			for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+				int16_t gate = tb->transfers[sid].netGate;
+				if (gate == MSCCL_GATE_NONE) continue;
+				auto existing = owner.find(gate);
+				if (existing != owner.end()){
+					NS_LOG_WARN("MSCCL: gate " << gate << " on GPU (" << gpuId << ") is declared by two ops: tb "
+						<< existing->second.first << " step " << existing->second.second << " and tb " << bid
+						<< " step " << sid << ". A gate must have exactly one owner.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				owner[gate] = {bid, (int)sid};
+				if (gate > algo->maxNetGate) algo->maxNetGate = gate;
+			}
+		}
+
+		// Every gate waited on must be owned by some op, or the waiter hangs forever.
+		for (int bid = 0; bid < algo->nBlocks; ++bid){
+			struct mscclThreadBlock* tb = &algo->mscclTBs[bid];
+			for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+				int16_t gate = tb->transfers[sid].netWait;
+				if (gate == MSCCL_GATE_NONE) continue;
+				if (owner.find(gate) == owner.end()){
+					NS_LOG_WARN("MSCCL: tb " << bid << " step " << sid << " on GPU (" << gpuId << ") waits on gate "
+						<< gate << ", which no op declares via netgate. The threadblock would never run.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				if (gate > algo->maxNetGate) algo->maxNetGate = gate;
+			}
+		}
+
+		if (owner.empty()) return AlgoParseResult::ALGO_PARSE_SUCCESS;
+
+		// The runtime allocates its gate vectors densely up to maxNetGate, so a typo'd id would
+		// otherwise cost real memory on every node. Nothing needs ids this large: one gate per
+		// wave boundary per GPU is single digits in practice.
+		if (algo->maxNetGate > MSCCL_MAX_GATE_ID){
+			NS_LOG_WARN("MSCCL: gate id " << algo->maxNetGate << " on GPU (" << gpuId << ") exceeds the largest supported gate id (" << MSCCL_MAX_GATE_ID << ").");
+			return AlgoParseResult::INVALID_USE_ERROR;
+		}
+
+		// Cycle check over intra-tb step order plus wait->owner edges. Rather than a DFS over
+		// the edge set, replay the schedule under gate ordering alone: advance every tb as far
+		// as its gates allow, opening a gate once its owning step is passed, until no tb moves.
+		// A cycle is exactly the case where some tb is still parked once nothing can progress --
+		// and the stall point names the tb and gate, which a DFS would not.
+		std::set<int16_t> open;
+		std::vector<uint16_t> ptr(algo->nBlocks, 0);
+		bool progress = true;
+		while (progress){
+			progress = false;
+			for (int bid = 0; bid < algo->nBlocks; ++bid){
+				struct mscclThreadBlock* tb = &algo->mscclTBs[bid];
+				while (ptr[bid] < tb->nsteps){
+					struct mscclTransfer* tran = &tb->transfers[ptr[bid]];
+					if (tran->netWait != MSCCL_GATE_NONE && open.find(tran->netWait) == open.end()) break;
+					if (tran->netGate != MSCCL_GATE_NONE) open.insert(tran->netGate);
+					ptr[bid]++;
+					progress = true;
+				}
+			}
+		}
+		for (int bid = 0; bid < algo->nBlocks; ++bid){
+			struct mscclThreadBlock* tb = &algo->mscclTBs[bid];
+			if (ptr[bid] < tb->nsteps){
+				NS_LOG_WARN("MSCCL: gate cycle on GPU (" << gpuId << "): tb " << bid << " is stuck at step "
+					<< ptr[bid] << " waiting on gate " << tb->transfers[ptr[bid]].netWait
+					<< ", which can never open. The schedule would deadlock silently.");
+				return AlgoParseResult::INVALID_USE_ERROR;
+			}
+		}
+		return AlgoParseResult::ALGO_PARSE_SUCCESS;
+	}
+	#endif
+
+	// Post-parse validation of one GPU's network dependences (see mscclTransfer::netDepBid).
+	// Every reference must name a real step of a real threadblock on this same GPU, and that
+	// step must be one that actually puts bytes on the wire -- a dependence on a step that
+	// never produces a network completion would park the waiter forever.
+	static AlgoParseResult ValidateNetDeps(struct mscclAlgorithm* algo, int gpuId){
+		for (int bid = 0; bid < algo->nBlocks; ++bid){
+			struct mscclThreadBlock* tb = &algo->mscclTBs[bid];
+			for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+				struct mscclTransfer* tran = &tb->transfers[sid];
+				if (tran->netDepBid == MSCCL_NETDEP_NONE) continue;
+				if (tran->netDepBid >= algo->nBlocks){
+					NS_LOG_WARN("MSCCL: tb " << bid << " step " << sid << " on GPU (" << gpuId
+						<< ") has a network dependence on threadblock " << tran->netDepBid
+						<< ", which does not exist on this GPU (" << algo->nBlocks << " threadblocks).");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				struct mscclThreadBlock* dep = &algo->mscclTBs[tran->netDepBid];
+				if (tran->netDepStep < 0 || tran->netDepStep >= (int16_t) dep->nsteps){
+					NS_LOG_WARN("MSCCL: tb " << bid << " step " << sid << " on GPU (" << gpuId
+						<< ") has a network dependence on step " << tran->netDepStep << " of threadblock "
+						<< tran->netDepBid << ", which has only " << dep->nsteps << " steps.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				// Only send-bearing ops signal network completion (MscclChannel::OnRdmaSendComplete).
+				uint8_t t = dep->transfers[tran->netDepStep].type;
+				const bool sends = (t == MSCCL_SEND || t == MSCCL_RECV_COPY_SEND
+					|| t == MSCCL_RECV_REDUCE_SEND || t == MSCCL_RECV_REDUCE_COPY_SEND);
+				if (!sends){
+					NS_LOG_WARN("MSCCL: tb " << bid << " step " << sid << " on GPU (" << gpuId
+						<< ") waits on the network completion of tb " << tran->netDepBid << " step "
+						<< tran->netDepStep << ", which is not a send (type " << (int) t
+						<< ") and therefore never completes on the wire.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+			}
+		}
+		return AlgoParseResult::ALGO_PARSE_SUCCESS;
+	}
+
 	AlgoParseResult AlgoTopology::ParseAlgoXml(const char* file_path){
 		// NOTE: entire method makes use of libxml2-dev being installed
 		#ifdef HAVE_LIBXML2
+		// A re-parse replaces the algorithm wholesale, so stale endpoints from a previous XML
+		// must not survive to be joined against the next switch JSON.
+		m_flowEndpoints.clear();
+		m_nNetDeps = 0;
+		m_nPacingDeps = 0;
+		m_nRemoteDeps = 0;
+		m_nRemoteNotifies = 0;
+		m_remoteWaits.clear();
+		std::map<std::pair<int, int>, int> remoteNotifiesPerPair; // (notifier, waiter) -> per pass
+		std::set<std::string> unknownStepAttrs;
+		m_nSendSteps = 0;
+		m_nMulticastBlocks = 0;
+		m_nMulticastSendSteps = 0;
+		// Per-connection traffic, keyed (sender, receiver, channel), collected over every GPU so
+		// the two ends of each connection can be compared once all are parsed. The runtime
+		// matches arriving bytes to posted recvs by position on (sender, channel) alone, so a
+		// count disagreement silently misplaces data rather than failing. For a multicast that
+		// check is the only thing standing between a malformed XML and a hang, so it is fatal
+		// there; for unicast it is reported but left non-fatal, as it always has been.
+		struct SendUse { int bid; std::vector<int16_t> group; int steps; long cnt; uint32_t flowId; };
+		struct RecvUse { int steps = 0; long cnt = 0; std::set<uint32_t> flowIds; };
+		std::map<std::tuple<int, int, int>, std::vector<SendUse>> sendUses;
+		std::map<std::tuple<int, int, int>, RecvUse> recvUses;
 		int nRanks = GetNGpuNodes();
 		xmlDocPtr doc = xmlReadFile(file_path, NULL, 0);
 	  if (!doc) return AlgoParseResult::FILE_READ_ERROR;
@@ -129,6 +311,14 @@ namespace ns3
 		int nChunksPerLoop;
   	XML_GET_PROP_INT(root, "nchannels", nChannels);
   	XML_GET_PROP_INT(root, "nchunksperloop", nChunksPerLoop);
+		// Reset per-parse algorithm summary captured for the topo-driven helper/tester paths.
+		m_nChannels = nChannels;
+		m_nChunksPerLoop = nChunksPerLoop;
+		m_nInputChunks = 0;
+		m_nScratchChunks = 0;
+		m_activeGpuIds.clear();
+		m_dataGpuIds.clear();
+		m_relayGpuIds.clear();
 		const char*  collectiveType;
 		CollectiveType collType;
 		XML_GET_PROP_STR(root, "coll", collectiveType);
@@ -189,8 +379,54 @@ namespace ns3
       	if (xmlStrcmp(tb->name, BAD_CAST "tb") != 0) continue;
 				int bid, recvpeer, sendpeer, channelId;
         XML_GET_PROP_INT(tb, "id", bid);
-        XML_GET_PROP_INT(tb, "recv", recvpeer);
-        XML_GET_PROP_INT(tb, "send", sendpeer);
+        // send may list several receivers (switch multicast); recv never does. Both are parsed
+        // strictly -- see ParseIntList for what atoi used to do to "2,3".
+        std::vector<int> sendPeerList;
+        {
+          xmlChar* recvProp = xmlGetProp(tb, BAD_CAST "recv");
+          xmlChar* sendProp = xmlGetProp(tb, BAD_CAST "send");
+          if (!recvProp || !sendProp){
+            if (recvProp) xmlFree(recvProp);
+            if (sendProp) xmlFree(sendProp);
+            return AlgoParseResult::XML_PARSE_ERROR;
+          }
+          const std::string recvRaw((const char*)recvProp), sendRaw((const char*)sendProp);
+          xmlFree(recvProp);
+          xmlFree(sendProp);
+          std::vector<int> recvList;
+          if (!ParseIntList(recvRaw.c_str(), recvList) || recvList.size() != 1){
+            NS_LOG_UNCOND("Algorithm XML: GPU " << gpuId << " tb " << bid << " has recv=\"" << recvRaw
+              << "\"; expected one rank or -1 (only send may list several peers).");
+            return AlgoParseResult::INVALID_USE_ERROR;
+          }
+          if (!ParseIntList(sendRaw.c_str(), sendPeerList)){
+            NS_LOG_UNCOND("Algorithm XML: GPU " << gpuId << " tb " << bid << " has send=\"" << sendRaw
+              << "\"; expected one rank, -1, or a comma-separated list of receiver ranks (multicast).");
+            return AlgoParseResult::INVALID_USE_ERROR;
+          }
+          recvpeer = recvList[0];
+          if (sendPeerList.size() == 1){
+            sendpeer = sendPeerList[0];
+          } else {
+            // A multicast: every receiver must be a real, distinct, other GPU. The single-peer
+            // checks below cannot see the list, so it is validated here in full.
+            std::sort(sendPeerList.begin(), sendPeerList.end());
+            for (size_t i = 0; i < sendPeerList.size(); ++i){
+              const int p = sendPeerList[i];
+              if (p < 0 || p >= ngpus || p == gpuId || (i > 0 && p == sendPeerList[i - 1])){
+                NS_LOG_UNCOND("Algorithm XML: GPU " << gpuId << " tb " << bid << " has send=\"" << sendRaw
+                  << "\"; a multicast's receivers must be distinct ranks of other GPUs in [0, " << ngpus << ").");
+                return AlgoParseResult::INVALID_USE_ERROR;
+              }
+            }
+            if (sendPeerList.size() > MSCCL_MAX_MULTICAST_PEERS){
+              NS_LOG_UNCOND("Algorithm XML: GPU " << gpuId << " tb " << bid << " multicasts to "
+                << sendPeerList.size() << " receivers; at most " << MSCCL_MAX_MULTICAST_PEERS << " are supported.");
+              return AlgoParseResult::INVALID_USE_ERROR;
+            }
+            sendpeer = MSCCL_PEER_MULTICAST;
+          }
+        }
         XML_GET_PROP_INT(tb, "chan", channelId);
         if (bid < 0){
           NS_LOG_WARN("MSCCL: bid must be not negative. bid " << bid);
@@ -198,6 +434,13 @@ namespace ns3
         }
 				if (bid >= MSCCL_MAX_NUM_THREAD_BLOCKS){
 					NS_LOG_WARN("MSCCL: too many thread blocks are requested. Max thread blocks: " << MSCCL_MAX_NUM_THREAD_BLOCKS);
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				// MSCCL_MAX_THREAD_BLOCK_ID is MSCCL_MAX_NUM_THREAD_BLOCKS - 1 (see msccl.h), so this
+				// is currently redundant with the bound above; kept as a separate check since the two
+				// aren't guaranteed to stay numerically identical if either is retuned independently.
+				if (bid > MSCCL_MAX_THREAD_BLOCK_ID){
+					NS_LOG_WARN("MSCCL: thread block id (" << bid << ") on GPU (" << gpuId << ") exceeds the largest representable id (" << MSCCL_MAX_THREAD_BLOCK_ID << ").");
 					return AlgoParseResult::INVALID_USE_ERROR;
 				}
 				if (blockExists[bid]){
@@ -212,7 +455,7 @@ namespace ns3
 				}
 				struct mscclThreadBlock* sTB = &mscclAlgo->mscclTBs[bid];
 				sTB->nsteps = 0;
-				if (recvpeer < -1 || sendpeer < -1){
+				if (recvpeer < -1 || (sendpeer < -1 && sendPeerList.size() == 1)){
 					NS_LOG_WARN("MSCCL: wrong recvpeer (" << recvpeer << ") or sendpeer (" << sendpeer << ") in threadblock (" << bid << ") on gpu (" << gpuId << ").");
 					return INVALID_USE_ERROR;
 				}
@@ -229,7 +472,22 @@ namespace ns3
 
 				sTB->recvpeer = recvpeer;
 				sTB->sendpeer = sendpeer;
-				if (channelId < 0 || channelId > MAXCHANNELS){
+				// Receiver set, ascending: empty, one unicast peer, or a multicast's full list.
+				std::vector<int16_t> tbPeers;
+				if (sendpeer >= 0) tbPeers.push_back((int16_t) sendpeer);
+				else if (sendpeer == MSCCL_PEER_MULTICAST)
+					for (int p : sendPeerList) tbPeers.push_back((int16_t) p);
+				sTB->nSendPeers = (int16_t) tbPeers.size();
+				for (size_t i = 0; i < tbPeers.size(); ++i) sTB->sendPeers[i] = tbPeers[i];
+				const bool isMulticast = (sendpeer == MSCCL_PEER_MULTICAST);
+				if (isMulticast) ++m_nMulticastBlocks;
+				// Per-threadblock tallies for the cross-GPU connection check after the parse.
+				int tbSendSteps = 0, tbRecvSteps = 0;
+				long tbSendCnt = 0, tbRecvCnt = 0;
+				uint32_t tbSendFlowId = MSCCL_FLOW_ID_NONE;
+				bool tbSendFlowIdsAgree = true;
+				std::set<uint32_t> tbRecvFlowIds;
+				if (channelId < 0 || channelId >= MAXCHANNELS){
 					NS_LOG_WARN("MSCCL: threadblock (" << bid << ") on GPU (" << gpuId << ") has an invalid channel (" << channelId << ").");
 					return INVALID_USE_ERROR;
 				}
@@ -247,11 +505,26 @@ namespace ns3
 				int numReductions = 0;
 
 				int numTransfers = 0;
+				int numRemoteNotifyEntries = 0; // packed into sTB->remoteNotifyRank
 
       		/* ---- Iterate over <step> ---- */
 				for (xmlNodePtr stepNode = tb->children; stepNode; stepNode = stepNode->next) {
 					if (stepNode->type != XML_ELEMENT_NODE) continue;
 					if (xmlStrcmp(stepNode->name, BAD_CAST "step") != 0) continue;
+					// An attribute this parser does not read is dropped without a trace, which is
+					// how remotedep went unenforced in every 2C run. Name each one once per parse.
+					for (xmlAttrPtr attr = stepNode->properties; attr; attr = attr->next){
+						static const std::set<std::string> known = {
+							"s", "type", "srcbuf", "srcoff", "dstbuf", "dstoff", "cnt", "depid", "deps",
+							"hasdep", "mscclflowid", "rate", "netgate", "netwait", "netdepid", "netdeps",
+							"remotedep", "remotedeps", "remotenotify"};
+						std::string attrName((const char*)attr->name);
+						if (!known.count(attrName) && unknownStepAttrs.insert(attrName).second){
+							NS_LOG_UNCOND("Algorithm XML: WARNING -- step attribute \"" << attrName
+								<< "\" (first seen on GPU " << gpuId << " tb " << bid << ") is not read by "
+								<< "this simulator and will be IGNORED.");
+						}
+					}
 
 
 					int s, srcoffset, dstoffset, depend_bid, depend_step, has_dependence, count;
@@ -265,7 +538,31 @@ namespace ns3
 
 					XML_GET_PROP_INT(stepNode, "cnt", count);
 					XML_GET_PROP_STR(stepNode, "type", type);
-					XML_GET_PROP_INT(stepNode, "depid", depend_bid);
+					// depid is read by hand rather than with XML_GET_PROP_INT: an epoch-pacing gate
+					// carries MSCCL_PACING_DEPID_SUFFIX ("2p"), which atoi would silently drop,
+					// turning a netDeps-ablated gate back into an always-on data dependence.
+					bool depend_pacing = false;
+					{
+						xmlChar* depidProp = xmlGetProp(stepNode, BAD_CAST "depid");
+						if (!depidProp) return AlgoParseResult::XML_PARSE_ERROR;
+						char* end = nullptr;
+						depend_bid = (int) strtol((const char*)depidProp, &end, 10);
+						const bool empty = (end == (char*)depidProp);
+						if (!empty && *end == MSCCL_PACING_DEPID_SUFFIX){
+							depend_pacing = true;
+							++end;
+						}
+						const bool trailing = (*end != '\0');
+						std::string raw((const char*)depidProp);
+						xmlFree(depidProp);
+						if (empty || trailing || (depend_pacing && depend_bid < 0)){
+							NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+								<< gpuId << ") has depid=\"" << raw << "\"; expected an integer, optionally "
+								<< "suffixed with '" << MSCCL_PACING_DEPID_SUFFIX << "' on a real (>= 0) "
+								<< "threadblock id to mark an epoch-pacing gate.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+					}
 					XML_GET_PROP_INT(stepNode, "deps", depend_step);
 					XML_GET_PROP_INT(stepNode, "hasdep", has_dependence);
 
@@ -279,6 +576,124 @@ namespace ns3
 							mscclFlowId = (uint32_t) atoi((const char*)flowIdProp);
 							xmlFree(flowIdProp);
 						}
+					}
+
+					// optional host-side pacing rate in GB/s (see mscclTransfer::rate);
+					// read leniently like mscclflowid since not every step carries one
+					double rate = 0.0;
+					{
+						xmlChar* rateProp = xmlGetProp(stepNode, BAD_CAST "rate");
+						if (rateProp) {
+							rate = atof((const char*)rateProp);
+							xmlFree(rateProp);
+						}
+					}
+
+					// optional network gates (see mscclTransfer::netGate/netWait), read leniently
+					// like mscclflowid/rate so every existing XML parses unchanged with both -1
+					int16_t netGate = MSCCL_GATE_NONE;
+					int16_t netWait = MSCCL_GATE_NONE;
+					{
+						xmlChar* gateProp = xmlGetProp(stepNode, BAD_CAST "netgate");
+						if (gateProp) {
+							netGate = (int16_t) atoi((const char*)gateProp);
+							xmlFree(gateProp);
+						}
+						xmlChar* waitProp = xmlGetProp(stepNode, BAD_CAST "netwait");
+						if (waitProp) {
+							netWait = (int16_t) atoi((const char*)waitProp);
+							xmlFree(waitProp);
+						}
+					}
+
+					// Network dependence (see mscclTransfer::netDepBid). Read leniently like the
+					// attributes above, but counted: an emitter that names these differently, or a
+					// runtime that stops honoring them, silently converts a congestion-free
+					// schedule into "release every flow at t=0" with no other symptom than the
+					// congestion it then measures. The parse summary below is what makes that
+					// visible.
+					int16_t netDepBid = MSCCL_NETDEP_NONE;
+					int16_t netDepStep = MSCCL_NETDEP_NONE;
+					{
+						xmlChar* ndBidProp = xmlGetProp(stepNode, BAD_CAST "netdepid");
+						xmlChar* ndStepProp = xmlGetProp(stepNode, BAD_CAST "netdeps");
+						if (ndBidProp) netDepBid = (int16_t) atoi((const char*)ndBidProp);
+						if (ndStepProp) netDepStep = (int16_t) atoi((const char*)ndStepProp);
+						if (ndBidProp) xmlFree(ndBidProp);
+						if (ndStepProp) xmlFree(ndStepProp);
+						// Half a dependence is always a bug: one of the pair was renamed, or the
+						// emitter wrote an id with no step. Silently ignoring it would reintroduce
+						// exactly the failure this counter exists to catch.
+						if ((netDepBid >= 0) != (netDepStep >= 0)){
+							NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+								<< gpuId << ") has netdepid=" << netDepBid << " but netdeps=" << netDepStep
+								<< " -- both must be present together.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						if (netDepBid >= 0){
+							if (netDepBid > MSCCL_MAX_THREAD_BLOCK_ID){
+								NS_LOG_WARN("MSCCL: netdepid (" << netDepBid << ") at step " << s
+									<< " of threadblock (" << bid << ") on GPU (" << gpuId
+									<< ") exceeds the largest representable thread block id ("
+									<< MSCCL_MAX_THREAD_BLOCK_ID << ").");
+								return AlgoParseResult::INVALID_USE_ERROR;
+							}
+							++m_nNetDeps;
+						}
+					}
+					// Remote pacing gate (see mscclTransfer::remoteDepRank). Read leniently like the
+					// other optional attributes, but validated strictly: a half-written gate, or a
+					// notification aimed at a rank that cannot be waiting, is an emitter bug that
+					// would otherwise hang or silently unpace the run.
+					int16_t remoteDepRank = MSCCL_REMOTEDEP_NONE;
+					int16_t remoteDepOrdinal = MSCCL_REMOTEDEP_NONE;
+					std::vector<int16_t> remoteNotify;
+					{
+						xmlChar* rdProp = xmlGetProp(stepNode, BAD_CAST "remotedep");
+						xmlChar* rdsProp = xmlGetProp(stepNode, BAD_CAST "remotedeps");
+						const bool hasRd = rdProp != nullptr, hasRds = rdsProp != nullptr;
+						if (rdProp){ remoteDepRank = (int16_t) atoi((const char*)rdProp); xmlFree(rdProp); }
+						if (rdsProp){ remoteDepOrdinal = (int16_t) atoi((const char*)rdsProp); xmlFree(rdsProp); }
+						if (hasRd != hasRds){
+							NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+								<< gpuId << ") has only one of remotedep/remotedeps -- both must be present together.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						if (hasRd && (remoteDepRank < 0 || remoteDepRank >= ngpus || remoteDepRank == gpuId
+							|| remoteDepOrdinal < 1)){
+							NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+								<< gpuId << ") has remotedep=" << remoteDepRank << " remotedeps=" << remoteDepOrdinal
+								<< "; the rank must be another GPU in [0, " << ngpus << ") and the ordinal >= 1.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						xmlChar* rnProp = xmlGetProp(stepNode, BAD_CAST "remotenotify");
+						if (rnProp){
+							std::string list((const char*)rnProp);
+							xmlFree(rnProp);
+							std::stringstream ss(list);
+							std::string tok;
+							while (std::getline(ss, tok, ',')){
+								char* end = nullptr;
+								long r = strtol(tok.c_str(), &end, 10);
+								if (tok.empty() || *end != '\0' || r < 0 || r >= ngpus || r == gpuId
+									|| std::find(remoteNotify.begin(), remoteNotify.end(), (int16_t) r) != remoteNotify.end()){
+									NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU ("
+										<< gpuId << ") has remotenotify=\"" << list << "\"; expected distinct ranks of "
+										<< "other GPUs in [0, " << ngpus << "), comma-separated.");
+									return AlgoParseResult::INVALID_USE_ERROR;
+								}
+								remoteNotify.push_back((int16_t) r);
+							}
+						}
+					}
+					if (netGate < MSCCL_GATE_NONE || netWait < MSCCL_GATE_NONE){
+						NS_LOG_WARN("MSCCL: netgate/netwait must be >= -1, but step " << s << " of threadblock (" << bid << ") on GPU (" << gpuId << ") has netgate=" << netGate << " netwait=" << netWait << ".");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+					// Self-deadlock: the op would be waiting on the gate only it can open.
+					if (netGate != MSCCL_GATE_NONE && netGate == netWait){
+						NS_LOG_WARN("MSCCL: step " << s << " of threadblock (" << bid << ") on GPU (" << gpuId << ") both opens and waits on gate " << netGate << " -- self-deadlock.");
+						return AlgoParseResult::INVALID_USE_ERROR;
 					}
 
 					if (s >= MSCCL_MAX_NUM_STEPS){
@@ -341,9 +756,52 @@ namespace ns3
 						return AlgoParseResult::INVALID_USE_ERROR;
 					}
 
+					if (netGate != MSCCL_GATE_NONE || netWait != MSCCL_GATE_NONE){
+						// nop steps never become transfers (see the `transferType != -1` guard below),
+						// so a gate attribute on one would be silently discarded pacing.
+						if (transferType == -1){
+							NS_LOG_WARN("MSCCL: netgate/netwait on a nop step (step " << s << " of threadblock (" << bid << ") on GPU (" << gpuId << ")). Nops carry no transfer, so the gate would be discarded.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						// Gates model the network, and only the RDMA path opens them: a gate on a
+						// non-sending op could never open (or never be observed), hanging the run.
+						if (!hasSend){
+							NS_LOG_WARN("MSCCL: netgate/netwait on a non-sending step (type \"" << type << "\", step " << s << " of threadblock (" << bid << ") on GPU (" << gpuId << ")). Gates are valid only on send-bearing ops.");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+					}
+
+					if (remoteDepRank != MSCCL_REMOTEDEP_NONE && (transferType == -1 || !hasSend)){
+						NS_LOG_WARN("MSCCL: remotedep on a non-sending step (type \"" << type << "\", step " << s
+							<< " of threadblock (" << bid << ") on GPU (" << gpuId << ")). Remote gates hold sends only.");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+					// A notification means "this GPU has taken delivery", which is the completion of a
+					// pure receive. A fused recv-send completes on the send side, so it is rejected
+					// rather than given a meaning the emitter did not intend.
+					if (!remoteNotify.empty() && (transferType == -1 || !hasRecv || hasSend)){
+						NS_LOG_WARN("MSCCL: remotenotify on step " << s << " of threadblock (" << bid << ") on GPU ("
+							<< gpuId << ") of type \"" << type << "\"; only pure receives (r, rrc) may notify.");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+
 					if (depend_bid >= 0) {
+						// Same ceiling as the tb id itself -- this is the field it is stored in.
+						if (depend_bid > MSCCL_MAX_THREAD_BLOCK_ID){
+							NS_LOG_WARN("MSCCL: depid (" << depend_bid << ") at step " << s << " of threadblock (" << bid << ") on GPU (" << gpuId << ") exceeds the largest representable thread block id (" << MSCCL_MAX_THREAD_BLOCK_ID << ").");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						// numDependences counts every step carrying a depid, including the nops the
+						// emitter inserts to express multi-dependency ops, so it is bounded by the step
+						// count only when the s values are distinct -- which the parser never checks.
+						if (numDependences >= MSCCL_MAX_NUM_STEPS){
+							NS_LOG_WARN("MSCCL: too many dependences in threadblock (" << bid << ") on GPU (" << gpuId << "). Max: " << MSCCL_MAX_NUM_STEPS);
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
 						sTB->dependentBid[numDependences] = depend_bid;
 						sTB->dependentStep[numDependences] = depend_step;
+						sTB->dependentPacing[numDependences] = depend_pacing ? 1 : 0;
+						if (depend_pacing) ++m_nPacingDeps;
 						numDependences++;
 					}
 
@@ -377,6 +835,31 @@ namespace ns3
 						msccltran->dstbuffer = dstbufferInt;
 						msccltran->dstoffset = dstoffset;
 						msccltran->mscclFlowId = mscclFlowId;
+						msccltran->rate = rate;
+						// mscclAlgo is memset to 0 at parse start, so these must be written on every
+						// transfer -- otherwise an absent attribute would read as gate 0.
+						msccltran->netGate = netGate;
+						msccltran->netWait = netWait;
+						msccltran->netDepBid = netDepBid;
+						msccltran->netDepStep = netDepStep;
+						msccltran->remoteDepRank = remoteDepRank;
+						msccltran->remoteDepOrdinal = remoteDepOrdinal;
+						msccltran->remoteNotifyPointer = (int16_t) numRemoteNotifyEntries;
+						msccltran->numRemoteNotify = (int16_t) remoteNotify.size();
+						if (numRemoteNotifyEntries + (int) remoteNotify.size() > MSCCL_MAX_NUM_STEPS){
+							NS_LOG_WARN("MSCCL: too many remotenotify entries in threadblock (" << bid << ") on GPU ("
+								<< gpuId << "). Max: " << MSCCL_MAX_NUM_STEPS);
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						for (int16_t waiter : remoteNotify){
+							sTB->remoteNotifyRank[numRemoteNotifyEntries++] = waiter;
+							++remoteNotifiesPerPair[std::make_pair(gpuId, (int) waiter)];
+							++m_nRemoteNotifies;
+						}
+						if (remoteDepRank != MSCCL_REMOTEDEP_NONE){
+							m_remoteWaits.push_back(RemoteWait{gpuId, remoteDepRank, remoteDepOrdinal, bid, s});
+							++m_nRemoteDeps;
+						}
 
 						if (count < 0 || count >= MSCCL_MAX_COUNT){
 							NS_LOG_WARN("MSCCL: count (" << count << ") must be positive and less than " << MSCCL_MAX_COUNT);
@@ -385,18 +868,54 @@ namespace ns3
 						msccltran->count = count;
 
 						if (hasSend){
-							if (sendpeer < 0){
+							++m_nSendSteps;
+							if (tbPeers.empty()){
 								NS_LOG_WARN("MSCCL: there is a send in threadblock (" << bid << ") on GPU (" << gpuId << ") without a sendpeer.");
 								return AlgoParseResult::INVALID_USE_ERROR;
 							}
-							if (mscclChannel->nSendPeers >= MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL){
-								NS_LOG_WARN("MSCCL: too many sends per channel. Max allowed " << MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL);
-								return AlgoParseResult::INVALID_USE_ERROR;
+							++tbSendSteps;
+							tbSendCnt += count;
+							if (isMulticast){
+								++m_nMulticastSendSteps;
+								// One tree per threadblock, hence one flow id: it is the id the
+								// switches replicate on, so a step without one, or a second id in
+								// the same threadblock, names a route the tables do not hold.
+								if (tbSendSteps == 1) tbSendFlowId = mscclFlowId;
+								else if (mscclFlowId != tbSendFlowId) tbSendFlowIdsAgree = false;
 							}
+							// Record the flow's endpoints for ParseSwitchJson's benefit. Only the send
+							// side is recorded: the peer's matching recv step repeats this same flow
+							// id, and taking it from there would name the receiver as the sender.
+							// A flow id names exactly one route (sender + receiver set), which is
+							// what lets a switch forward on the id alone; an id reused for another
+							// route would install one route's rules for the other's packets. The
+							// same route on several channels (replicas) is legitimate and, as
+							// before, the last channel seen is the one recorded.
+							if (mscclFlowId != MSCCL_FLOW_ID_NONE){
+								auto prev = m_flowEndpoints.find(mscclFlowId);
+								if (prev != m_flowEndpoints.end()
+									&& (prev->second.srcGpu != (uint32_t) gpuId || prev->second.peers != tbPeers)){
+									NS_LOG_UNCOND("Algorithm XML: mscclflowid " << mscclFlowId << " is used by GPU "
+										<< prev->second.srcGpu << " and by GPU " << gpuId << " tb " << bid
+										<< " for different routes (sender or receiver set differ). A flow id must name"
+										<< " one route, since switches forward on the id alone.");
+									return AlgoParseResult::INVALID_USE_ERROR;
+								}
+								m_flowEndpoints[mscclFlowId] = FlowEndpoints{
+									(uint32_t) gpuId, (int16_t) sendpeer, channelId, tbPeers};
+							}
+							// The channel's send-peer summary describes unicast connections only; a
+							// multicast has no single peer to file it under (see the commit below).
+							if (sendpeer >= 0){
+								if (mscclChannel->nSendPeers >= MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL){
+									NS_LOG_WARN("MSCCL: too many sends per channel. Max allowed " << MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL);
+									return AlgoParseResult::INVALID_USE_ERROR;
+								}
 
-							struct mscclChannelPeerInfo* sendPeerInfo = &mscclChannel->sendPeerInfo[mscclChannel->nSendPeers];
-							sendPeerInfo->nchunksForPeer[count-1]++;
-							// mscclChannel->nchunksForSendPeer[mscclChannel->nsendPeers][count-1]++;
+								struct mscclChannelPeerInfo* sendPeerInfo = &mscclChannel->sendPeerInfo[mscclChannel->nSendPeers];
+								sendPeerInfo->nchunksForPeer[count-1]++;
+								// mscclChannel->nchunksForSendPeer[mscclChannel->nsendPeers][count-1]++;
+							}
 						}
 						if (hasRecv){
 							if (recvpeer < 0){
@@ -407,6 +926,9 @@ namespace ns3
 								NS_LOG_WARN("MSCCL: too many recvs per channel. Max allowed "<< MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL);
 								return AlgoParseResult::INVALID_USE_ERROR;
 							}
+							++tbRecvSteps;
+							tbRecvCnt += count;
+							if (mscclFlowId != MSCCL_FLOW_ID_NONE) tbRecvFlowIds.insert(mscclFlowId);
 							struct mscclChannelPeerInfo* recvPeerInfo = &mscclChannel->recvPeerInfo[mscclChannel->nRecvPeers];
 							recvPeerInfo->nchunksForPeer[count-1]++;
 							// mscclChannel->nchunksForRecvPeer[mscclChannel->nrecvPeers][count-1]++;
@@ -465,6 +987,24 @@ namespace ns3
 						sTB->nsteps = numTransfers;
 					}
 				} // stepNode
+				if (isMulticast && tbSendSteps > 0 && (!tbSendFlowIdsAgree || tbSendFlowId == MSCCL_FLOW_ID_NONE)){
+					NS_LOG_UNCOND("Algorithm XML: GPU " << gpuId << " tb " << bid << " multicasts, but its send steps "
+						<< (tbSendFlowIdsAgree ? "carry no mscclflowid" : "carry different mscclflowids")
+						<< ". Every send of a multicast threadblock must carry its tree's one flow id: that id is"
+						<< " what the switches replicate on.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				if (tbSendSteps > 0){
+					for (int16_t p : tbPeers)
+						sendUses[std::make_tuple(gpuId, (int) p, channelId)].push_back(
+							SendUse{bid, tbPeers, tbSendSteps, tbSendCnt, tbSendFlowId});
+				}
+				if (tbRecvSteps > 0 && recvpeer >= 0){
+					RecvUse& r = recvUses[std::make_tuple(recvpeer, gpuId, channelId)];
+					r.steps += tbRecvSteps;
+					r.cnt += tbRecvCnt;
+					r.flowIds.insert(tbRecvFlowIds.begin(), tbRecvFlowIds.end());
+				}
 				// channel info calculation
 				for (int c = 0; c < MSCCL_MAX_COUNT; c++){
 					struct mscclChannelPeerInfo* sendPeer = &mscclChannel->sendPeerInfo[mscclChannel->nSendPeers];
@@ -503,8 +1043,177 @@ namespace ns3
 				}
 			}
 
+			{
+				AlgoParseResult gateRes = ValidateNetGates(mscclAlgo, gpuId);
+				if (gateRes != AlgoParseResult::ALGO_PARSE_SUCCESS) return gateRes;
+				AlgoParseResult netDepRes = ValidateNetDeps(mscclAlgo, gpuId);
+				if (netDepRes != AlgoParseResult::ALGO_PARSE_SUCCESS) return netDepRes;
+			}
+
 			mscclAlgo->isValid = true;
+
+			// A GPU that carries at least one threadblock is ACTIVE: it runs steps, so it needs
+			// an application installed. Active splits two ways, and the split matters:
+			//
+			//   DATA participant (i_chunks > 0) -- contributes and receives a slice of the
+			//     collective. These are the ranks the collective is defined over, so it is
+			//     their count, not the active count, that the buffer layout is numbered by.
+			//   RELAY (i_chunks == 0) -- carries no slice of its own and only forwards through
+			//     scratch. A solver picks these up on a partial-participation problem: asked
+			//     to move data between a subset of the GPUs it will happily route a chunk
+			//     through an idle one, so a relay is a non-participant that nonetheless runs.
+			//
+			// Lumping the two together silently corrupted every partial solve: m_nInputChunks
+			// took whichever GPU happened to be parsed last (0 if that was a relay, which then
+			// looks like an empty algorithm), and the tester numbered its participant ranks
+			// over relays too, so every rank's output slice landed at the wrong offset.
+			if (mscclAlgo->nBlocks > 0){
+				m_activeGpuIds.push_back(gpuId);
+				if (iChunks > 0){
+					m_dataGpuIds.push_back(gpuId);
+					// Symmetric collectives give every data rank the same i_chunks; warn if that
+					// assumption is violated rather than silently pick one. Relays are exempt --
+					// i_chunks 0 is what MAKES them relays, not a disagreement.
+					if (m_nInputChunks != 0 && m_nInputChunks != iChunks){
+						NS_LOG_WARN("MSCCL: GPU " << gpuId << " has i_chunks " << iChunks
+							<< " differing from earlier data GPUs (" << m_nInputChunks
+							<< "); topo-driven tester setup assumes a uniform per-rank input size.");
+					}
+					m_nInputChunks = iChunks;
+				} else {
+					m_relayGpuIds.push_back(gpuId);
+				}
+				// Scratch, unlike i_chunks, legitimately varies per rank (a rank that relays more
+				// traffic stages more chunks), so take the maximum: the tester allocates one
+				// uniform scratch buffer and it must cover the hungriest rank's offsets.
+				if (sChunks > m_nScratchChunks) m_nScratchChunks = sChunks;
+			}
     } // gpu
+		// Remote gates cross GPUs, so they can only be checked once every GPU is parsed. A
+		// waiter asking for the i-th notification from a rank that sends it fewer than i per pass
+		// would park forever -- and the event queue would simply drain, which reads as a finished
+		// run with a wrong time rather than as a hang.
+		for (const RemoteWait& w : m_remoteWaits){
+			auto it = remoteNotifiesPerPair.find(std::make_pair((int) w.notifier, w.waiter));
+			const int sent = (it == remoteNotifiesPerPair.end()) ? 0 : it->second;
+			if (sent < w.ordinal){
+				NS_LOG_UNCOND("Algorithm XML: GPU " << w.waiter << " tb " << w.bid << " step " << w.s
+					<< " waits for notification #" << w.ordinal << " from GPU " << w.notifier
+					<< ", but GPU " << w.notifier << " sends it only " << sent << " per pass (remotenotify).");
+				return AlgoParseResult::INVALID_USE_ERROR;
+			}
+		}
+
+		// Both ends of every connection, compared now that every GPU is parsed (see sendUses).
+		{
+			auto groupStr = [](const std::vector<int16_t>& g){
+				std::ostringstream o;
+				for (size_t i = 0; i < g.size(); ++i) o << (i ? "," : "") << g[i];
+				return o.str();
+			};
+			int unicastMismatches = 0;
+			std::string firstUnicastMismatch;
+			for (const auto& [key, uses] : sendUses){
+				const auto& [src, dst, chan] = key;
+				bool multicast = false;
+				int steps = 0;
+				long cnt = 0;
+				for (const SendUse& u : uses){
+					multicast |= (u.group.size() > 1);
+					steps += u.steps;
+					cnt += u.cnt;
+				}
+				auto rit = recvUses.find(key);
+				const RecvUse none{};
+				const RecvUse& r = (rit == recvUses.end()) ? none : rit->second;
+				std::ostringstream where;
+				where << "GPU " << src << " -> GPU " << dst << " on channel " << chan;
+				if (multicast){
+					// A tree must own its connection. The receiver matches arrivals per (sender,
+					// channel) in post order, so a second stream on it -- a unicast along one of the
+					// tree's branches, or another tree -- would interleave with the tree's bytes.
+					// TE-CCL's channel allocator guarantees this (multicast_output_design.md 4.4).
+					if (uses.size() > 1){
+						std::ostringstream tbs;
+						for (size_t i = 0; i < uses.size(); ++i)
+							tbs << (i ? ", " : "") << "tb " << uses[i].bid << " send=\"" << groupStr(uses[i].group) << "\"";
+						NS_LOG_UNCOND("Algorithm XML: " << where.str() << " is used by " << uses.size()
+							<< " threadblocks (" << tbs.str() << "), at least one a multicast. A multicast tree"
+							<< " must be the only stream on each of its connections.");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+					if (r.steps != steps || r.cnt != cnt){
+						NS_LOG_UNCOND("Algorithm XML: " << where.str() << ": GPU " << src << " tb " << uses[0].bid
+							<< " multicasts " << steps << " step(s) / " << cnt << " chunk(s) to {" << groupStr(uses[0].group)
+							<< "}, but GPU " << dst << " posts " << r.steps << " recv step(s) / " << r.cnt
+							<< " chunk(s) from it. Every receiver of a tree must post one matching recv per send.");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+					for (uint32_t fid : r.flowIds){
+						if (fid != uses[0].flowId){
+							NS_LOG_UNCOND("Algorithm XML: " << where.str() << ": GPU " << dst << " receives with mscclflowid "
+								<< fid << ", but the tree it belongs to (GPU " << src << " tb " << uses[0].bid
+								<< ") sends with " << uses[0].flowId << ".");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+					}
+				} else if (r.steps != steps || r.cnt != cnt){
+					if (unicastMismatches++ == 0){
+						std::ostringstream o;
+						o << where.str() << ": " << steps << " send step(s) / " << cnt << " chunk(s) vs "
+						  << r.steps << " recv step(s) / " << r.cnt << " chunk(s)";
+						firstUnicastMismatch = o.str();
+					}
+				}
+			}
+			for (const auto& [key, r] : recvUses){
+				if (sendUses.count(key)) continue;
+				const auto& [src, dst, chan] = key;
+				if (unicastMismatches++ == 0){
+					std::ostringstream o;
+					o << "GPU " << src << " -> GPU " << dst << " on channel " << chan << ": 0 send steps vs "
+					  << r.steps << " recv step(s)";
+					firstUnicastMismatch = o.str();
+				}
+			}
+			if (unicastMismatches > 0){
+				NS_LOG_UNCOND("Algorithm XML: WARNING -- " << unicastMismatches << " unicast connection(s) whose"
+					<< " send and recv steps disagree, e.g. " << firstUnicastMismatch << ". Arrivals are matched"
+					<< " by position, so such a connection misplaces data or hangs.");
+			}
+			if (m_nMulticastBlocks > 0){
+				NS_LOG_UNCOND("Algorithm XML: " << m_nMulticastBlocks << " switch-multicast threadblock(s) carrying "
+					<< m_nMulticastSendSteps << " send step(s); every receiver posts a matching recv stream.");
+			}
+		}
+
+		std::sort(m_activeGpuIds.begin(), m_activeGpuIds.end());
+		std::sort(m_dataGpuIds.begin(), m_dataGpuIds.end());
+		std::sort(m_relayGpuIds.begin(), m_relayGpuIds.end());
+		if (!m_relayGpuIds.empty()){
+			std::ostringstream relayOss;
+			for (size_t i = 0; i < m_relayGpuIds.size(); ++i)
+				relayOss << (i ? ", " : "") << m_relayGpuIds[i];
+			NS_LOG_UNCOND("MSCCL: " << m_dataGpuIds.size() << " data GPUs, plus "
+				<< m_relayGpuIds.size() << " relay GPU(s) carrying threadblocks but no input "
+				<< "chunks (" << relayOss.str() << "). Relays run their steps but hold no slice "
+				<< "of the collective, so they are excluded from participant ranks.");
+		}
+
+		// Unconditional, like the switch-JSON summary. A schedule from a time-indexed solver is
+		// congestion-free only because its network dependences separate flows into epochs; if
+		// this reports 0 while the XML is full of them, the attribute names have drifted and the
+		// run will release every flow at once -- which looks like a congested fabric rather than
+		// like a parse bug, and is very expensive to diagnose from the other end.
+		NS_LOG_UNCOND("Algorithm XML: honoring " << m_nNetDeps << " network dependence(s) and "
+			<< m_nPacingDeps << " epoch-pacing depid(s) over " << m_nSendSteps << " send step(s); "
+			<< m_nRemoteDeps << " remote gate(s) fed by " << m_nRemoteNotifies << " remote notification(s)"
+			<< " (enforced only with HonorRemoteDeps)."
+			<< (m_nNetDeps == 0 && m_nSendSteps > 0
+				? " NOTE: no netdepid/netdeps found -- every send is released as soon as its data"
+				  " dependences allow, so a time-indexed schedule will not be paced as solved."
+				: ""));
+
 		xmlFreeDoc(doc);
 		return ALGO_PARSE_SUCCESS;
 	#else
@@ -512,38 +1221,159 @@ namespace ns3
 	#endif
  	} // ParseAlgoXml
 
-	bool AlgoTopology::ResolveOutPort(Ptr<SwitchNode> sw, Ptr<Node> target, uint32_t& outIfIndex){
-		uint32_t swId = sw->GetId();
+	// Collects every port on `sw` that reaches `target`, so a switch JSON rule -- which names a
+	// next-hop *node*, not a link -- can be validated and installed against all of them. Returns
+	// false only in the case actually worth warning about: the algorithm dictates a next hop that
+	// this switch has no link to at all. Multiple ports toward one neighbor is not an error but
+	// the normal fat-tree case (parallel leaf uplinks to the same spine); all of them are handed
+	// back and SwitchNode picks per flow, since any of them realizes the dictated path.
+	// Lazily maps out every qbb port of `node` by the neighbor it reaches, on first touch.
+	// Called for switches (to validate/resolve a rule's out port) and for GPUs (to find which
+	// of a multi-homed sender's NICs faces a given leaf) -- the walk is identical for both.
+	std::map<uint32_t, std::vector<uint32_t>>& AlgoTopology::SwitchPortCache(Ptr<Node> node){
+		uint32_t swId = node->GetId();
+		auto cached = m_switchPortCache.find(swId);
+		if (cached != m_switchPortCache.end()) return cached->second;
 
-		if (m_switchPortCache.find(swId) == m_switchPortCache.end()){
-			std::map<uint32_t, uint32_t>& neighbors = m_switchPortCache[swId];
-			for (uint32_t i = 0; i < sw->GetNDevices(); ++i){
-				Ptr<NetDevice> dev = sw->GetDevice(i);
-				Ptr<QbbChannel> channel = DynamicCast<QbbChannel>(dev->GetChannel());
-				if (!channel) continue;
-				Ptr<NetDevice> other = (channel->GetDevice(0) == dev) ? channel->GetDevice(1) : channel->GetDevice(0);
-				neighbors[other->GetNode()->GetId()] = dev->GetIfIndex();
-			}
+		std::map<uint32_t, std::vector<uint32_t>>& neighbors = m_switchPortCache[swId];
+		for (uint32_t i = 0; i < node->GetNDevices(); ++i){
+			Ptr<NetDevice> dev = node->GetDevice(i);
+			Ptr<QbbChannel> channel = DynamicCast<QbbChannel>(dev->GetChannel());
+			if (!channel) continue;
+			Ptr<NetDevice> other = (channel->GetDevice(0) == dev) ? channel->GetDevice(1) : channel->GetDevice(0);
+			neighbors[other->GetNode()->GetId()].push_back(dev->GetIfIndex());
 		}
+		return neighbors;
+	}
 
-		std::map<uint32_t, uint32_t>& neighbors = m_switchPortCache[swId];
+	bool AlgoTopology::ResolveOutPorts(Ptr<SwitchNode> sw, Ptr<Node> target, std::vector<uint32_t>& outIfIndices){
+		std::map<uint32_t, std::vector<uint32_t>>& neighbors = SwitchPortCache(sw);
 		auto portIt = neighbors.find(target->GetId());
-		if (portIt == neighbors.end()) return false;
-		outIfIndex = portIt->second;
+		if (portIt == neighbors.end() || portIt->second.empty()) return false;
+		outIfIndices = portIt->second;
 		return true;
 	}
 
-	AlgoParseResult AlgoTopology::ParseSwitchJson(const char* file_path){
+	// Reverse of ResolveOutPorts: which neighbor does this switch's port `ifIndex` reach?
+	// Doubles as the existence check for a JSON-supplied port -- a false return means the
+	// index names no qbb port on this switch, so nothing could be forwarded out of it.
+	bool AlgoTopology::ResolvePortNeighbor(Ptr<SwitchNode> sw, uint32_t ifIndex, uint32_t& neighborNodeId){
+		for (const auto& [neighbor, ports] : SwitchPortCache(sw)){
+			if (std::find(ports.begin(), ports.end(), ifIndex) != ports.end()){
+				neighborNodeId = neighbor;
+				return true;
+			}
+		}
+		return false;
+	}
+
+	// The switch JSON pins each flow to a path but says nothing about which NIC the *sender*
+	// should inject on, and on a multi-homed fabric (e.g. dual-plane, one NIC per plane) that
+	// choice decides the whole path: inject on the wrong plane and every switch along it misses
+	// the flow's rules entirely and falls back to ECMP, so the schedule is silently ignored.
+	// The intended NIC is recoverable, though -- it is the sender's port facing this flow's
+	// *ingress* switch, i.e. whichever switch in the flow's rule set neighbors the sender. This
+	// runs per rule and simply notices when `sw` is that switch.
+	void AlgoTopology::ResolveScheduledNics(Ptr<SwitchNode> sw, uint32_t flowId){
+		auto ep = m_flowEndpoints.find(flowId);
+		if (ep == m_flowEndpoints.end()) return; // rule for a flow the XML never sends
+
+		Ptr<Node> srcGpu = GetGpuNode((int) ep->second.srcGpu);
+		if (!srcGpu) return;
+		std::map<uint32_t, std::vector<uint32_t>>& gpuPorts = SwitchPortCache(srcGpu);
+		auto facing = gpuPorts.find(sw->GetId());
+		if (facing == gpuPorts.end() || facing->second.empty()) return; // not the ingress hop
+
+		// Multiple NICs from one GPU to one leaf would make "the" scheduled NIC ambiguous; no
+		// topology built so far does that, and taking the first keeps the flow on the dictated
+		// path either way (both ports reach the same switch).
+		uint32_t nic = facing->second.front();
+		ConnectionKey key{ep->second.srcGpu, ep->second.peer, ep->second.chan,
+			ep->second.peer == MSCCL_PEER_MULTICAST ? ep->second.peers : std::vector<int16_t>()};
+		auto [it, inserted] = m_scheduledNic.emplace(key, nic);
+		if (!inserted && it->second != nic && m_scheduledNicConflicts.insert(key).second){
+			// RdmaHw binds a qp to one NIC for its lifetime, and MSCCL opens exactly one qp per
+			// (peer, channel), so a schedule that spreads one connection's flows across NICs
+			// cannot be realized. Report it and leave the connection unpinned (see
+			// PublishScheduledNics) rather than honoring whichever flow happened to parse first.
+			NS_LOG_WARN("Switch JSON: gpu " << ep->second.srcGpu << " -> peer " << ep->second.peer
+				<< " on channel " << ep->second.chan << " has flows entering the fabric on two "
+				<< "different NICs (ifIndex " << it->second << " and " << nic << "). One RDMA "
+				<< "connection can only use one NIC, so this connection will keep RdmaHw's ECMP "
+				<< "hashing instead. Re-solve with the plane held constant per (src, dst, channel).");
+		}
+	}
+
+	void AlgoTopology::PublishScheduledNics(){
+		uint32_t pinned = 0, pinnedMulticast = 0;
+		for (const auto& [key, nic] : m_scheduledNic){
+			if (m_scheduledNicConflicts.count(key)) continue;
+			Ptr<GPU> gpu = DynamicCast<GPU, Node>(GetGpuNode((int) key.srcGpu));
+			if (!gpu) continue;
+			if (key.peer == MSCCL_PEER_MULTICAST){
+				gpu->PushGroupNic(key.group, key.chan, nic);
+				++pinnedMulticast;
+				continue;
+			}
+			gpu->PushPeerNic(key.peer, key.chan, nic);
+			++pinned;
+		}
+		// Separate line, so the unicast summary below reads exactly as it always has.
+		if (pinnedMulticast > 0){
+			NS_LOG_UNCOND("Switch JSON: pinned the tree-root NIC on " << pinnedMulticast
+				<< " multicast connection(s).");
+		}
+		// Unconditional (not NS_LOG_INFO): silently pinning nothing -- the failure mode when the
+		// XML and JSON disagree about flow ids -- is indistinguishable from a working run except
+		// by the performance it quietly fails to deliver.
+		NS_LOG_UNCOND("Switch JSON: pinned the scheduled egress NIC on " << pinned
+			<< " RDMA connection(s); " << m_scheduledNicConflicts.size()
+			<< " left unpinned due to conflicting plane assignments.");
+	}
+
+	AlgoParseResult AlgoTopology::ParseSwitchJson(const char* file_path,
+			bool installSwitchRules, bool pinNics){
 		std::ifstream in(file_path);
 		if (!in.is_open()) return AlgoParseResult::FILE_READ_ERROR;
+
+		// As in ParseAlgoXml, a re-parse replaces the routing wholesale.
+		m_scheduledNic.clear();
+		m_scheduledNicConflicts.clear();
 
 		nlohmann::json root;
 		try {
 			in >> root;
 
+			// "format": 2 (TE-CCL's multicast-aware ncclize) changes what a port LIST means --
+			// replicate to every port, where format 1's port array means "spread over these
+			// parallel links" -- so the version decides the reading and an unknown one is refused.
+			int format = 1;
+			if (root.contains("format")){
+				if (!root["format"].is_number_integer()){
+					NS_LOG_UNCOND("Switch JSON: \"format\" in " << file_path << " is not an integer.");
+					return AlgoParseResult::JSON_PARSE_ERROR;
+				}
+				format = root["format"].get<int>();
+			}
+			if (format != 1 && format != 2){
+				NS_LOG_UNCOND("Switch JSON: " << file_path << " is format " << format
+					<< "; this simulator reads formats 1 and 2.");
+				return AlgoParseResult::JSON_PARSE_ERROR;
+			}
+
 			if (!root.contains("switches") || !root["switches"].is_object()){
 				NS_LOG_WARN("Switch JSON: missing top-level \"switches\" object in " << file_path);
 				return AlgoParseResult::JSON_PARSE_ERROR;
+			}
+
+			if (format == 2) return ParseSwitchJsonFormat2(JsonDoc{root}, file_path, installSwitchRules, pinNics);
+
+			// Format 1 names one next hop per (switch, flow), so it cannot express a tree.
+			if (m_nMulticastBlocks > 0){
+				NS_LOG_UNCOND("Switch JSON: the algorithm XML has " << m_nMulticastBlocks << " multicast "
+					<< "threadblock(s), but " << file_path << " is format 1, which cannot say where a switch "
+					<< "replicates. Regenerate it with the multicast-aware ncclize (format 2).");
+				return AlgoParseResult::INVALID_USE_ERROR;
 			}
 
 			for (auto& [switchIdStr, flows] : root["switches"].items()){
@@ -555,35 +1385,96 @@ namespace ns3
 					NS_LOG_WARN("Switch JSON: node " << switchId << " is not a SwitchNode");
 					return AlgoParseResult::INVALID_USE_ERROR;
 				}
-				sw->SetAttribute("CustomFlowForwarding", BooleanValue(true));
+				// Gated, but the rest of the loop still runs when it is off: the same walk records
+				// each flow's ingress NIC, which is what pinNics publishes below. That is the
+				// whole point of the split -- one parse can feed either side, or both.
+				if (installSwitchRules) sw->SetAttribute("CustomFlowForwarding", BooleanValue(true));
 
 				for (auto& [flowIdStr, entry] : flows.items()){
 					uint32_t flowId = static_cast<uint32_t>(std::stoul(flowIdStr));
-					std::string nextHopType = entry.at("next_hop_type").get<std::string>();
-					int nextHop = entry.at("next_hop").get<int>();
 					int srcGpu = entry.value("src_gpu", -1);
 					int dstGpu = entry.value("dst_gpu", -1);
 					int step = entry.value("step", -1);
 
+					// "port" is the authoritative forwarding field: this switch's own outgoing
+					// device index(es). When present it alone decides where the flow goes, and
+					// next_hop/next_hop_type become documentation -- cross-checked and warned
+					// about below, but never allowed to override the port. Giving an array
+					// spreads one flow across several parallel links (SwitchNode then picks per
+					// flow), which is how a leaf's multiple uplinks to one spine get used.
+					// When "port" is absent -- every JSON written so far -- fall back to
+					// resolving next_hop to all ports that reach the named neighbor.
+					const bool hasPort = entry.contains("port");
+					// "ports" is format 2's replicate list; read here as a spread list it would
+					// quietly deliver a multicast to one receiver. The file forgot its version.
+					if (entry.contains("ports")){
+						NS_LOG_UNCOND("Switch JSON: switch " << switchId << ", flow " << flowId << " has a format-2 "
+							<< "\"ports\" list, but " << file_path << " does not declare \"format\": 2.");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+
+					// Both next_hop fields are optional once "port" carries the decision; a
+					// missing or unresolvable next_hop then only weakens the cross-check.
+					std::string nextHopType = entry.value("next_hop_type", std::string());
+					int nextHop = entry.value("next_hop", -1);
 					Ptr<Node> target;
 					if (nextHopType == "gpu"){
 						target = GetGpuNode(nextHop);
 					} else if (nextHopType == "switch"){
 						target = GetSwitchNode(nextHop);
-					} else {
+					} else if (!nextHopType.empty()){
 						NS_LOG_WARN("Switch JSON: unknown next_hop_type \"" << nextHopType << "\" for switch " << switchId << ", flow " << flowId);
+						if (!hasPort) return AlgoParseResult::INVALID_USE_ERROR;
+					} else if (!hasPort){
+						NS_LOG_WARN("Switch JSON: switch " << switchId << ", flow " << flowId << " has neither \"port\" nor \"next_hop_type\" -- no way to decide an out port");
 						return AlgoParseResult::INVALID_USE_ERROR;
 					}
-					if (!target) return AlgoParseResult::INVALID_USE_ERROR;
+					if (!target && !nextHopType.empty()){
+						NS_LOG_WARN("Switch JSON: switch " << switchId << ", flow " << flowId << ": next_hop " << nextHop << " (" << nextHopType << ") is not a known node");
+						if (!hasPort) return AlgoParseResult::INVALID_USE_ERROR;
+					}
 
-					uint32_t outIfIndex;
-					if (!ResolveOutPort(sw, target, outIfIndex)){
+					std::vector<uint32_t> outIfIndices;
+					if (hasPort){
+						const nlohmann::json& portField = entry.at("port");
+						if (portField.is_array()){
+							for (const auto& portVal : portField) outIfIndices.push_back(portVal.get<uint32_t>());
+						} else {
+							outIfIndices.push_back(portField.get<uint32_t>());
+						}
+						if (outIfIndices.empty()){
+							NS_LOG_WARN("Switch JSON: switch " << switchId << ", flow " << flowId << " has an empty \"port\" list");
+							return AlgoParseResult::INVALID_USE_ERROR;
+						}
+						// A port index that names no qbb port on this switch stays fatal even
+						// though next_hop is not: there is no link to forward the flow out of,
+						// so unlike a stale next_hop this cannot be downgraded to a warning.
+						for (uint32_t ifIndex : outIfIndices){
+							uint32_t neighborId = 0;
+							if (!ResolvePortNeighbor(sw, ifIndex, neighborId)){
+								NS_LOG_WARN("Switch JSON: switch " << switchId << ", flow " << flowId << ": port " << ifIndex << " is not a qbb port on this switch (it has " << sw->GetNDevices() << " device(s)). Check that the generator numbers ports by ns-3 device index.");
+								return AlgoParseResult::INVALID_USE_ERROR;
+							}
+							if (target && neighborId != target->GetId()){
+								NS_LOG_WARN("Switch JSON: switch " << switchId << ", flow " << flowId << ": port " << ifIndex << " reaches node " << neighborId << ", not the declared next_hop " << nextHop << " (" << nextHopType << ", node " << target->GetId() << "). Forwarding follows the port; next_hop looks stale.");
+							}
+						}
+					} else if (!ResolveOutPorts(sw, target, outIfIndices)){
 						NS_LOG_WARN("Switch JSON: switch " << switchId << " has no link toward next_hop " << nextHop << " (" << nextHopType << ") for flow " << flowId);
 						return AlgoParseResult::INVALID_USE_ERROR;
 					}
 
-					sw->AddFlowForwardingRule(flowId, outIfIndex);
-					NS_LOG_INFO("Switch " << switchId << ": flow " << flowId << " (gpu " << srcGpu << " -> gpu " << dstGpu << ", step " << step << ") -> port " << outIfIndex);
+					// Independently gated: the rule is the network-side effect, ResolveScheduledNics
+					// the host-side one. Both still need the port resolution above, so the parse
+					// runs in full either way and only the two publications are switched off.
+					if (installSwitchRules) sw->AddFlowForwardingRule(flowId, outIfIndices);
+					if (pinNics) ResolveScheduledNics(sw, flowId);
+					std::ostringstream portList;
+					for (size_t p = 0; p < outIfIndices.size(); ++p){
+						if (p) portList << ",";
+						portList << outIfIndices[p];
+					}
+					NS_LOG_INFO("Switch " << switchId << ": flow " << flowId << " (gpu " << srcGpu << " -> gpu " << dstGpu << ", step " << step << ") -> port(s) " << portList.str());
 				}
 			}
 		} catch (const std::exception& e) {
@@ -591,6 +1482,306 @@ namespace ns3
 			return AlgoParseResult::JSON_PARSE_ERROR;
 		}
 
+		// Only after every rule has been seen: a conflicting connection may not reveal itself
+		// until its second flow, so publishing incrementally could pin one that later conflicts.
+		if (pinNics) PublishScheduledNics();
+		return AlgoParseResult::ALGO_PARSE_SUCCESS;
+	}
+
+	// Format 2 (see TE-CCL teccl/ncclize/multicast_output_design.md section 5):
+	//
+	//   "flows":    flow id -> {src_gpu, branches: [{dst_gpu, switches: [TE-CCL ids]}]}, the route
+	//               each id names. A unicast is the one-branch case.
+	//   "switches": JSON switch index -> flow id -> {ports: [...], next_hops: [...]}. "ports" is
+	//               authoritative and a packet goes out EVERY listed port; "next_hops" is the
+	//               matching debug list, cross-checked and warned about like format 1's next_hop.
+	//
+	// Beyond reading it, this checks the file against the two things it can disagree with: the
+	// XML (each flow id has the same sender and receiver set in both), and the ns-3 wiring
+	// (following each tree's ports from its root reaches exactly its receivers). The generator
+	// runs the same table check, but only against its own model of the topology, and a port
+	// numbering slip on either side would otherwise surface only as a hang. Throws on a
+	// malformed value; ParseSwitchJson's catch turns that into JSON_PARSE_ERROR.
+	AlgoParseResult AlgoTopology::ParseSwitchJsonFormat2(const JsonDoc& doc, const char* file_path,
+			bool installSwitchRules, bool pinNics){
+		const nlohmann::json& root = doc.root;
+		const int nGpus = GetNGpuNodes();
+		auto setStr = [](const std::vector<int16_t>& g){
+			std::ostringstream o;
+			for (size_t i = 0; i < g.size(); ++i) o << (i ? "," : "") << g[i];
+			return o.str();
+		};
+
+		if (!root.contains("flows") || !root["flows"].is_object()){
+			NS_LOG_UNCOND("Switch JSON: " << file_path << " is format 2 but has no \"flows\" object.");
+			return AlgoParseResult::JSON_PARSE_ERROR;
+		}
+
+		// TE-CCL node id -> JSON switch index, which is how a tree's root (named by TE-CCL id in
+		// "flows") is found among the programmed switches.
+		std::map<int, int> tecclToSwitchIdx;
+		if (root.contains("switch_id_map")){
+			for (const auto& [idxStr, teccl] : root["switch_id_map"].items()){
+				if (!tecclToSwitchIdx.emplace(teccl.get<int>(), std::stoi(idxStr)).second){
+					NS_LOG_UNCOND("Switch JSON: switch_id_map maps two switch indices to TE-CCL node "
+						<< teccl.get<int>() << ".");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+			}
+		}
+
+		// ---- routes ----
+		std::map<uint32_t, JsonFlow> flows;
+		for (const auto& [fidStr, f] : root["flows"].items()){
+			const uint32_t fid = static_cast<uint32_t>(std::stoul(fidStr));
+			if (!f.contains("src_gpu") || !f.contains("branches") || !f["branches"].is_array() || f["branches"].empty()){
+				NS_LOG_UNCOND("Switch JSON: flows[" << fid << "] needs src_gpu and a non-empty branches list.");
+				return AlgoParseResult::INVALID_USE_ERROR;
+			}
+			JsonFlow jf{f["src_gpu"].get<int>(), {}, -1};
+			for (const auto& b : f["branches"]){
+				const int dst = b.at("dst_gpu").get<int>();
+				const nlohmann::json& sws = b.at("switches");
+				if (!sws.is_array() || sws.empty()){
+					NS_LOG_UNCOND("Switch JSON: flows[" << fid << "]'s branch to GPU " << dst << " lists no switches.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				const int first = sws[0].get<int>();
+				if (jf.rootTecclId == -1) jf.rootTecclId = first;
+				else if (first != jf.rootTecclId){
+					// One send stream leaves the GPU on one link, so every branch starts at the
+					// same switch; two roots would mean two streams, i.e. not one multicast.
+					NS_LOG_UNCOND("Switch JSON: flows[" << fid << "]'s branches start at different switches ("
+						<< jf.rootTecclId << " and " << first << "); a tree has one root.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				jf.dsts.push_back((int16_t) dst);
+			}
+			std::sort(jf.dsts.begin(), jf.dsts.end());
+			bool bad = jf.srcGpu < 0 || jf.srcGpu >= nGpus;
+			for (size_t i = 0; i < jf.dsts.size(); ++i){
+				bad |= jf.dsts[i] < 0 || jf.dsts[i] >= nGpus || jf.dsts[i] == jf.srcGpu
+				    || (i > 0 && jf.dsts[i] == jf.dsts[i - 1]);
+			}
+			if (bad){
+				NS_LOG_UNCOND("Switch JSON: flows[" << fid << "] (GPU " << jf.srcGpu << " -> {" << setStr(jf.dsts)
+					<< "}) must name a sender and distinct other receivers among the " << nGpus << " GPUs.");
+				return AlgoParseResult::INVALID_USE_ERROR;
+			}
+			flows[fid] = jf;
+		}
+
+		// ---- the routes must be the XML's ----
+		int xmlOnly = 0, jsonOnly = 0;
+		for (const auto& [fid, ep] : m_flowEndpoints){
+			auto it = flows.find(fid);
+			if (it == flows.end()){
+				if (ep.peers.size() > 1){
+					NS_LOG_UNCOND("Switch JSON: the XML multicasts flow " << fid << " (GPU " << ep.srcGpu << " -> {"
+						<< setStr(ep.peers) << "}), but " << file_path << " has no route for it.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				++xmlOnly;
+				continue;
+			}
+			if (it->second.srcGpu != (int) ep.srcGpu || it->second.dsts != ep.peers){
+				NS_LOG_UNCOND("Switch JSON: flow " << fid << " is GPU " << ep.srcGpu << " -> {" << setStr(ep.peers)
+					<< "} in the XML but GPU " << it->second.srcGpu << " -> {" << setStr(it->second.dsts)
+					<< "} in " << file_path << ". The two files are from different solves.");
+				return AlgoParseResult::INVALID_USE_ERROR;
+			}
+		}
+		for (const auto& [fid, jf] : flows) if (!m_flowEndpoints.count(fid)) ++jsonOnly;
+
+		// ---- per-switch entries ----
+		std::map<uint32_t, std::map<int, std::vector<uint32_t>>> rules; // flow -> switch index -> ports
+		uint32_t nRules = 0, nReplicating = 0;
+		for (const auto& [switchIdStr, entries] : root["switches"].items()){
+			const int switchId = std::stoi(switchIdStr);
+			Ptr<Node> swNodeBase = GetSwitchNode(switchId);
+			if (!swNodeBase) return AlgoParseResult::INVALID_USE_ERROR;
+			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(swNodeBase);
+			if (!sw){
+				NS_LOG_WARN("Switch JSON: node " << switchId << " is not a SwitchNode");
+				return AlgoParseResult::INVALID_USE_ERROR;
+			}
+			if (installSwitchRules) sw->SetAttribute("CustomFlowForwarding", BooleanValue(true));
+
+			for (const auto& [fidStr, entry] : entries.items()){
+				const uint32_t fid = static_cast<uint32_t>(std::stoul(fidStr));
+				std::ostringstream where;
+				where << "Switch JSON: switch " << switchId << ", flow " << fid;
+				auto fit = flows.find(fid);
+				if (fit == flows.end()){
+					NS_LOG_UNCOND(where.str() << " has a forwarding entry but no route in \"flows\".");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				if (entry.contains("port")){
+					NS_LOG_UNCOND(where.str() << " uses format 1's \"port\"; a format-2 entry carries \"ports\".");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				if (!entry.contains("ports") || !entry["ports"].is_array() || entry["ports"].empty()){
+					NS_LOG_UNCOND(where.str() << " needs a non-empty \"ports\" list.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				std::vector<uint32_t> ports;
+				for (const auto& p : entry["ports"]) ports.push_back(p.get<uint32_t>());
+				if (std::set<uint32_t>(ports.begin(), ports.end()).size() != ports.size()){
+					NS_LOG_UNCOND(where.str() << " lists a port twice, which would send two copies down one link.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+				const bool replicate = ports.size() > 1;
+				// Format 2 has no "spread over parallel links" reading: several ports always means
+				// copies, which a one-receiver route cannot want.
+				if (replicate && fit->second.dsts.size() < 2){
+					NS_LOG_UNCOND(where.str() << " is a unicast (GPU " << fit->second.srcGpu << " -> GPU "
+						<< fit->second.dsts[0] << ") but lists " << ports.size() << " ports; in format 2 that "
+						<< "would replicate it.");
+					return AlgoParseResult::INVALID_USE_ERROR;
+				}
+
+				const nlohmann::json* hops = nullptr;
+				if (entry.contains("next_hops")){
+					if (entry["next_hops"].is_array() && entry["next_hops"].size() == ports.size()) hops = &entry["next_hops"];
+					else NS_LOG_WARN(where.str() << ": next_hops does not pair up with ports; not cross-checked.");
+				}
+				for (size_t i = 0; i < ports.size(); ++i){
+					uint32_t neighborId = 0;
+					if (!ResolvePortNeighbor(sw, ports[i], neighborId)){
+						NS_LOG_UNCOND(where.str() << ": port " << ports[i] << " is not a qbb port on this switch (it has "
+							<< sw->GetNDevices() << " device(s)). Check that the generator numbers ports by ns-3 device index.");
+						return AlgoParseResult::INVALID_USE_ERROR;
+					}
+					if (!hops) continue;
+					const nlohmann::json& hop = (*hops)[i];
+					const std::string type = hop.value("type", std::string());
+					const int id = hop.value("id", -1);
+					Ptr<Node> target = type == "gpu" ? GetGpuNode(id) : type == "switch" ? GetSwitchNode(id) : nullptr;
+					if (!target || target->GetId() != neighborId){
+						NS_LOG_WARN(where.str() << ": port " << ports[i] << " reaches node " << neighborId
+							<< ", not the declared next hop " << type << " " << id << ". Forwarding follows the port.");
+					}
+				}
+
+				rules[fid][switchId] = ports;
+				if (installSwitchRules) sw->AddFlowForwardingRule(fid, ports, replicate);
+				++nRules;
+				if (replicate) ++nReplicating;
+				// A unicast's egress NIC is found exactly as in format 1. A tree's is taken from its
+				// root below: several of its switches can neighbor the sender (a tree that comes
+				// back through the sender's other plane), and only the root is where it enters.
+				if (pinNics && fit->second.dsts.size() == 1) ResolveScheduledNics(sw, fid);
+				NS_LOG_INFO(where.str() << " (gpu " << fit->second.srcGpu << " -> {" << setStr(fit->second.dsts)
+					<< "}) -> " << (replicate ? "replicate to" : "port") << " " << ports.size() << " port(s)");
+			}
+		}
+
+		// ---- every tree, walked over the real wiring ----
+		int nTrees = 0;
+		std::map<size_t, int> fanout;
+		for (const auto& [fid, jf] : flows){
+			if (jf.dsts.size() < 2) continue;
+			AlgoParseResult res = CheckMulticastTree(fid, jf, tecclToSwitchIdx, rules);
+			if (res != AlgoParseResult::ALGO_PARSE_SUCCESS) return res;
+			++nTrees;
+			++fanout[jf.dsts.size()];
+			if (pinNics){
+				Ptr<SwitchNode> rootSw = DynamicCast<SwitchNode>(GetSwitchNode(tecclToSwitchIdx.at(jf.rootTecclId)));
+				ResolveScheduledNics(rootSw, fid);
+			}
+		}
+
+		std::ostringstream fan;
+		for (const auto& [n, k] : fanout) fan << (fan.tellp() > 0 ? ", " : "") << k << " to " << n;
+		NS_LOG_UNCOND("Switch JSON (format 2): " << flows.size() << " route(s), " << nTrees << " multicast tree(s)"
+			<< (nTrees ? " (" + fan.str() + " receivers)" : std::string()) << "; " << nRules << " forwarding rule(s), "
+			<< nReplicating << " replicating" << (installSwitchRules ? "" : " -- parsed but NOT installed (flow forwarding off)")
+			<< ". Every tree reaches exactly its receivers over the topology's wiring.");
+		if (xmlOnly || jsonOnly){
+			NS_LOG_UNCOND("Switch JSON: WARNING -- " << xmlOnly << " flow id(s) sent in the XML have no route in the JSON"
+				<< " (those take ECMP), and " << jsonOnly << " route(s) in the JSON are never sent by the XML.");
+		}
+		if (pinNics) PublishScheduledNics();
+		return AlgoParseResult::ALGO_PARSE_SUCCESS;
+	}
+
+	AlgoParseResult AlgoTopology::CheckMulticastTree(uint32_t flowId, const JsonFlow& flow,
+			const std::map<int, int>& tecclToSwitchIdx,
+			const std::map<uint32_t, std::map<int, std::vector<uint32_t>>>& rules){
+		auto setStr = [](const std::vector<int16_t>& g){
+			std::ostringstream o;
+			for (size_t i = 0; i < g.size(); ++i) o << (i ? "," : "") << g[i];
+			return o.str();
+		};
+		auto fail = [&](const std::string& why){
+			NS_LOG_UNCOND("Switch JSON: multicast flow " << flowId << " (GPU " << flow.srcGpu << " -> {"
+				<< setStr(flow.dsts) << "}) " << why);
+			return AlgoParseResult::INVALID_USE_ERROR;
+		};
+
+		auto rootIt = tecclToSwitchIdx.find(flow.rootTecclId);
+		if (rootIt == tecclToSwitchIdx.end())
+			return fail("starts at TE-CCL node " + std::to_string(flow.rootTecclId)
+				+ ", which switch_id_map does not list, so no programmed switch begins the tree.");
+		const int rootIdx = rootIt->second;
+		auto flowRules = rules.find(flowId);
+		if (flowRules == rules.end() || !flowRules->second.count(rootIdx))
+			return fail("has no forwarding entry on its root switch " + std::to_string(rootIdx) + ".");
+		Ptr<Node> src = GetGpuNode(flow.srcGpu);
+		Ptr<Node> rootNode = GetSwitchNode(rootIdx);
+		if (!src || !rootNode || !SwitchPortCache(src).count(rootNode->GetId()))
+			return fail("starts at switch " + std::to_string(rootIdx) + ", which GPU "
+				+ std::to_string(flow.srcGpu) + " has no link to.");
+
+		// ns-3 node id -> GPU rank / JSON switch index, to classify what each port reaches.
+		std::map<uint32_t, int> gpuOfNode, switchOfNode;
+		for (int i = 0; i < GetNGpuNodes(); ++i) gpuOfNode[GetGpuNode(i)->GetId()] = i;
+		for (int i = 0; i < GetNSwitchNodes(); ++i) switchOfNode[GetSwitchNode(i)->GetId()] = i;
+
+		std::vector<int16_t> reached;
+		std::set<int> visited;
+		std::vector<int> pending{rootIdx};
+		while (!pending.empty()){
+			const int idx = pending.back();
+			pending.pop_back();
+			if (!visited.insert(idx).second)
+				return fail("reaches switch " + std::to_string(idx) + " twice: two branches merge or loop, "
+					+ "which would deliver duplicate packets.");
+			Ptr<SwitchNode> sw = DynamicCast<SwitchNode>(GetSwitchNode(idx));
+			for (uint32_t port : flowRules->second.at(idx)){
+				uint32_t nbr = 0;
+				if (!ResolvePortNeighbor(sw, port, nbr))
+					return fail("uses port " + std::to_string(port) + " of switch " + std::to_string(idx) + ", which is not a qbb port.");
+				auto g = gpuOfNode.find(nbr);
+				if (g != gpuOfNode.end()){
+					reached.push_back((int16_t) g->second);
+					continue;
+				}
+				auto s = switchOfNode.find(nbr);
+				if (s == switchOfNode.end())
+					return fail("leaves switch " + std::to_string(idx) + " by port " + std::to_string(port)
+						+ " toward node " + std::to_string(nbr) + ", which is neither a GPU nor a programmable switch "
+						+ "(an NVSwitch, say, forwards by destination address and would deliver to one receiver at most).");
+				if (!flowRules->second.count(s->second))
+					return fail("continues from switch " + std::to_string(idx) + " to switch " + std::to_string(s->second)
+						+ ", which has no entry for the flow and so would not forward it along the tree.");
+				pending.push_back(s->second);
+			}
+		}
+
+		std::sort(reached.begin(), reached.end());
+		for (size_t i = 1; i < reached.size(); ++i){
+			if (reached[i] == reached[i - 1])
+				return fail("delivers to GPU " + std::to_string(reached[i]) + " more than once.");
+		}
+		if (reached != flow.dsts)
+			return fail("reaches {" + setStr(reached) + "} when followed port by port, not its receivers.");
+		for (const auto& [idx, ports] : flowRules->second){
+			if (!visited.count(idx)){
+				NS_LOG_UNCOND("Switch JSON: WARNING -- multicast flow " << flowId << " has an entry on switch " << idx
+					<< " that its tree never reaches from the root; it is installed but unused.");
+			}
+		}
 		return AlgoParseResult::ALGO_PARSE_SUCCESS;
 	}
 

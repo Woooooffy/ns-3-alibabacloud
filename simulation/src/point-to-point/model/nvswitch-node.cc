@@ -7,6 +7,7 @@
 #include "ns3/uinteger.h"
 #include "ns3/double.h"
 #include "nvswitch-node.h"
+#include <set>
 #include "qbb-net-device.h"
 #include "ppp-header.h"
 #include "ns3/int-header.h"
@@ -23,8 +24,14 @@ TypeId NVSwitchNode::GetTypeId (void)
     .SetParent<Node> ()
     .AddConstructor<NVSwitchNode> ()
 	.AddAttribute("AckHighPrio",
-			"Set high priority for ACK/NACK or not",
-			UintegerValue(0),
+			"Send ACK/NACK in queue 0, the strict-priority control class (with PFC and QCN), "
+			"instead of the data queue of the packet's priority group. On by default because "
+			"that is how RoCE fabrics carry them: an ack queued FIFO behind reverse-direction "
+			"data inflates the sender's RTT past the window the fabric helper sized, and with no "
+			"standing queue to absorb it every such delay idles the wire -- 1A flowId+nic ran "
+			"86% -> 93% of its host link on turning this on. Queue 0 also bypasses MMU "
+			"admission and PFC, as a control class should.",
+			UintegerValue(1),
 			MakeUintegerAccessor(&NVSwitchNode::m_ackHighPrio),
 			MakeUintegerChecker<uint32_t>())
   ;
@@ -109,6 +116,14 @@ void NVSwitchNode::SendToDev(Ptr<Packet>p, CustomHeader &ch){
 		m_devices[idx]->SwitchSend(qIndex, p, ch);
 	}else
 	{
+		// Same black hole as SwitchNode::SendToDev; see the note there.
+		static std::set<std::pair<uint32_t, uint32_t>> reported;
+		if (reported.insert(std::make_pair(m_id, ch.dip)).second){
+			printf("%lu %u Drop: no route to %u.%u.%u.%u (dropped at nvswitch, black hole)\n",
+				Simulator::Now().GetTimeStep(), m_id,
+				(ch.dip >> 24) & 0xff, (ch.dip >> 16) & 0xff, (ch.dip >> 8) & 0xff, ch.dip & 0xff);
+			fflush(stdout);
+		}
 		return; // Drop
 	}
 }
@@ -190,7 +205,9 @@ void NVSwitchNode::SwitchNotifyDequeue(uint32_t ifIndex, uint32_t qIndex, Ptr<Pa
 */
 void NVSwitchNode::PrintSwitchQlen(FILE* qlen_output){
 	uint32_t n_dev = this->GetNDevices();
-	for(uint32_t i = 1; i < n_dev; ++i){
+	// From port 0, not 1: nvswitches get no InternetStackHelper and therefore no loopback
+	// device, so device 0 is the first real link and skipping it dropped a port from the log.
+	for(uint32_t i = 0; i < n_dev; ++i){
 		uint64_t port_len = 0;
 		for(uint32_t j=0; j < qCnt; ++j){
 			port_len += m_mmu->egress_bytes[i][j];
@@ -212,7 +229,8 @@ void NVSwitchNode::PrintSwitchQlen(FILE* qlen_output){
 */
 void NVSwitchNode::PrintSwitchBw(FILE* bw_output, uint32_t bw_mon_interval){
 	uint32_t n_dev = this->GetNDevices();
-	for(uint32_t i = 1; i < n_dev; ++i){
+	// From port 0 -- see PrintSwitchQlen above.
+	for(uint32_t i = 0; i < n_dev; ++i){
 		if(last_txBytes[i] == m_txBytes[i]){
 			continue;
 		}

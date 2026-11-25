@@ -8,6 +8,7 @@
 #include "qbb-net-device.h"
 #include <unordered_map>
 #include <functional>
+#include <ostream>
 #include <set>
 #include "pint.h"
 
@@ -37,16 +38,40 @@ public:
 	double m_nack_interval;
 	uint32_t m_chunk;
 	uint32_t m_ack_interval;
+	uint32_t m_ackEveryNPkts;
 	bool m_backto0;
 	bool m_var_win, m_fast_react;
 	bool m_rateBound;
-	uint32_t m_total_pause_times;
+	// When true, per-message rate pacing (the MSCCL/XML "rate") accumulates credit like a
+	// token-bucket shaper so a qp actually reaches its target rate, instead of merely being
+	// upper-bounded. See RdmaHw::UpdateNextAvail and the rate-targeting design notes.
+	bool m_rateTargeting;
+	// Max banked catch-up "burst" for the accumulating pacer, in bytes (the ConnectX
+	// max_burst_sz / packet_pacing_burst_bound analog). Converted to a time budget at the
+	// qp's pace rate; bounds how far a starved qp may run ahead after an idle gap.
+	uint32_t m_paceMaxCreditBytes;
+	// Pipelining depth of a persistent qp: how many messages it may have in flight at once,
+	// counting from the oldest unacknowledged one through the one snd_nxt is in. Copied onto
+	// each qp at creation (RdmaQueuePair::m_maxMsgsInFlight). Mirrors NCCL's NCCL_STEPS ring
+	// slots; 1 serializes messages, costing a full RTT of idle wire at every message boundary.
+	uint32_t m_maxMsgsInFlight;
+	uint32_t m_total_pause_times; 
 	uint32_t m_paused_times;
 	std::vector<RdmaInterfaceMgr> m_nic; // list of running nic controlled by this RdmaHw
 	std::unordered_map<uint64_t, Ptr<RdmaQueuePair> > m_qpMap; // mapping from uint64_t to qp
 	std::unordered_map<uint64_t, Ptr<RdmaRxQueuePair> > m_rxQpMap; // mapping from uint64_t to rx qp
+	// Switch-multicast qps by (sport, pg). An ack is matched to its qp by (ack source IP, dport,
+	// pg) through m_qpMap, and a multicast qp's acks come from every receiver while m_qpMap
+	// knows it under one destination only. sport is unique per node (MSCCL allocates it
+	// node-globally), so it alone identifies the qp.
+	std::unordered_map<uint32_t, Ptr<RdmaQueuePair> > m_mcastQpByPort;
+	static uint32_t GetMcastPortKey(uint16_t sport, uint16_t pg) { return ((uint32_t) sport << 16) | pg; }
 	std::unordered_map<uint32_t, std::vector<int> > m_rtTable; // map from ip address (u32) to possible ECMP port (index of dev)
 	std::unordered_map<uint32_t, std::vector<int> > m_rtTable_nxthop_nvswitch; // map from ip address (u32) to possible ECMP port (index of dev) connected to nvswitch
+	// Rotation used by ResolveNic to hand this node's NICs out to new qps evenly when the
+	// schedule does not dictate one. Node-global and advanced only when there is an actual
+	// choice (>1 equal-cost NIC), so single-homed destinations do not perturb the alternation.
+	uint32_t m_nicRoundRobin = 0;
 	uint32_t m_gpus_per_server; // uesed for routing; if src and dst in the same server, then communicate by nvswitch.
 	uint32_t nvls_enable;
 	std::set<uint32_t> nvswitch_set;
@@ -68,6 +93,70 @@ public:
 	void PrintQPRate(FILE* rate_output);
 	void PrintQPCnpNumber(FILE* cnp_output);
 
+	// ---- pacing diagnostic ----------------------------------------------------------------
+	// Answers the one question an ablation that flips the MSCCL XML "rate" on and off cannot
+	// answer from completion time alone: was the cap ever actually applied? A cap that never
+	// reaches the shaper and a cap that reaches it but never binds produce byte-identical runs,
+	// and so does a cap the shaper structurally cannot express -- a message of a single MTU has
+	// no inter-packet gap to stretch, so its requested rate is silently discarded.
+	//
+	// Static (job-global) rather than per-RdmaHw: every field here is only ever reported summed
+	// over all nodes, and one copy avoids walking the node list to collect it.
+	struct PaceStats {
+		// Per packet, from UpdateNextAvail -- who set the gap that follows this packet. The
+		// four buckets are disjoint and together cover every paced packet.
+		uint64_t cappedPkts = 0,   cappedBytes = 0;    // this packet's own message's XML cap won
+		uint64_t slackPkts = 0,    slackBytes = 0;     // cap present but the cc rate was already lower
+		uint64_t noCapPkts = 0,    noCapBytes = 0;     // this packet's message carried no cap
+		uint64_t tailPkts = 0,     tailBytes = 0;      // uncapped, and nothing queued behind it
+		double   cappedSeconds = 0.0;                  // sum bytes*8/cap, for the byte-weighted mean applied cap
+		// Per message, from NotePacedMessage -- what the schedule asked for, before the
+		// transport got a chance to apply or ignore it.
+		uint64_t msgsWithRate = 0, msgsWithoutRate = 0;
+		uint64_t msgsSinglePkt = 0;                    // of msgsWithRate: <= one MTU, so all its
+		                                               // shaping is the gap after its one packet
+		uint64_t ratedBytes = 0;                       // bytes posted under a rate
+		double   ratedSeconds = 0.0;                   // sum bytes*8/rate over those, for their mean
+	};
+	static PaceStats m_paceStats;
+	// Records the rate the schedule asked for on one message as it is posted. Called by
+	// MscclChannel::SendRdma next to PushMessage; rate 0 means the step carried no "rate".
+	void NotePacedMessage(uint64_t bytes, DataRate rate);
+	// The whole diagnostic as a short block on `os`, or one line if no rate was ever requested.
+	static void PrintPaceStats(std::ostream& os);
+
+	// Why the sender set AckReq on the packets it did (see GetNxtPacket), acks-on runs only.
+	// Job-global like PaceStats. windowFill counts only the requests that exist because of the
+	// window -- a packet that also closes its message is counted under msgEnd -- so it reads
+	// directly as how often the qp reached its window edge, each of which would have stalled
+	// with no ack coming if AckEveryNPackets*MTU exceeded the window. Reading it: ~0 means the
+	// qp never ran into its window. ~1/N is the normal steady state of a qp that is limited by
+	// a slower link downstream -- with no congestion control the window is the only brake, so
+	// it sits at the edge and each coalesced ack releases N packets, the last of which fills it
+	// again (the excess queues at the bottleneck, which stays busy). It says the window is
+	// binding; whether that costs throughput is the bottleneck's utilization, not this number.
+	struct AckReqStats {
+		uint64_t dataPkts = 0;     // data packets built with acks on
+		uint64_t msgEnd = 0;       // AckReq: the packet closes its message
+		uint64_t windowFill = 0;   // AckReq: the packet fills the window (and does not close a message)
+	};
+	static AckReqStats m_ackReqStats;
+	static void PrintAckReqStats(std::ostream& os);
+
+	// Switch-multicast transport, job-global like the two above. With sender-side ack
+	// aggregation every receiver's ack reaches the sender, so acks / (qps x receivers) is the
+	// per-receiver ack rate and the whole count is the ack load an in-switch merge would save.
+	struct McastStats {
+		uint64_t qps = 0, members = 0;  // multicast qps created, and receivers over all of them
+		uint64_t udQps = 0;             // of qps: UD (no acks)
+		uint64_t acks = 0, naks = 0;    // per-receiver acks/NAKs received by multicast qps
+		uint64_t naksHeld = 0;          // NAKs held because another receiver was slower
+		uint64_t rewinds = 0;           // go-back-N rewinds of a multicast qp (immediate or held)
+		uint64_t udGaps = 0;            // UD receivers that saw a sequence gap (lost packet)
+	};
+	static McastStats m_mcastStats;
+	static void PrintMcastStats(std::ostream& os);
+
 	// nvls
 	void enable_nvls();
 	void disable_nvls();
@@ -77,14 +166,33 @@ public:
 	void Setup(QpCompleteCallback cb,SendCompleteCallback send_cb); // setup shared data and callbacks with the QbbNetDevice
 	static uint64_t GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg); // get the lookup key for m_qpMap
 	Ptr<RdmaQueuePair> GetQp(uint32_t dip, uint16_t sport, uint16_t pg); // get the qp
-	uint32_t GetNicIdxOfQp(Ptr<RdmaQueuePair> qp); // get the NIC index of the qp
+	// get the NIC index of the qp; resolves and caches the binding on first call, so a qp
+	// always answers with the same NIC for its whole life (as a verbs qp does)
+	uint32_t GetNicIdxOfQp(Ptr<RdmaQueuePair> qp);
+	// binds a new qp to one of `candidates`: the schedule's NIC if it dictated one and it is
+	// reachable, otherwise the next NIC in this node's round-robin rotation
+	uint32_t ResolveNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates);
+	// The equal-cost next-hop NICs toward `dip`, preferring the NVSwitch when both an NVSwitch
+	// and a fabric route exist (two GPUs behind one NVSwitch are equidistant either way, and
+	// intra-node traffic must stay off the fabric). Single source of truth for that choice --
+	// GetNicIdxOfQp, GetNicIdxOfRxQp and GetNicsToward all route through it so the data path,
+	// the ack path and the app's lane setup can never disagree about which NICs are eligible.
+	const std::vector<int>& NicCandidates(uint32_t dip);
+	// Every NIC that reaches `dip` at equal cost, in ifIndex order, as BFS computed them.
+	// Lets the app stripe one connection's qps over the NICs (see
+	// CollectivesApplication::GetRdmaLaneCount) instead of picking just one. Returns false
+	// if the destination is unknown; `out` is cleared first.
+	bool GetNicsToward(Ipv4Address dip, std::vector<int>& out);
 	// creates a new qp and, if size != 0, pushes it as the qp's first message (size == 0 is
 	// used to eagerly establish a persistent MSCCL connection at bootstrap with no data
 	// queued yet -- see MscclChannel::SetupRdmaSendPeer). Returns the qp so callers that
 	// intend to reuse it (push further messages directly via qp->PushMessage(...), bypassing
 	// this method) can hold onto it; one-shot callers (e.g. RdmaClient) can simply ignore it,
 	// since autoClose defaults to true and behaves exactly as before.
-	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true);
+	// `mcast` non-null makes it a switch-multicast qp: `_dip` then only labels the packets (the
+	// switches forward them by flow id), and `pinnedNic` is mandatory and binding -- the NIC
+	// facing the tree's root -- since routes toward one receiver say nothing about the tree.
+	Ptr<RdmaQueuePair> AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address _sip, Ipv4Address _dip, uint16_t _sport, uint16_t _dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr = nullptr, bool autoClose = true, uint32_t pinnedNic = RdmaQueuePair::NIC_UNPINNED, const RdmaMulticastSpec* mcast = nullptr);
 	// explicit whole-qp teardown for reused/persistent qps (autoClose == false); thin
 	// wrapper over QpComplete that exists purely for call-site clarity.
 	void CloseQueuePair(Ptr<RdmaQueuePair> qp);
@@ -107,10 +215,10 @@ public:
 	void PCIePause(uint32_t nic_idx, uint32_t qIndex);
 	void PCIeResume(uint32_t nic_idx, uint32_t qIndex);
 	void EnablePause();
-	bool enable_pcie_pause;
+	bool enable_pcie_pause; 
 
 	void CheckandSendQCN(Ptr<RdmaRxQueuePair> q);
-	int ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size);
+	int ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size, bool ackReq);
 	void AddHeader (Ptr<Packet> p, uint16_t protocolNumber);
 	static uint16_t EtherToPpp (uint16_t protocol);
 

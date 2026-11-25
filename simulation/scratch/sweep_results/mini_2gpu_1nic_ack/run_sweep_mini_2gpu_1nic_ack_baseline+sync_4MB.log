@@ -1,0 +1,28 @@
+Topology: mini_2g1n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g1n_a2a_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_1nic_ack_baseline+sync_4MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_1nic_ack_baseline+sync_4MB.csv
+Total simulated time: 6128274 nanoseconds
+Simulator end (last event of any kind): 6132504 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_1nic_ack_baseline+sync_4MB.csv
+Fabric end (last switch data dequeue): 6126378 ns
+Switch-to-switch data bytes over 8 ports: min 29732864 / mean 33980416 / max 38227968 (max/mean 1.125)
+Busiest switch port: sw 9 port 3 -> node 11, 6116474 ns of data at line rate (99.8384% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 336  with a rate: 0 (0.0%)  without: 336
+  packets paced: 57344 (226.8 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       57264 (99.9%)
+    cc rate (message tail): 80 (0.1%)
+  bytes shaped by the XML rate: 0.0 of 226.8 MB (0.0%)
+Ack requests (AckReq) over 57344 data packets: 336 closing a message, 7832 filling the window (13.66% of packets)
+alltoall algorithm bandwidth: 43.8028 GB/s
+Algorithm XML: honoring 228 network dependence(s) and 0 epoch-pacing depid(s) over 328 send step(s); 0 remote gate(s) fed by 0 remote notification(s) (enforced only with HonorRemoteDeps).
+Skipping correctness check.
+Done simulation

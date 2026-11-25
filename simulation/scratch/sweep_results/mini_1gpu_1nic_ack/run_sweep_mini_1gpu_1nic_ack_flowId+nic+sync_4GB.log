@@ -1,0 +1,30 @@
+Per-NIC bandwidth trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/host_nic_bw_sweep_mini_1gpu_1nic_ack_flowId+nic+sync_4GB.csv (every 5000000 ns, 4 NICs)
+Topology: mini_1g1n (4 GPUs, 4 switches, 0 host switches)
+NIC selection: schedule-pinned (one qp per connection)
+Network flow ids: on (custom headers + per-flow switch forwarding)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_1g1n_a2a_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_1gpu_1nic_ack_flowId+nic+sync_4GB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_1gpu_1nic_ack_flowId+nic+sync_4GB.csv
+Total simulated time: 1397665246 nanoseconds
+Simulator end (last event of any kind): 1400000000 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_1gpu_1nic_ack_flowId+nic+sync_4GB.csv
+Fabric end (last switch data dequeue): 1397664214 ns
+Switch-to-switch data bytes over 8 ports: min 8707375104 / mean 8707375104 / max 8707375104 (max/mean 1)
+Busiest switch port: sw 4 port 2 -> node 6, 1393180016 ns of data at line rate (99.6792% of fabric end)
+Flow-forwarding rule coverage: 29360128 hit / 0 miss (100% of flow-id packets steered by the schedule)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 24576  with a rate: 0 (0.0%)  without: 24576
+  packets paced: 12582912 (49824.0 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       12562432 (99.8%)
+    cc rate (message tail): 20480 (0.2%)
+  bytes shaped by the XML rate: 0.0 of 49824.0 MB (0.0%)
+Ack requests (AckReq) over 12582912 data packets: 24576 closing a message, 1076607 filling the window (8.56% of packets)
+alltoall algorithm bandwidth: 49.1673 GB/s
+Algorithm XML: honoring 8 network dependence(s) over 20 send step(s).
+Switch JSON: pinned the scheduled egress NIC on 20 RDMA connection(s); 0 left unpinned due to conflicting plane assignments.
+Skipping correctness check.
+Done simulation

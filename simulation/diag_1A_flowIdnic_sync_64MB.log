@@ -1,0 +1,342 @@
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=0 part=0 rateGBps=0 at t=0
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=0 part=0 rateGBps=0 at t=0
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=0 part=0 rateGBps=0 at t=0
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=0 part=0 rateGBps=0 at t=0
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=0 t=0
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=0 t=0
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=0 t=0
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=0 t=0
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=344663
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=0 t=344663
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=344667
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=0 t=344667
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=344995
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=0 t=344995
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=344995
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=1 part=0 rateGBps=0 at t=344995
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=1 part=0 rateGBps=0 at t=344995
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=1 t=344995
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=1 t=344995
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=344999
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=0 t=344999
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=344999
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=1 part=0 rateGBps=0 at t=344999
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=1 part=0 rateGBps=0 at t=344999
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=1 t=344999
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=1 t=344999
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=0 nElems=524288 at t=347489
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=0 nElems=524288 at t=347493
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=0 nElems=524288 at t=347821
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=0 nElems=524288 at t=347825
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=689666
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=689666
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=1 t=689666
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=1 t=689666
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=689998
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=689998
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=1 t=689998
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=689998
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=1 t=689998
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=689998
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=2 part=0 rateGBps=0 at t=689998
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=2 part=0 rateGBps=0 at t=689998
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=2 part=0 rateGBps=0 at t=689998
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=2 part=0 rateGBps=0 at t=689998
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=2 t=689998
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=2 t=689998
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=2 t=689998
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=2 t=689998
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=1 nElems=524288 at t=692492
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=1 nElems=524288 at t=692492
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=1 nElems=524288 at t=692824
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=1 nElems=524288 at t=692824
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=1034665
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=2 t=1034665
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=1034669
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=2 t=1034669
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=1034997
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=2 t=1034997
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=1034997
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=3 part=0 rateGBps=0 at t=1034997
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=3 part=0 rateGBps=0 at t=1034997
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=3 t=1034997
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=3 t=1034997
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=1035001
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=2 t=1035001
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=1035001
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=3 part=0 rateGBps=0 at t=1035001
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=3 part=0 rateGBps=0 at t=1035001
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=3 t=1035001
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=3 t=1035001
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=2 nElems=524288 at t=1037491
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=2 nElems=524288 at t=1037495
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=2 nElems=524288 at t=1037823
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=2 nElems=524288 at t=1037827
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=1379668
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=1379668
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=3 t=1379668
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=3 t=1379668
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=1380000
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=1380000
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=3 t=1380000
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=1380000
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=3 t=1380000
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=1380000
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=4 part=0 rateGBps=0 at t=1380000
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=4 part=0 rateGBps=0 at t=1380000
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=4 part=0 rateGBps=0 at t=1380000
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=4 part=0 rateGBps=0 at t=1380000
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=4 t=1380000
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=4 t=1380000
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=4 t=1380000
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=4 t=1380000
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=3 nElems=524288 at t=1382494
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=3 nElems=524288 at t=1382494
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=3 nElems=524288 at t=1382826
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=3 nElems=524288 at t=1382826
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=1724667
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=4 t=1724667
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=1724671
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=4 t=1724671
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=1724999
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=4 t=1724999
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=1724999
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=5 part=0 rateGBps=0 at t=1724999
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=5 part=0 rateGBps=0 at t=1724999
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=5 t=1724999
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=5 t=1724999
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=1725003
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=4 t=1725003
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=1725003
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=5 part=0 rateGBps=0 at t=1725003
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=5 part=0 rateGBps=0 at t=1725003
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=5 t=1725003
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=5 t=1725003
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=4 nElems=524288 at t=1727493
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=4 nElems=524288 at t=1727497
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=4 nElems=524288 at t=1727825
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=4 nElems=524288 at t=1727829
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=2069670
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=2069670
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=5 t=2069670
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=5 t=2069670
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=2070002
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=2070002
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=5 t=2070002
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=2070002
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=5 t=2070002
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=2070002
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=6 part=0 rateGBps=0 at t=2070002
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=6 part=0 rateGBps=0 at t=2070002
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=6 part=0 rateGBps=0 at t=2070002
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=6 part=0 rateGBps=0 at t=2070002
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=6 t=2070002
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=6 t=2070002
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=6 t=2070002
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=6 t=2070002
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=5 nElems=524288 at t=2072496
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=5 nElems=524288 at t=2072496
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=5 nElems=524288 at t=2072828
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=5 nElems=524288 at t=2072828
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=2414669
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=6 t=2414669
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=2414673
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=6 t=2414673
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=2415001
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=6 t=2415001
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=2415001
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=7 part=0 rateGBps=0 at t=2415001
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=7 part=0 rateGBps=0 at t=2415001
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=7 t=2415001
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=7 t=2415001
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=2415005
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=6 t=2415005
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=2415005
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=7 part=0 rateGBps=0 at t=2415005
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=7 part=0 rateGBps=0 at t=2415005
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=7 t=2415005
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=7 t=2415005
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=6 nElems=524288 at t=2417495
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=6 nElems=524288 at t=2417499
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=6 nElems=524288 at t=2417827
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=6 nElems=524288 at t=2417831
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=2759672
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=2759672
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=7 t=2759672
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=7 t=2759672
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=2760004
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=2760004
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=7 t=2760004
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=2760004
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=7 t=2760004
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=2760004
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=8 part=0 rateGBps=0 at t=2760004
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=8 part=0 rateGBps=0 at t=2760004
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=8 part=0 rateGBps=0 at t=2760004
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=8 part=0 rateGBps=0 at t=2760004
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=8 t=2760004
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=8 t=2760004
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=8 t=2760004
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=8 t=2760004
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=7 nElems=524288 at t=2762498
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=7 nElems=524288 at t=2762498
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=7 nElems=524288 at t=2762830
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=7 nElems=524288 at t=2762830
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=3104671
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=8 t=3104671
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=3104675
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=8 t=3104675
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=3105003
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=8 t=3105003
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=3105003
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=9 part=0 rateGBps=0 at t=3105003
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=9 part=0 rateGBps=0 at t=3105003
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=9 t=3105003
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=9 t=3105003
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=3105007
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=8 t=3105007
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=3105007
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=9 part=0 rateGBps=0 at t=3105007
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=9 part=0 rateGBps=0 at t=3105007
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=9 t=3105007
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=9 t=3105007
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=8 nElems=524288 at t=3107497
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=8 nElems=524288 at t=3107501
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=8 nElems=524288 at t=3107829
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=8 nElems=524288 at t=3107833
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=3449674
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=3449674
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=9 t=3449674
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=9 t=3449674
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=3450006
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=3450006
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=9 t=3450006
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=3450006
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=9 t=3450006
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=3450006
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=10 part=0 rateGBps=0 at t=3450006
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=10 part=0 rateGBps=0 at t=3450006
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=10 part=0 rateGBps=0 at t=3450006
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=10 part=0 rateGBps=0 at t=3450006
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=10 t=3450006
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=10 t=3450006
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=10 t=3450006
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=10 t=3450006
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=9 nElems=524288 at t=3452500
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=9 nElems=524288 at t=3452500
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=9 nElems=524288 at t=3452832
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=9 nElems=524288 at t=3452832
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=3794673
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=10 t=3794673
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=3794677
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=10 t=3794677
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=3795005
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=10 t=3795005
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=3795005
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=11 part=0 rateGBps=0 at t=3795005
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=11 part=0 rateGBps=0 at t=3795005
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=11 t=3795005
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=11 t=3795005
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=3795009
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=10 t=3795009
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=3795009
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=11 part=0 rateGBps=0 at t=3795009
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=11 part=0 rateGBps=0 at t=3795009
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=11 t=3795009
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=11 t=3795009
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=10 nElems=524288 at t=3797499
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=10 nElems=524288 at t=3797503
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=10 nElems=524288 at t=3797831
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=10 nElems=524288 at t=3797835
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=4139676
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=4139676
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=11 t=4139676
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=11 t=4139676
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=4140008
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=4140008
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=11 t=4140008
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=4140008
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=11 t=4140008
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=4140008
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=12 part=0 rateGBps=0 at t=4140008
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=12 part=0 rateGBps=0 at t=4140008
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=12 part=0 rateGBps=0 at t=4140008
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=12 part=0 rateGBps=0 at t=4140008
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=12 t=4140008
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=12 t=4140008
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=12 t=4140008
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=12 t=4140008
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=11 nElems=524288 at t=4142502
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=11 nElems=524288 at t=4142502
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=11 nElems=524288 at t=4142834
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=11 nElems=524288 at t=4142834
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=4484675
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=12 t=4484675
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=4484679
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=12 t=4484679
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=4485007
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=12 t=4485007
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=4485007
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=13 part=0 rateGBps=0 at t=4485007
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=13 part=0 rateGBps=0 at t=4485007
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=13 t=4485007
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=13 t=4485007
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=4485011
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=12 t=4485011
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=4485011
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=13 part=0 rateGBps=0 at t=4485011
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=13 part=0 rateGBps=0 at t=4485011
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=13 t=4485011
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=13 t=4485011
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=12 nElems=524288 at t=4487501
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=12 nElems=524288 at t=4487505
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=12 nElems=524288 at t=4487833
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=12 nElems=524288 at t=4487837
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=4829678
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=4829678
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=13 t=4829678
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=13 t=4829678
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=4830010
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=4830010
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=13 t=4830010
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=4830010
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=13 t=4830010
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=4830010
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=14 part=0 rateGBps=0 at t=4830010
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=14 part=0 rateGBps=0 at t=4830010
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=14 part=0 rateGBps=0 at t=4830010
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=14 part=0 rateGBps=0 at t=4830010
+GPU 0 TB=2 arrived at iteration barrier (1/4) leaving iter=14 t=4830010
+GPU 0 TB=3 arrived at iteration barrier (2/4) leaving iter=14 t=4830010
+GPU 2 TB=2 arrived at iteration barrier (1/4) leaving iter=14 t=4830010
+GPU 2 TB=3 arrived at iteration barrier (2/4) leaving iter=14 t=4830010
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=13 nElems=524288 at t=4832504
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=13 nElems=524288 at t=4832504
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=13 nElems=524288 at t=4832836
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=13 nElems=524288 at t=4832836
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=5174677
+GPU 0 TB=0 arrived at iteration barrier (3/4) leaving iter=14 t=5174677
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=5174681
+GPU 2 TB=0 arrived at iteration barrier (3/4) leaving iter=14 t=5174681
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=5175009
+GPU 0 TB=1 arrived at iteration barrier (4/4) leaving iter=14 t=5175009
+GPU 0: iteration barrier releasing 4 threadblock(s) at t=5175009
+Node 0 chan 0: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=15 part=0 rateGBps=0 at t=5175009
+Node 0 chan 1: RDMA send to 2 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=15 part=0 rateGBps=0 at t=5175009
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=5175013
+GPU 2 TB=1 arrived at iteration barrier (4/4) leaving iter=14 t=5175013
+GPU 2: iteration barrier releasing 4 threadblock(s) at t=5175013
+Node 2 chan 0: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=2 sid=0 iter=15 part=0 rateGBps=0 at t=5175013
+Node 2 chan 1: RDMA send to 0 totalBytes=2097152 over 1 lane(s) bid=3 sid=0 iter=15 part=0 rateGBps=0 at t=5175013
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=14 nElems=524288 at t=5177503
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=14 nElems=524288 at t=5177507
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=14 nElems=524288 at t=5177835
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=14 nElems=524288 at t=5177839
+Node 0 chan 0: transfer complete from peer 2 dst=(1,2) totalBytes=2097152 at t=5519680
+Node 2 chan 0: transfer complete from peer 0 dst=(1,0) totalBytes=2097152 at t=5519680
+Node 0 chan 1: transfer complete from peer 2 dst=(1,3) totalBytes=2097152 at t=5520012
+Node 2 chan 1: transfer complete from peer 0 dst=(1,1) totalBytes=2097152 at t=5520012
+Node 2 chan 0: RDMA send to 0 physically drained (sender side) bid=2 sid=0 iter=15 nElems=524288 at t=5522506
+Node 0 chan 0: RDMA send to 2 physically drained (sender side) bid=2 sid=0 iter=15 nElems=524288 at t=5522506
+Node 2 chan 1: RDMA send to 0 physically drained (sender side) bid=3 sid=0 iter=15 nElems=524288 at t=5522838
+Node 0 chan 1: RDMA send to 2 physically drained (sender side) bid=3 sid=0 iter=15 nElems=524288 at t=5522838

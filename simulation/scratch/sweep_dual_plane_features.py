@@ -1,0 +1,1058 @@
+#!/usr/bin/env python3
+"""Sweep a collective scratch's feature ablations over a range of message sizes.
+
+The programs to sweep are the leading arguments: scratch names, or paths to their .cc. Give
+several and each is swept in turn into its own output directory.
+
+    ./sweep_dual_plane_features.py dual_plane_hetero --start 1KB --end 64KB
+    ./sweep_dual_plane_features.py rail_optimized_256gpu_dual_plane --start 1KB --end 1GB
+    ./sweep_dual_plane_features.py mini --start 4KB --end 4MB
+
+`mini` is an alias for the three small controlled-set topologies (mini_1gpu_1nic,
+mini_2gpu_1nic, mini_2gpu_2nic), which share one 100Gbps 2:1-tapered leaf-spine fabric and
+differ only in the host interior. They carry their own line-rate defaults, so the bandwidth
+table's caption and the --nicBwInterval sizing are right without passing --host-tx-gbps or
+--nic-line-gbps. They are small enough to sweep end to end in minutes, which makes them the
+place to check that an ablation does what it claims before spending hours at 256 GPUs.
+
+Sizes on the command line are PER GPU PAIR: every rank sends that much to each rank, so the
+scratch's --inputBytes (one rank's total input) is <ranks>x the pair size -- 1 GB per pair is
+96 GB per rank on a 96-GPU scratch. The rank count is read out of the source, as is the set of
+--flags the program actually accepts, so a scratch missing one of the ablation knobs still
+sweeps (that knob is simply left at its own default). Start small.
+
+Eight configurations per size by default: a baseline with every feature off, one run per feature turned
+on alone (flow ids paired with schedule-pinned NICs, since routing by flow id says nothing
+useful about connections injected on whichever NIC), two subtractions from the full set
+(everything except the rate annotations, and everything except the netDeps edges -- dropping
+both at once is the flowId+nic run), and one with all of them on (the scratch's own defaults).
+
+A ninth, `milp`, is opt-in via --configs: EXACTLY the baseline flags, run against a schedule
+VARIANT (--sched=milp) that fixes one chunk per src-dst GPU pair, so the algorithm makes no
+multipath decision either. Everything else -- rate off, netDeps off, flowId off, merged NICs --
+is identical to `baseline` on purpose: the two columns differ only in the schedule, which is
+what makes their difference attributable to the solve rather than to a feature flag. It is the
+floor the `baseline` column is itself measured against, since baseline still runs a solve that
+splits a pair across paths. A program or scenario with no such solve on disk is SKIPPED WITH A
+WARNING rather than re-run as a duplicate baseline. It appends to the same results.csv, so it
+can be added to a finished sweep:
+
+    ./sweep_dual_plane_features.py mini_1gpu_1nic --configs=milp --start 4KB --end 4MB
+
+A tenth, `p2p`, is opt-in the same way and is the NCCL floor: --sched=p2p runs a
+transcription of `ncclAlltoAll` (one direct message per ordered pair, no relaying, no
+multipath, no rates) under baseline's flags. Between them the three reference columns read
+as: `p2p` = what NCCL would do, `milp` = a solve constrained to one chunk per pair,
+`baseline` = the unconstrained solve, all on identical transport settings.
+
+    ./sweep_dual_plane_features.py mini --configs=baseline,p2p,milp --start 4KB --end 4MB
+
+One deviation worth knowing: --protoChunkBytes and --maxMsgsInFlight are held constant
+across every config (2 MiB / 8), so the p2p column is NCCL's SCHEDULE on this sweep's
+transport, not NCCL's transport too -- real NCCL would use a 128 KiB p2p chunk. Varying it
+per column would confound the schedule comparison, which is the thing being measured.
+
+--sync-blocks is not a config but a modifier on the ones you asked for: it re-runs each with
+the MSCCL gridOffset iteration barrier on (CollectivesApplication's SyncBlocks) under the name
+<config>+sync, so a barriered run sits beside its unbarriered twin in the same table rather
+than overwriting it.
+
+    ./sweep_dual_plane_features.py rail_optimized_256gpu_dual_plane \
+        --configs=baseline,all --sync-blocks --start 4MB --end 16MB
+
+It is inert below the pipelining threshold: a chunk here is inputBytes/nchunksperloop, and
+unless that exceeds the sweep's 2 MiB --protoChunkBytes there is only one iteration and no
+boundary to barrier at. On the 256-GPU dual-plane schedule (nchunksperloop == ngpus) a chunk
+IS the per-pair size, so the barrier does nothing until 4 MB/pair and bites hardest at 16 MB,
+where the schedule is replayed 8 times. A program that does not declare --syncBlocks is
+refused outright rather than swept, since every column would be an unbarriered run wearing a
++sync name.
+
+PARTIAL-PARTICIPATION SCENARIOS. A scenario tag (1A, 2B, 2C, 3A -- or the group `partial`) is
+itself a program spec: it names one of the mini topologies plus a solve in which only a subset
+of its GPUs carries data, selected through the scratch's --scenario knob.
+
+    ./sweep_dual_plane_features.py partial --start 4KB --end 64MB
+    ./sweep_dual_plane_features.py 2B --configs=baseline,milp --start 4KB --end 4MB
+
+Their results land in sweep_results/<TAG>, named by the tag rather than by the program, since
+2B and 2C are the same scratch and would otherwise share a results.csv. Every other flag means
+what it always did. Two things are scenario-aware: sizes on the size axis divide by the
+scenario's PARTICIPANT count (not the topology's GPU count), so a point means the same bytes
+per pair in all four; and `milp` looks for <stem>_<TAG>_<coll>_milp.xml. Only 1A has a milp
+solve today -- the 2-GPU topologies' NVLink bandwidth changed (2026-09-27) and only their lp
+solves were re-run, so their stale milp schedules were deleted -- and asking for that config
+on 2B, 2C or 3A warns and drops the column. See import_teccl_partial.py.
+
+Results are appended to results.csv under a per-program output directory and re-read on
+startup. The directory (and every run's trace label) is named for the program plus a suffix for
+each simulation setting that is not a config column and is off its reference value -- `_ack`,
+`_ackN<N>`, `_allgather`, `_chunk<size>`, `_inflight<N>` -- so sweeps under different setups
+never share a results.csv; the reference values add nothing, so older directories keep their
+names. Results are re-read on startup, so an interrupted sweep resumes where it stopped; --force re-runs anyway. Tables are
+(re)printed from that file at the end, and also written to tables.md.
+"""
+import argparse, collections, csv, math, os, re, subprocess, sys, time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+NS3_DIR = os.path.dirname(HERE)                    # simulation/
+LOG = os.path.join(HERE, "logs")
+
+SCRATCH_DIR = HERE                                  # simulation/scratch, where ns3 finds targets
+
+# name -> the flags that differ from the scratch's own defaults.
+# baseline is everything off; each feature run turns one feature back on, and "all" is the
+# scratch's own defaults.
+#
+# flowId is deliberately NOT tested alone: per-flow switch forwarding only steers a packet the
+# schedule already put on the right plane, so with merged NICs the routing rules would mostly
+# be applied to connections injected on the wrong NIC. The flow-id run therefore carries
+# --nicSel=schedule with it, and nicSel alone (schedule-pinned NICs, plain ECMP in the fabric)
+# is the run that separates the two halves.
+CONFIGS = collections.OrderedDict([
+    ("baseline",   dict(rate=0, netDeps=0, flowId=0, nicSel="merged", remoteDeps=0)),
+    ("rate",       dict(rate=1, netDeps=0, flowId=0, nicSel="merged", remoteDeps=0)),
+    ("netDeps",    dict(rate=0, netDeps=1, flowId=0, nicSel="merged", remoteDeps=0)),
+    ("nicSel",     dict(rate=0, netDeps=0, flowId=0, nicSel="schedule", remoteDeps=0)),
+    ("flowId+nic", dict(rate=0, netDeps=0, flowId=1, nicSel="schedule", remoteDeps=0)),
+    # Everything on except the rate-annotated XML: isolates what the schedule's per-flow rates
+    # buy once the rest of the machinery is already in force.
+    ("noRate",     dict(rate=0, netDeps=1, flowId=1, nicSel="schedule", remoteDeps=1)),
+    # The same subtraction for the schedule's cross-rank dependencies. Dropping netDeps AND
+    # rate together needs no config of its own: with only four knobs that is exactly the
+    # flowId+nic run above.
+    ("noNetDeps",  dict(rate=1, netDeps=0, flowId=1, nicSel="schedule", remoteDeps=1)),
+    ("all",        dict(rate=1, netDeps=1, flowId=1, nicSel="schedule", remoteDeps=1)),
+    # The "baseline baseline": the same flags as baseline, but against a schedule variant
+    # (--sched) that fixes strictly one chunk per src-dst GPU pair, so the algorithm itself
+    # makes no multipath decision -- direct point-to-point traffic, ECMP-forwarded, unpaced,
+    # with none of the dynamism control features in force. It is what the baseline column is
+    # measured against in turn: baseline still runs a solve that splits pairs across paths.
+    #
+    # Opt-in rather than part of the default set: it needs both the --sched knob and a
+    # <stem>_<coll>_milp solve on disk (today only mini_1gpu_1nic / 1A has one), and a program
+    # missing either is skipped with a note rather than run as a duplicate baseline.
+    ("milp",       dict(rate=0, netDeps=0, flowId=0, nicSel="merged", remoteDeps=0, sched="milp")),
+    # The other floor, and the one a reader outside this project will ask about: what a
+    # stock NCCL job does. `ncclAlltoAll` is not an algorithm -- it fans out one direct
+    # message per ordered pair and routes nothing (no cost model, no algorithm selection,
+    # no multipath, no pacing anywhere in that path), so it is the natural zero against
+    # which "the solver bought us X" is stated. Same flags as `baseline` for the same reason
+    # `milp` has them: the columns must differ only in the schedule.
+    #
+    # The schedules are transcribed from NCCL 2.31.2-1 by xml_input/gen_nccl_alltoall.py --
+    # the real round permutation and channel assignment, not a hand-rolled ring -- and exist
+    # for every mini_* topology and every partial scenario. See README_nccl_alltoall.md.
+    ("p2p",        dict(rate=0, netDeps=0, flowId=0, nicSel="merged", remoteDeps=0, sched="p2p")),
+    # The remote pacing gates (remotedep/remotenotify) as their own knob, alone and subtracted
+    # from the full set. Opt-in: only schedules that carry remote gates (2B and 2C today) can tell these
+    # apart from baseline and all, so on everything else they would be duplicate runs. The
+    # default configs above still set remoteDeps explicitly -- off wherever a feature is being
+    # isolated, on in the "everything" columns -- so no column depends on the scratch default.
+    ("remoteDeps",   dict(rate=0, netDeps=0, flowId=0, nicSel="merged", remoteDeps=1, optin=True)),
+    ("noRemoteDeps", dict(rate=1, netDeps=1, flowId=1, nicSel="schedule", remoteDeps=0, optin=True)),
+])
+BASELINE = "baseline"
+# --sync-blocks does not add a config; it re-runs whichever configs were asked for with the
+# threadblock barrier on, under a suffixed name. Suffixing rather than overwriting is the
+# point: a barriered run is not the same simulation as its unbarriered twin, so the two must
+# not collide on a (pair_bytes, config) key in results.csv -- and side by side in one table
+# the pair IS the measurement. The config name also feeds the label, so the traces separate
+# too.
+SYNC_SUFFIX = "+sync"
+# Run unless --configs says otherwise. Everything with a `sched` is a different schedule, not an
+# ablation of the sweep's own one, so it does not belong in the default ablation table.
+DEFAULT_CONFIGS = [n for n, f in CONFIGS.items() if not f.get("sched") and not f.get("optin")]
+
+# Constant across every run, per the sweep's terms.
+PROTO_CHUNK_BYTES = 2 * 1024 * 1024
+MAX_MSGS_IN_FLIGHT = 8
+# Mid-message ack coalescing, in packets. RdmaFabricHelper sizes every window as BDP + N*MTU and
+# the sender requests an ack on the packet that fills it, so N no longer caps throughput or risks
+# a stall; what it sets is the reverse-path ack load. Constant across the sweep: it is a
+# transport setting, not a property of the size axis. A non-default N is part of the output
+# name (see setup_suffix), so sweeps at different N land in different directories.
+ACK_EVERY_N_PKTS = 8
+
+# Everything that changes what a run simulates but is not a config column. Each setting at its
+# reference value adds nothing to the output name, so directories written before this scheme
+# keep their names; any other value gets a suffix on the directory AND on the run label (the
+# traces in logs/ are keyed by label). Anything that only changes what is sampled or kept --
+# --host-tx-gbps, --no-nic-bw, --qlen-rows-max-bytes, --keep-traces -- is deliberately absent.
+SETUP_REFERENCE = dict(coll="alltoall", ack_every_n_pkts=8,
+                       proto_chunk_bytes=2 * 1024 * 1024, max_msgs_in_flight=8)
+
+
+def setup(args):
+    """The run's simulation setup outside the config columns, as name -> value.
+
+    ack_every_n_pkts is None with acks off: RdmaHw ignores it there, so two no-ack sweeps that
+    differ only in it are the same simulation and must share a namespace.
+    """
+    return collections.OrderedDict([
+        ("l2ack", 1 if args.l2ack else 0),
+        ("coll", args.coll),
+        ("ack_every_n_pkts", args.ack_every_n_pkts if args.l2ack else None),
+        ("proto_chunk_bytes", PROTO_CHUNK_BYTES),
+        ("max_msgs_in_flight", MAX_MSGS_IN_FLIGHT),
+    ])
+
+
+def setup_suffix(args):
+    """The output-name suffix for setup(args): e.g. "_ack", "_ack_ackN1", "_allgather"."""
+    st, ref, parts = setup(args), SETUP_REFERENCE, []
+    if st["l2ack"]:
+        parts.append("ack")
+    if st["ack_every_n_pkts"] not in (None, ref["ack_every_n_pkts"]):
+        parts.append(f"ackN{st['ack_every_n_pkts']}")
+    if st["coll"] != ref["coll"]:
+        parts.append(st["coll"])
+    if st["proto_chunk_bytes"] != ref["proto_chunk_bytes"]:
+        parts.append(f"chunk{fmt_size(st['proto_chunk_bytes'])}")
+    if st["max_msgs_in_flight"] != ref["max_msgs_in_flight"]:
+        parts.append(f"inflight{st['max_msgs_in_flight']}")
+    return "".join("_" + p for p in parts)
+
+FIELDS = ["pair_bytes", "config", "input_bytes", "sim_time_ns", "algbw_gbps",
+          "pause", "resume", "max_qlen_bytes", "nic_mean_gbps", "nic_peak_gbps",
+          "paced_pct", "unshapeable_pct", "nic_interval_ns", "qlen_rows", "wall_s"]
+
+# The three small controlled-set topologies, swept together under the name "mini". Same
+# fabric in all three (2 hosts per leaf, 100Gbps links, 2:1 tapered uplinks); only the host
+# interior differs, which is exactly what makes them a set.
+MINI_PROGRAMS = ["mini_1gpu_1nic", "mini_2gpu_1nic", "mini_2gpu_2nic"]
+
+# PARTIAL-PARTICIPATION scenarios: the same three topologies, but with a solve in which only a
+# subset of the GPUs carries a slice of the collective. Named by tag, and a tag IS a program
+# spec -- `./sweep_dual_plane_features.py 2B` sweeps mini_2gpu_1nic with --scenario=2B.
+#
+# The subsets are chosen so the number of flows a leaf must spread over its two equal-cost
+# uplinks is ODD, which pins ECMP's best possible split at ceil(K/2):floor(K/2) -- lopsided
+# whatever the hash does. The default (`lp`) solve answers that by splitting each pair's chunk
+# over several channels so a pair occupies more than one 5-tuple; the `milp` variant keeps
+# strictly one chunk per pair and therefore one hash, one uplink. That pair of solves, run
+# under identical flags, is the measurement.
+#
+# `participants` is the number of GPUs that actually carry data, and it is what the per-pair
+# size axis divides by: --inputBytes is one rank's whole input, split into one partition per
+# participant, so bytes-per-pair is inputBytes/participants regardless of how many GPUs the
+# topology has. Using the topology's rank count would make a 4-participant scenario carry
+# twice the bytes per pair of an 8-participant one at the same point on the axis.
+SCENARIOS = collections.OrderedDict([
+    ("1A", dict(program="mini_1gpu_1nic", participants=2,
+                note="{g0,g2}: 1 cross-leaf flow per direction, so ECMP cannot use the 2nd spine at all")),
+    ("2B", dict(program="mini_2gpu_1nic", participants=4,
+                note="{g0,g2,g3,g5}: 3x1 = 3 flows per direction")),
+    ("2C", dict(program="mini_2gpu_1nic", participants=6,
+                note="{g0,g2,g3,g4,g5,g6}: 3x3 = 9 flows per direction")),
+    ("3A", dict(program="mini_2gpu_2nic", participants=6,
+                note="{g0,g2,g3,g4,g5,g6}: 3x3 = 9 flows per direction, per-GPU NICs")),
+])
+
+GROUPS = {"mini": MINI_PROGRAMS, "partial": list(SCENARIOS)}
+
+# Per-program overrides for the two numbers the sweep cannot read out of the source: a host's
+# total fabric egress (which only sizes the --nicBwInterval sampling period) and the per-NIC
+# line rate (quoted in the bandwidth table's caption). Both default to the 400G dual-plane
+# numbers; anything listed here says otherwise. An explicit --host-tx-gbps / --nic-line-gbps
+# still wins, so a preset never silently overrides what was asked for.
+PROGRAM_DEFAULTS = {
+    # 1 GPU, 1 x 100Gbps NIC per host.
+    "mini_1gpu_1nic": dict(host_tx_gbps=100.0, nic_line_gbps=100.0),
+    # 2 GPUs sharing ONE 100Gbps NIC off the root complex -- the funnel variant.
+    "mini_2gpu_1nic": dict(host_tx_gbps=100.0, nic_line_gbps=100.0),
+    # 2 GPUs, one 100Gbps NIC each, so the host presents 200Gbps.
+    "mini_2gpu_2nic": dict(host_tx_gbps=200.0, nic_line_gbps=100.0),
+}
+
+
+# ---- the program under test -------------------------------------------------------------
+
+class Program:
+    """Everything the sweep needs to know about the scratch it is driving.
+
+    All of it is read out of the source rather than hard-coded, because the point of the
+    argument is to run this against scratches with different rank counts and different
+    subsets of the ablation knobs.
+    """
+
+    def __init__(self, spec, ranks=None, scenario=None):
+        # A partial-participation scenario is the same scratch driven at a different schedule,
+        # so it is a property of the run, not a different program. It changes three things:
+        # the --scenario the run is given, the participant count the size axis divides by, and
+        # the slug (two scenarios of one scratch must not share trace files or a results.csv).
+        self.scenario = scenario
+        self.participants = SCENARIOS[scenario]["participants"] if scenario else None
+        self.path = self._resolve(spec)
+        self.name = os.path.splitext(os.path.basename(self.path))[0]
+        # The shortcut ./ns3 run resolves to a real cmake target. Note that ./ns3 build cannot
+        # take this: build passes its argument to a regex expecting an already-built path, so
+        # only the run path knows how to turn scratch/<name> into a target.
+        self.target = f"scratch/{self.name}"
+        src = self._read_with_local_headers(self.path)
+
+        self.flags = set(re.findall(r'cmd\.AddValue\(\s*"([A-Za-z0-9_]+)"', src))
+        if "inputBytes" not in self.flags:
+            raise SystemExit(
+                f"{self.path} has no --inputBytes (no CommandLine at all, in the case of the\n"
+                f"generated topology/output skeletons -- those build a topology and call\n"
+                f"Simulator::Run with no collective installed). There is nothing to sweep.")
+
+        self.ranks = ranks or self._count(src, "gpunodes")
+        if not self.ranks:
+            raise SystemExit(f"cannot find the GPU count in {self.path}; pass --ranks")
+        # 0 is a real answer, not a missing one: mini_1gpu_1nic has no host tier at all.
+        # off_node_fraction reads it that way, so do not coerce it to 1 here.
+        self.nvswitches = self._count(src, "nvswtches")
+        # 64-bit --inputBytes is what lets a sweep past 4 GB per rank mean anything; the older
+        # uint32_t declaration wraps silently, which would look like a suspiciously fast run.
+        self.wide_input = bool(re.search(r"uint64_t\s+inputBytes", src))
+        # L2AckInterval selects the ack mode, and it changes the transport underneath every
+        # configuration: with acks off the sender self-acknowledges at send completion, so
+        # nothing ever waits a round trip and --maxMsgsInFlight cannot bind. Runs from the two
+        # modes are therefore not comparable, and must not land in the same results.csv --
+        # hence the suffix on every output path. Either a literal in the SetDefault, or --
+        # once the scratch exposes --l2Ack -- the initialiser of the variable that SetDefault
+        # passes. Note this is now a mode, not a byte cadence: the cadence moved to
+        # AckEveryNPackets, so a scratch predating that change is NOT comparable with one after
+        # it even at the same --l2ack. Use a fresh --outdir across that boundary.
+        m = (re.search(r'"ns3::RdmaHw::L2AckInterval"\s*,\s*UintegerValue\((\d+)\)', src)
+             or re.search(r"uint32_t\s+l2AckInterval\s*=\s*(\d+)", src))
+        self.ack_default = int(m.group(1)) if m else 0
+        # The stem its schedule files are named after, and how the collective is spelled in
+        # them. Two conventions are in use and has_sched() has to know which:
+        #   mini_*  -- mini::Options::For("mini_1g1n", 4), files <stem>_a2a[...].xml
+        #   the big scratches -- the name is built inline as "<prefix>_" + coll, so the
+        #       collective appears in full: <prefix>_alltoall[...].xml
+        # Scraped rather than tabulated, for the same reason the rank count and the flag set
+        # are: the point of this driver is to run against scratches it was not written for.
+        m = re.search(r'Options::For\(\s*"([A-Za-z0-9_]+)"', src)
+        if m:
+            self.stem, self.coll_abbreviated = m.group(1), True
+        else:
+            # `"<prefix>_" + coll`, whether that sits directly in the XML_NAME ternary or in
+            # a STEM built ahead of it (which is what adding a --sched knob turns it into).
+            m = re.search(r'"([A-Za-z0-9_]+)_"\s*\+\s*coll\b', src)
+            self.stem, self.coll_abbreviated = (m.group(1) if m else None), False
+
+    @property
+    def pair_ranks(self):
+        """What one rank's --inputBytes is divided into: the collective's participant count.
+
+        The topology's rank count for a whole-topology solve; the scenario's data-carrying
+        subset for a partial one. This is the denominator that keeps "size per GPU pair"
+        meaning the same thing across scenarios with different participant counts.
+        """
+        return self.participants or self.ranks
+
+    def sched_xml(self, sched, coll):
+        """Filename mini_harness.h will derive for a schedule variant of this run.
+
+        Mirrors the STEM assembly in mini_harness.h exactly:
+        <stem>[_<scenario>]_<coll>[_<sched>].xml -- so a missing solve is caught here rather
+        than as an NS_FATAL_ERROR after the build, which in a multi-program sweep would only
+        surface once the earlier programs had finished.
+        """
+        if not self.stem:
+            return "<no schedule stem found in the source>"
+        suffix = ("ag" if coll == "allgather" else "a2a") if self.coll_abbreviated else coll
+        stem = self.stem + (f"_{self.scenario}" if self.scenario else "")
+        return f"{stem}_{suffix}" + (f"_{sched}" if sched else "") + ".xml"
+
+    def has_sched(self, sched, coll):
+        if not self.stem:
+            return False
+        return os.path.isfile(os.path.join(SCRATCH_DIR, "xml_input", self.sched_xml(sched, coll)))
+
+    def slug(self, args):
+        """Output namespace for a sweep of this program under args' simulation setup.
+
+        The setup suffix (setup_suffix) goes on the label as well as the directory, because the
+        traces the scratch writes into logs/ are keyed by label and would otherwise be
+        overwritten in place by a sweep under a different setup.
+        """
+        return (self.name + (f"_{self.scenario}" if self.scenario else "")
+                + setup_suffix(args))
+
+    @staticmethod
+    def _read_with_local_headers(path):
+        """The scratch's source, with any local "..." headers it includes appended.
+
+        Everything this class knows it reads out of the source, and the mini_* scratches keep
+        their whole harness -- the CommandLine, the uint64_t --inputBytes, the L2AckInterval
+        default -- in mini_harness.h, leaving only the generated topology in the .cc. Reading
+        the .cc alone would therefore find no --inputBytes at all and refuse to sweep them.
+        One level deep is enough: these headers include only ns3/... umbrellas, which are not
+        local and hold nothing this scans for.
+        """
+        text = open(path, encoding="utf-8", errors="replace").read()
+        here = os.path.dirname(path)
+        parts = [text]
+        for inc in re.findall(r'^\s*#include\s+"([^"/]+\.h)"', text, re.M):
+            hdr = os.path.join(here, inc)
+            if os.path.isfile(hdr):
+                parts.append(open(hdr, encoding="utf-8", errors="replace").read())
+        return "\n".join(parts)
+
+    @staticmethod
+    def _resolve(spec):
+        cands = [spec] if os.sep in spec or spec.endswith(".cc") else []
+        cands += [os.path.join(SCRATCH_DIR, spec + ".cc"), os.path.join(SCRATCH_DIR, spec)]
+        for c in cands:
+            if os.path.isfile(c):
+                path = os.path.abspath(c)
+                break
+        else:
+            raise SystemExit(f"cannot find a source for {spec!r} (looked in {SCRATCH_DIR})")
+        # ns3 only builds targets under simulation/scratch, so a source living anywhere else
+        # (topology/output, say) has to be copied in before it can be run at all.
+        if os.path.dirname(path) != SCRATCH_DIR:
+            twin = os.path.join(SCRATCH_DIR, os.path.basename(path))
+            hint = f"\nA copy already exists at {twin} -- sweep that instead." \
+                if os.path.isfile(twin) else \
+                f"\nCopy it to {SCRATCH_DIR} first, then sweep it by name."
+            raise SystemExit(f"{path} is not under {SCRATCH_DIR}, so ns3 has no target for it."
+                             + hint)
+        return path
+
+    @staticmethod
+    def _count(src, container):
+        m = re.search(r"i\s*<\s*(\d+)\s*;.*?\b" + container + r"\.Add\(", src)
+        return int(m.group(1)) if m else 0
+
+    def off_node_fraction(self):
+        """Share of a rank's input that leaves the host, for the duration estimate only.
+
+        Peers sharing a rank's NVSwitch are reached over NVLink and never touch the fabric.
+        Domains are not always equal-sized, but this only picks a sampling period.
+
+        With no host tier (mini_1gpu_1nic) every rank is alone on its host, so everything but
+        a rank's own share crosses the fabric.
+        """
+        per_domain = 1 if not self.nvswitches else max(1, self.ranks // self.nvswitches)
+        return max(0.1, (self.ranks - per_domain) / self.ranks)
+
+    def filter(self, argv):
+        """Drop --flags this program does not declare, so a leaner scratch still sweeps."""
+        keep, dropped = [], []
+        for a in argv:
+            flag = a[2:].split("=")[0] if a.startswith("--") else None
+            if flag and flag not in self.flags:
+                dropped.append(flag)
+            else:
+                keep.append(a)
+        return keep, dropped
+
+
+# ---- sizes -------------------------------------------------------------------------------
+
+def parse_size(text):
+    m = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([KMG]?)B?\s*", text, re.I)
+    if not m:
+        raise argparse.ArgumentTypeError(f"cannot read size {text!r} (try 1KB, 4MB, 1GB)")
+    return int(float(m.group(1)) * {"": 1, "K": 1 << 10, "M": 1 << 20, "G": 1 << 30}[m.group(2).upper()])
+
+
+def fmt_size(n):
+    for unit, div in (("GB", 1 << 30), ("MB", 1 << 20), ("KB", 1 << 10)):
+        if n >= div:
+            v = n / div
+            return f"{v:.0f}{unit}" if v == int(v) else f"{v:g}{unit}"
+    return f"{n}B"
+
+
+# Each size is --step x the last, 4 by default. A 1KB..1GB range is 11 points on that ladder
+# rather than 21, which matters because the cost of a point grows with the size: the top two
+# points alone dominate either sweep's wall clock, so the extra x2 points would buy resolution
+# mostly where it is cheapest and least interesting.
+STEP = 4
+
+
+def sizes(start, end, step=STEP):
+    out, s = [], float(start)
+    while int(s) <= end:
+        out.append(int(s))
+        s *= step
+    return out
+
+
+def nic_interval_ns(input_bytes, prog, host_tx_gbps, target_samples=500):
+    """Sampling period for --nicBwInterval, scaled to the run's expected length.
+
+    A fixed period cannot serve a range this wide: 100 ns is right for a run that lasts a few
+    microseconds and would emit tens of millions of rows for one that lasts a second. Estimate
+    the duration from the wire bound (a rank's off-node bytes over its fabric NICs), aim for a
+    few hundred samples per NIC, and snap to a 1/2/5 step.
+    """
+    est_ns = input_bytes * prog.off_node_fraction() / (host_tx_gbps * 1e9) * 8 * 1e9
+    raw = max(100.0, est_ns / target_samples)
+    mag = 10 ** int(len(str(int(raw))) - 1)
+    for step in (1, 2, 5, 10):
+        if raw <= step * mag:
+            return int(step * mag)
+    return int(10 * mag)
+
+
+# ---- running -----------------------------------------------------------------------------
+
+def run_one(pair_bytes, name, flags, args, prog, no_build):
+    input_bytes = pair_bytes * prog.pair_ranks
+    label = f"sweep_{prog.slug(args)}_{name}_{fmt_size(pair_bytes)}"
+    # The NIC bandwidth trace is a periodic event per NIC for the whole run -- a few hundred
+    # samples x every GPU NIC, all of it scheduler work the collective does not need. 0 turns
+    # the sampling off in the scratch, which is what --no-nic-bw is for when only the latency
+    # and PFC columns are wanted.
+    interval = 0 if args.no_nic_bw else nic_interval_ns(input_bytes, prog, args.host_tx_gbps)
+    # The per-packet queue trace is one row per enqueue and per dequeue at every hop, so it
+    # scales with the traffic and passes a gigabyte well before the top of this range. The
+    # scratch tracks the per-port high-water marks either way, which is all the table needs.
+    qlen_rows = 1 if input_bytes <= args.qlen_rows_max_bytes else 0
+    if "qlenRows" not in prog.flags:
+        qlen_rows = 1          # no knob to turn them off; the rows are written regardless
+
+    argv = [prog.target,
+            f"--inputBytes={input_bytes}", f"--label={label}", f"--coll={args.coll}",
+            f"--rate={flags['rate']}", f"--netDeps={flags['netDeps']}",
+            f"--flowId={flags['flowId']}", f"--nicSel={flags['nicSel']}",
+            # Only scratches that know the knob get it; the others have no remote-gate support
+            # and every one of their runs is remoteDeps-off by construction.
+            *([f"--remoteDeps={flags['remoteDeps']}"] if "remoteDeps" in prog.flags else []),
+            # --sched / --scenario are OMITTED when empty rather than passed as "": ns-3's
+            # CommandLineHelper::UserItemParse feeds the value to `istringstream >> val`,
+            # which sets failbit on an empty string, so `--sched=` is rejected outright
+            # ("Invalid argument value: sched=") for every string-valued option. Leaving the
+            # flag off is what selects the default solve.
+            *([f"--sched={flags['sched']}"] if flags.get("sched") else []),
+            *([f"--scenario={prog.scenario}"] if prog.scenario else []),
+            f"--protoChunkBytes={PROTO_CHUNK_BYTES}",
+            f"--syncBlocks={flags.get('syncBlocks', 0)}",
+            f"--maxMsgsInFlight={MAX_MSGS_IN_FLIGHT}",
+            f"--nicBwInterval={interval}", f"--qlenRows={qlen_rows}",
+            f"--l2Ack={args.l2ack}", f"--ackEveryNPkts={args.ack_every_n_pkts}",
+            # Off for the sweep even on scratches whose own default is on (the mini_* set):
+            # the tester allocates each rank's full expected output, which at the top of a
+            # size range is the largest allocation in the run, and it measures nothing this
+            # table reports. Verify once with a single run, then sweep. Dropped silently for
+            # scratches that do not declare the flag.
+            "--correctness=0",
+            "--checkLog=silent"]
+    argv, dropped = prog.filter(argv)
+    if dropped and not run_one.warned:
+        print(f"  note: {prog.name} declares no " + ", ".join(f"--{d}" for d in sorted(set(dropped)))
+              + " -- left at the program's own default", flush=True)
+        run_one.warned = True
+    # ns3 re-runs cmake and a build check before every invocation, which on a 147-run sweep
+    # costs more than some of the runs themselves -- and worse, a source edit landing mid-sweep
+    # would rebuild between two points and silently make them incomparable. Only the first run
+    # of a sweep is allowed to build; every one after it is --no-build.
+    cmd = ["./ns3", "run"] + (["--no-build"] if no_build else []) + [" ".join(argv)]
+
+    print(f"  [{name:8s}] {' '.join(argv[1:])}", flush=True)
+    if args.dry_run:
+        return None
+
+    t0 = time.time()
+    proc = subprocess.run(cmd, cwd=NS3_DIR, capture_output=True, text=True)
+    wall = time.time() - t0
+    out = proc.stdout + proc.stderr
+    # Written before any verdict, so a failed run keeps its whole log -- the fatal message from a
+    # collective that did not complete names the threadblock it stalled on, and that is exactly
+    # what gets cut off by the 4000-character tail below. No row is appended for a failure, so a
+    # resumed sweep still re-runs the point.
+    with open(os.path.join(args.outdir, f"run_{label}.log"), "w") as f:
+        f.write(out)
+    if proc.returncode != 0:
+        sys.stderr.write(out[-4000:])
+        raise SystemExit(f"run failed ({name}, {fmt_size(pair_bytes)}): exit {proc.returncode}")
+
+    sim = re.search(r"Total simulated time:\s*(\d+)", out)
+    if not sim:
+        sys.stderr.write(out[-4000:])
+        raise SystemExit(f"no simulated time reported ({name}, {fmt_size(pair_bytes)})")
+    # inf/nan are matched on purpose: they are how a run that never finished shows up here.
+    algbw = re.search(r"algorithm bandwidth:\s*([0-9.eE+-]+|inf|nan)", out)
+    # A run that never finished can still exit 0 -- on any scratch without the IsComplete
+    # guard, Simulator::Run() simply returns when the event queue drains. Its time then reads 0
+    # (no step ever completed) and its algbw inf, and appending it would put a spectacularly
+    # fast point in the tables. Refuse it the same way as any other failed run.
+    if int(sim.group(1)) == 0 or (algbw and not math.isfinite(float(algbw.group(1)))):
+        sys.stderr.write(out[-4000:])
+        raise SystemExit(f"run did not complete ({name}, {fmt_size(pair_bytes)}): simulated time "
+                         f"{sim.group(1)} ns, algbw {algbw.group(1) if algbw else 'missing'} -- "
+                         f"likely a transport deadlock; see run_{label}.log")
+
+    row = dict(pair_bytes=pair_bytes, config=name, input_bytes=input_bytes,
+               sim_time_ns=int(sim.group(1)),
+               algbw_gbps=float(algbw.group(1)) if algbw else "",
+               nic_interval_ns=interval, qlen_rows=qlen_rows, wall_s=round(wall, 1))
+    row.update(pace_stats(out))
+    row.update(read_traces(label, args, nic=interval > 0))
+    return row
+
+
+run_one.warned = False
+
+
+def pace_stats(out):
+    """RdmaHw::PrintPaceStats, reduced to the two numbers the ablation turns on.
+
+    paced_pct is the share of transmitted bytes whose inter-packet gap the schedule's XML rate
+    actually set; it is what makes a --rate run different from a --rate=0 one, and 0 here means
+    the two are the same simulation no matter what the latency column shows. unshapeable_pct is
+    the share of rate-carrying messages that fit in one MTU -- those have no inter-packet gap to
+    stretch, so their rate reaches the wire only as the gap after the single packet, which is
+    the expected failure mode when a schedule solved for large messages is replayed at small
+    ones.
+    """
+    m = re.search(r"bytes shaped by the XML rate:\s*[0-9.]+ of [0-9.]+ MB \(([0-9.]+)%\)", out)
+    # The parenthetical is matched loosely on purpose: PrintPaceStats renamed it from
+    # "(rate unshapeable)" to "(shaped only by the gap after)", and a sweep has to read
+    # logs written on either side of that change -- a literal match silently left the
+    # column blank for every run instead of failing.
+    u = re.search(r"one MTU or less \([^)]*\):\s*\d+ \(([0-9.]+)%\)", out)
+    return dict(paced_pct=float(m.group(1)) if m else "",
+                unshapeable_pct=float(u.group(1)) if u else "")
+
+
+# ---- trace reduction ---------------------------------------------------------------------
+
+def read_traces(label, args, nic=True):
+    """The three trace-derived columns, plus check_congestion.py's own report for the record."""
+    m = {}
+    m.update(pfc_counts(label))
+    m["max_qlen_bytes"] = peak_qlen(label)
+    m.update(nic_bw(label) if nic else dict(nic_mean_gbps="", nic_peak_gbps=""))
+
+    # Run the shipped classifier too, so each sweep point keeps the human-readable breakdown
+    # (which link class paused, how lopsided the NIC pair was) next to the reduced numbers.
+    cc = subprocess.run([sys.executable, os.path.join(HERE, "check_congestion.py"), label],
+                        cwd=HERE, capture_output=True, text=True)
+    with open(os.path.join(args.outdir, f"congestion_{label}.txt"), "w") as f:
+        f.write(cc.stdout + cc.stderr)
+
+    if not args.keep_traces:
+        # The raw CSVs are the bulk of the sweep's disk footprint and everything the tables
+        # need has now been read out of them.
+        for pat in ("switch_qlen_%s.csv", "host_nic_bw_%s.csv"):
+            path = os.path.join(LOG, pat % label)
+            if os.path.exists(path):
+                os.remove(path)
+    return m
+
+
+def pfc_counts(label):
+    path = os.path.join(LOG, f"switch_events_{label}.csv")
+    n = collections.Counter()
+    if os.path.exists(path):
+        for row in csv.DictReader(open(path)):
+            n[row["op"]] += 1
+    return dict(pause=n["pause"], resume=n["resume"])
+
+
+def peak_qlen(label):
+    """Deepest egress queue reached anywhere in the network at any time, in bytes."""
+    path = os.path.join(LOG, f"switch_qlen_max_{label}.csv")
+    if os.path.exists(path):
+        return max((int(r["max_qlen_bytes"]) for r in csv.DictReader(open(path))), default=0)
+    path = os.path.join(LOG, f"switch_qlen_{label}.csv")   # older runs: reduce the rows
+    if os.path.exists(path):
+        return max((int(r["qlen_bytes"]) for r in csv.DictReader(open(path))), default=0)
+    return ""
+
+
+def nic_bw(label):
+    """What a GPU's fabric NICs actually achieved, in Gbps per NIC.
+
+    mean is over the window in which any fabric NIC was transmitting -- averaging over the
+    whole run would just re-measure the run's length, which the latency column already gives.
+    peak is the busiest single sample any one NIC reached, against a 400 Gbps line rate.
+    """
+    path = os.path.join(LOG, f"host_nic_bw_{label}.csv")
+    if not os.path.exists(path):
+        return dict(nic_mean_gbps="", nic_peak_gbps="")
+    per_t = collections.defaultdict(float)      # time -> summed fabric bytes
+    nics, peak = set(), 0.0
+    for row in csv.DictReader(open(path)):
+        if row["kind"] != "fabric":
+            continue
+        t, b, g = int(row["time_ns"]), int(row["bytes"]), float(row["gbps"])
+        nics.add((row["node_id"], row["port_id"]))
+        per_t[t] += b
+        if g > peak:
+            peak = g
+    active = [t for t, b in per_t.items() if b > 0]
+    if not active or not nics:
+        return dict(nic_mean_gbps="", nic_peak_gbps="")
+    total_bytes = sum(per_t.values())
+    # Samples are right-edge labelled, so the busy window starts one period before the first
+    # non-empty sample.
+    period = min((b - a for a, b in zip(sorted(per_t), sorted(per_t)[1:])), default=0)
+    span_ns = max(active) - min(active) + (period or 1)
+    mean = total_bytes * 8 / (span_ns * 1e-9) / len(nics) / 1e9
+    return dict(nic_mean_gbps=round(mean, 2), nic_peak_gbps=round(peak, 2))
+
+
+# ---- results file ------------------------------------------------------------------------
+
+def load(path):
+    if not os.path.exists(path):
+        return {}
+    done = {}
+    for row in csv.DictReader(open(path)):
+        done[(int(row["pair_bytes"]), row["config"])] = row
+    return done
+
+
+def append(path, row):
+    new = not os.path.exists(path)
+    with open(path, "a", newline="") as f:
+        w = csv.DictWriter(f, FIELDS)
+        if new:
+            w.writeheader()
+        w.writerow(row)
+
+
+# ---- tables ----------------------------------------------------------------------------
+
+def num(row, key):
+    try:
+        return float(row[key])
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def tables(done, sweep_sizes, out, line_gbps):
+    # Only the configs this results.csv actually holds. Listing every known config would give
+    # the opt-in ones (milp) a column of dashes in every sweep that did not ask for them.
+    order = [v for n in CONFIGS for v in (n, n + SYNC_SUFFIX)]
+    names = [n for n in order if any((s, n) in done for s in sweep_sizes)]
+    lines = []
+
+    def table(title, note, cell):
+        lines.append(f"### {title}\n")
+        if note:
+            lines.append(note + "\n")
+        lines.append("| size/pair | " + " | ".join(names) + " |")
+        lines.append("|---:|" + "---:|" * len(names))
+        for s in sweep_sizes:
+            cells = []
+            for n in names:
+                row = done.get((s, n))
+                cells.append(cell(row, done.get((s, BASELINE))) if row else "-")
+            lines.append(f"| {fmt_size(s)} | " + " | ".join(cells) + " |")
+        lines.append("")
+
+    def latency(row, base):
+        t = num(row, "sim_time_ns")
+        if t is None:
+            return "-"
+        us = f"{t / 1e3:,.1f}"
+        b = num(base, "sim_time_ns") if base else None
+        if not b or row["config"] == BASELINE:
+            return us
+        return f"{us} ({(b - t) / b * 100:+.1f}%)"
+
+    def pfc(row, _):
+        p, r = num(row, "pause"), num(row, "resume")
+        if p is None:
+            return "-"
+        return f"{int(p):,}" if p == r else f"{int(p):,}/{int(r):,}"
+
+    def qmax(row, _):
+        v = num(row, "max_qlen_bytes")
+        return "-" if v is None else f"{v / 1e3:,.1f}"
+
+    def bw(row, _):
+        m, pk = num(row, "nic_mean_gbps"), num(row, "nic_peak_gbps")
+        return "-" if m is None else f"{m:.1f} / {pk:.0f}" if pk is not None else f"{m:.1f}"
+
+    table("Latency", "Simulated completion time in us; in parentheses, improvement over the "
+                     "baseline column (positive = faster).", latency)
+    table("PFC pause / resume frames",
+          "Count over the whole run. A single number means pause and resume agreed; "
+          "`pause/resume` shows them separately when they did not.", pfc)
+    table("Peak queue depth (KB)",
+          "Deepest egress queue reached on any switch port, at any instant, anywhere in the "
+          "network.", qmax)
+    def paced(row, _):
+        p, u = num(row, "paced_pct"), num(row, "unshapeable_pct")
+        if p is None:
+            return "-"
+        return f"{p:.1f}" if u is None else f"{p:.1f} / {u:.0f}"
+
+    table("Bytes shaped by the XML rate (%, paced / unshapeable messages)",
+          "Left: share of transmitted bytes whose gap the schedule's `rate` actually set. Right: "
+          "share of rate-carrying messages that fit in one MTU, which have no inter-packet gap to "
+          "stretch. A 0 on the left means the run is identical to one with `rate` off.", paced)
+    table("GPU fabric NIC bandwidth (Gbps, mean / peak per NIC)",
+          "Mean is per fabric NIC over the window in which any NIC was transmitting; peak is "
+          f"the busiest single sample. Line rate is {line_gbps:g}.", bw)
+
+    text = "\n".join(lines)
+    print(text)
+    with open(out, "w") as f:
+        f.write(text)
+
+
+# ---- main --------------------------------------------------------------------------------
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("program", nargs="+",
+                    help="what to sweep: scratch names under simulation/scratch, paths to .cc "
+                         "files, a partial-participation scenario tag (" + ",".join(SCENARIOS)
+                         + "), or a group name (" + "/".join(GROUPS) + "). Each is swept in "
+                         "turn into its own output directory")
+    ap.add_argument("--start", type=parse_size, default="1KB",
+                    help="smallest per-GPU-pair message (default 1KB)")
+    ap.add_argument("--end", type=parse_size, default="1GB",
+                    help="largest per-GPU-pair message; sizes step by x--step from --start "
+                         "(default 1GB)")
+    ap.add_argument("--step", type=float, default=STEP, metavar="X",
+                    help=f"multiplicative gap between consecutive sizes (default {STEP}); "
+                         "2 doubles the number of points, 8 quarters it")
+    ap.add_argument("--coll", default="alltoall", choices=["alltoall", "allgather"])
+    ap.add_argument("--l2ack", type=int, metavar="0|1",
+                    help="ack mode: 0 is no-ack, nonzero turns acks on (default: the scratch's "
+                         "own). Results land in a separate directory per mode, since it changes "
+                         "the transport under every configuration and the two are not comparable")
+    ap.add_argument("--ack-every-n-pkts", type=int, default=ACK_EVERY_N_PKTS, metavar="N",
+                    help=f"mid-message ack coalescing in packets (default {ACK_EVERY_N_PKTS}); "
+                         "packets closing a message or filling the window are acknowledged "
+                         "regardless. With acks on, a value other than "
+                         f"{SETUP_REFERENCE['ack_every_n_pkts']} adds _ackN<N> to the output name")
+    ap.add_argument("--configs", default=",".join(DEFAULT_CONFIGS),
+                    help="comma-separated subset of: " + ",".join(CONFIGS)
+                         + f" (default: {','.join(DEFAULT_CONFIGS)}; the rest are opt-in "
+                           "because they need a schedule variant the program may not have)")
+    ap.add_argument("--ranks", type=int,
+                    help="GPUs in the topology (default: read from the source)")
+    ap.add_argument("--host-tx-gbps", type=float,
+                    help="a GPU's total fabric egress, used only to size the --nicBwInterval "
+                         "sampling period (default 800 = two 400G NICs, or the program's own "
+                         "entry in PROGRAM_DEFAULTS)")
+    ap.add_argument("--nic-line-gbps", type=float,
+                    help="per-NIC line rate, quoted in the bandwidth table's caption (default "
+                         "400, or the program's own entry in PROGRAM_DEFAULTS)")
+    ap.add_argument("--outdir",
+                    help="default: sweep_results/<program><setup> next to this script, where "
+                         "<setup> is a suffix for every simulation setting off its reference "
+                         "value (_ack, _ackN<N>, _allgather, ...). With more than one program, "
+                         "each program's slug is appended so they cannot collide. The directory "
+                         "is stamped with its setup (setup.txt) and reuse under another is refused")
+    ap.add_argument("--qlen-rows-max-bytes", type=parse_size, default="16MB",
+                    help="keep the per-packet queue trace only while --inputBytes is at most "
+                         "this (default 16MB); above it only the peak summary is written")
+    ap.add_argument("--no-nic-bw", action="store_true",
+                    help="skip the per-NIC bandwidth sampling (--nicBwInterval=0): drops the "
+                         "periodic trace events from every run, so it goes faster, at the cost "
+                         "of the bandwidth table (its cells read '-')")
+    ap.add_argument("--sync-blocks", "--syncBlocks", action="store_true", dest="sync_blocks",
+                    help="re-run every config in --configs with the gridOffset iteration "
+                         "barrier on (CollectivesApplication's SyncBlocks), under the name "
+                         "<config>" + SYNC_SUFFIX + ". Inert unless a chunk (inputBytes/"
+                         "nchunksperloop) exceeds the sweep's "
+                         f"{fmt_size(PROTO_CHUNK_BYTES)} --protoChunkBytes, since below that "
+                         "there is only one iteration and no boundary to barrier at")
+    ap.add_argument("--keep-traces", action="store_true",
+                    help="keep the raw per-run CSVs instead of deleting them once reduced")
+    ap.add_argument("--skip-build", action="store_true",
+                    help="assume the target is already built, so even the first run is --no-build")
+    ap.add_argument("--force", action="store_true", help="re-run points already in results.csv")
+    ap.add_argument("--dry-run", action="store_true", help="print the commands and stop")
+    ap.add_argument("--tables-only", action="store_true", help="reprint tables from results.csv")
+    args = ap.parse_args()
+
+    for n in args.configs.split(","):
+        if n not in CONFIGS:
+            raise SystemExit(f"unknown config {n!r}; pick from {','.join(CONFIGS)}")
+    if args.start > args.end:
+        raise SystemExit("--start is larger than --end")
+    # A step of 1 or less never advances past --start, so the size loop would not terminate.
+    if args.step <= 1:
+        raise SystemExit("--step must be greater than 1")
+
+    specs = []
+    for spec in args.program:
+        specs.extend(GROUPS.get(spec, [spec]))
+    if args.ranks and len(specs) > 1:
+        raise SystemExit("--ranks names one topology's GPU count, so it cannot apply to "
+                         f"{len(specs)} programs at once; sweep them one at a time.")
+
+    # A scenario tag stands in for its program plus a --scenario: `2B` means mini_2gpu_1nic
+    # driven at the 2B partial solve. Resolving it here keeps the tag out of Program._resolve,
+    # which is only about finding a .cc.
+    resolved = []
+    for spec in specs:
+        if spec in SCENARIOS:
+            resolved.append((SCENARIOS[spec]["program"], spec))
+        else:
+            resolved.append((spec, None))
+
+    # Read every program before running any of them. A bad name in the third position should
+    # not surface an hour into the first sweep.
+    progs = [Program(spec, args.ranks, scenario) for spec, scenario in resolved]
+
+    # The ack mode and the two link-rate numbers are per program, but argparse holds one of
+    # each. Resolve them per program and hand sweep_one its own copy rather than mutating the
+    # shared namespace, which would leak the first program's defaults into the second.
+    base_outdir, base_l2ack = args.outdir, args.l2ack
+    for i, prog in enumerate(progs):
+        if len(progs) > 1:
+            print(("\n" if i else "") + "=" * 78)
+            title = f"{prog.scenario} -- {prog.name}" if prog.scenario else prog.name
+            print(f"[{i + 1}/{len(progs)}] {title}")
+            print("=" * 78)
+        pa = argparse.Namespace(**vars(args))
+        defaults = PROGRAM_DEFAULTS.get(prog.name, {})
+        if pa.host_tx_gbps is None:
+            pa.host_tx_gbps = defaults.get("host_tx_gbps", 800.0)
+        if pa.nic_line_gbps is None:
+            pa.nic_line_gbps = defaults.get("nic_line_gbps", 400.0)
+        pa.l2ack = base_l2ack
+        if pa.l2ack is None:
+            pa.l2ack = prog.ack_default
+        elif "l2Ack" not in prog.flags:
+            raise SystemExit(f"{prog.name} has no --l2Ack; its ack interval is fixed at "
+                             f"{prog.ack_default} in the source.")
+        if not prog.wide_input and pa.end * prog.pair_ranks > (1 << 32):
+            raise SystemExit(f"{prog.name} declares --inputBytes as uint32_t, which wraps at 4 GB; "
+                             f"{fmt_size(pa.end)}/pair is {fmt_size(pa.end * prog.pair_ranks)}/rank. "
+                             f"Widen it to uint64_t first.")
+        if base_outdir is None:
+            # A scenario's results go in a directory named after the TAG, since the tag is what
+            # identifies the experiment (2B and 2C are the same scratch and would otherwise
+            # collide). The setup suffix stays, for the same reason it exists elsewhere: runs
+            # under different setups are not comparable and must not share a results.csv.
+            pa.outdir = os.path.join(HERE, "sweep_results",
+                                     (prog.scenario + setup_suffix(pa))
+                                     if prog.scenario else prog.slug(pa))
+        elif len(progs) > 1:
+            # One --outdir over several programs would have them append to each other's
+            # results.csv under incompatible rank counts. Give each its own subdirectory.
+            pa.outdir = os.path.join(base_outdir, prog.slug(pa))
+        else:
+            pa.outdir = base_outdir
+        sweep_one(prog, pa)
+
+
+def sweep_one(prog, args):
+    """One program's whole sweep: run the missing points, then (re)print its tables."""
+    os.makedirs(args.outdir, exist_ok=True)
+    results = os.path.join(args.outdir, "results.csv")
+    # The default directory name already encodes the setup, but an explicit --outdir does not,
+    # and reusing one under a different setup would mix incomparable points in one results.csv
+    # -- and a resumed sweep would then SKIP the new setup's points as already done. Stamp the
+    # directory with its setup on first use and refuse a mismatch after that. A directory from
+    # before this stamp existed is adopted by the first sweep that writes to it.
+    stamp = os.path.join(args.outdir, "setup.txt")
+    want = "".join(f"{k}={v}\n" for k, v in setup(args).items())
+    if os.path.exists(stamp):
+        have = open(stamp).read()
+        if have != want and not args.tables_only:
+            raise SystemExit(
+                f"{args.outdir} holds results for a different simulation setup.\n"
+                f"  on disk:   {have.strip().replace(chr(10), ', ')}\n"
+                f"  this run:  {want.strip().replace(chr(10), ', ')}\n"
+                "Drop --outdir to get a directory named for this setup, or pass a fresh one.")
+    elif not (args.dry_run or args.tables_only):
+        with open(stamp, "w") as f:
+            f.write(want)
+    # Appending rows under a header from an older FIELDS would write each row's columns against
+    # the wrong names, silently corrupting every earlier point too. Refuse instead.
+    if os.path.exists(results):
+        with open(results) as f:
+            header = next(csv.reader(f), [])
+        if header != FIELDS:
+            raise SystemExit(
+                f"{results} was written with different columns ({','.join(header)}).\n"
+                f"Expected: {','.join(FIELDS)}\n"
+                "Delete it or pass a fresh --outdir; the old points have to be re-run anyway.")
+    # What this sweep actually runs: name -> flags. Normally just the --configs subset; with
+    # --sync-blocks, the same subset with the barrier on and the name suffixed, so the rows
+    # land beside their unbarriered twins instead of on top of them.
+    selected = collections.OrderedDict()
+    for n in args.configs.split(","):
+        flags = dict(CONFIGS[n])
+        if args.sync_blocks:
+            flags["syncBlocks"] = 1
+        selected[n + SYNC_SUFFIX if args.sync_blocks else n] = flags
+
+    if args.sync_blocks and "syncBlocks" not in prog.flags:
+        # Not a note and not a skip-one-column warning: with --sync-blocks EVERY column of this
+        # program's sweep is a barriered one, prog.filter would drop the flag from all of them,
+        # and the whole table would be an unbarriered run wearing +sync names. There is nothing
+        # left to salvage, so stop.
+        raise SystemExit(
+            f"{prog.name} declares no --syncBlocks, so --sync-blocks would silently produce a "
+            f"table of unbarriered runs named '<config>{SYNC_SUFFIX}'. Add the knob to the "
+            "scratch (see rail_optimized_256gpu_dual_plane.cc) or drop --sync-blocks.")
+    sweep = sizes(args.start, args.end, args.step)
+    done = load(results)
+    # Per program, not per process: which --flags a scratch is missing is a fact about that
+    # scratch, so the note has to be allowed to print again for the next one.
+    run_one.warned = False
+    skipped_sched = set()
+
+    if not args.tables_only:
+        print(f"{prog.name}: {prog.ranks} GPUs, {prog.nvswitches} NVSwitches, "
+              + (f"acks on (mode {args.l2ack})" if args.l2ack else "no-ack mode"))
+        if prog.scenario:
+            print(f"scenario {prog.scenario}: {prog.participants} participating GPUs "
+                  f"-- {SCENARIOS[prog.scenario]['note']}")
+        print(f"output: {args.outdir}")
+        print(f"{len(sweep)} sizes x {len(selected)} configs, "
+              f"{fmt_size(args.start)}..{fmt_size(args.end)} per pair "
+              f"({fmt_size(args.start * prog.pair_ranks)}..{fmt_size(args.end * prog.pair_ranks)} "
+              f"per rank, over {prog.pair_ranks} participants)\n")
+        # The first run to actually execute carries the build; the rest never rebuild. Each
+        # program needs its own build, since each is a separate cmake target.
+        built = args.skip_build
+        print("build: " + ("assumed current (--skip-build), every run is --no-build"
+                           if built else "on the first run only, then --no-build") + "\n")
+        for s in sweep:
+            print(f"{fmt_size(s)}/pair -> --inputBytes={s * prog.pair_ranks}")
+            for name, flags in selected.items():
+                sched = flags.get("sched")
+                if sched and not ("sched" in prog.flags and prog.has_sched(sched, args.coll)):
+                    if name not in skipped_sched:
+                        # A warning, not a note: asking for `milp` and silently getting a table
+                        # with no milp column is the failure mode worth being loud about. It is
+                        # not fatal, because the rest of the sweep is still valid and the solve
+                        # can be dropped in and the sweep resumed (results.csv is append-only).
+                        who = prog.scenario or prog.name
+                        why = ("declares no --sched, so running it would silently repeat the "
+                               "baseline" if "sched" not in prog.flags else
+                               f"has no xml_input/{prog.sched_xml(sched, args.coll)}")
+                        print(f"  [{name:8s}] SKIPPED -- see warning below", flush=True)
+                        sys.stderr.write(
+                            f"WARNING: {who} {why}; its `{name}` column will be absent from the "
+                            f"tables. Solve it and re-run this sweep to fill it in.\n")
+                        skipped_sched.add(name)
+                    continue
+                if (s, name) in done and not args.force:
+                    print(f"  [{name:8s}] already in results.csv, skipping")
+                    continue
+                row = run_one(s, name, flags, args, prog, no_build=built)
+                built = True
+                if row is None:
+                    continue
+                append(results, row)
+                done[(s, name)] = {k: str(v) for k, v in row.items()}
+                print(f"  [{name:8s}] {row['sim_time_ns'] / 1e3:,.1f} us"
+                      f"  pfc {row['pause']}/{row['resume']}"
+                      f"  qmax {row['max_qlen_bytes']} B"
+                      f"  nic {row['nic_mean_gbps']} Gbps"
+                      f"  ({row['wall_s']:.0f}s wall)", flush=True)
+        if args.dry_run:
+            return
+
+    print()
+    tables(done, [s for s in sweep if any((s, n) in done for n in CONFIGS)],
+           os.path.join(args.outdir, "tables.md"), args.nic_line_gbps)
+    print(f"\nresults.csv, per-run logs and check_congestion reports in {args.outdir}")
+
+
+if __name__ == "__main__":
+    main()

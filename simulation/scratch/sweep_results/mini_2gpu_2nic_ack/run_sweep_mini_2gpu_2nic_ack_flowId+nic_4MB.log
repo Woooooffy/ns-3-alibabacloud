@@ -1,0 +1,30 @@
+Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: schedule-pinned (one qp per connection)
+Network flow ids: on (custom headers + per-flow switch forwarding)
+Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_a2a_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_ack_flowId+nic_4MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_2nic_ack_flowId+nic_4MB.csv
+Total simulated time: 2766784 nanoseconds
+Simulator end (last event of any kind): 2769600 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_2nic_ack_flowId+nic_4MB.csv
+Fabric end (last switch data dequeue): 2765752 ns
+Switch-to-switch data bytes over 8 ports: min 34013184 / mean 34013184 / max 34013184 (max/mean 1)
+Busiest switch port: sw 8 port 4 -> node 10, 2721054 ns of data at line rate (98.3839% of fabric end)
+Flow-forwarding rule coverage: 114688 hit / 0 miss (100% of flow-id packets steered by the schedule)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 138  with a rate: 0 (0.0%)  without: 138
+  packets paced: 57344 (227.1 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       57264 (99.9%)
+    cc rate (message tail): 80 (0.1%)
+  bytes shaped by the XML rate: 0.0 of 227.1 MB (0.0%)
+Ack requests (AckReq) over 57344 data packets: 138 closing a message, 3865 filling the window (6.74% of packets)
+alltoall algorithm bandwidth: 97.0207 GB/s
+Algorithm XML: honoring 86 network dependence(s) and 10 epoch-pacing depid(s) over 126 send step(s); 0 remote gate(s) fed by 0 remote notification(s) (enforced only with HonorRemoteDeps).
+Switch JSON: pinned the scheduled egress NIC on 72 RDMA connection(s); 0 left unpinned due to conflicting plane assignments.
+Skipping correctness check.
+Done simulation

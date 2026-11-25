@@ -1,0 +1,11 @@
+== sweep_mini_2gpu_1nic_ack_flowId+nic_4GB ==
+  events (switch_events_sweep_mini_2gpu_1nic_ack_flowId+nic_4GB.csv):
+    none
+  peak egress queue (switch_qlen_max_sweep_mini_2gpu_1nic_ack_flowId+nic_4GB.csv):
+    leaf->gpu        n=  12  max   1785.4 KB  mean   653.9  p50   328.0  max/mean  2.73
+Traceback (most recent call last):
+  File "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/check_congestion.py", line 129, in <module>
+    nicbw(label)
+  File "/data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/scratch/check_congestion.py", line 85, in nicbw
+    t, node, gbps = int(row["time_ns"]), int(row["node_id"]), float(row["gbps"])
+TypeError: float() argument must be a string or a real number, not 'NoneType'

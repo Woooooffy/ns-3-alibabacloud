@@ -1,4 +1,6 @@
 #include <ns3/simulator.h>
+#include <algorithm>
+#include <iomanip>
 #include <functional>
 #include <vector>
 #include <ns3/simple-seq-ts-header.h>
@@ -50,14 +52,36 @@ TypeId RdmaHw::GetTypeId (void)
 				MakeDoubleAccessor(&RdmaHw::m_nack_interval),
 				MakeDoubleChecker<double>())
 		.AddAttribute("L2ChunkSize",
-				"Layer 2 chunk size. Disable chunk mode if equals to 0.",
+				"Go-back-N rewind quantum, in bytes, used only when L2BackToZero is set: a "
+				"loss rewinds both ends to a multiple of this rather than to the exact "
+				"cumulative sequence number. 0 disables chunk mode. It no longer has any "
+				"bearing on ack generation -- see AckEveryNPackets. If you do enable it, make "
+				"it a multiple of the MTU, or the rewind lands mid-packet.",
 				UintegerValue(0),
 				MakeUintegerAccessor(&RdmaHw::m_chunk),
 				MakeUintegerChecker<uint32_t>())
 		.AddAttribute("L2AckInterval",
-				"Layer 2 Ack intervals. Disable ack if equals to 0.",
+				"Acknowledgement mode: 0 disables acks entirely (the sender then infers "
+				"completion from its own send completion). Any nonzero value enables them. "
+				"This used to be a byte cadence as well; that role now belongs to "
+				"AckEveryNPackets, because coalescing counts packets in real hardware and a "
+				"byte threshold need not land on a packet -- or on a message -- boundary.",
 				UintegerValue(0),
 				MakeUintegerAccessor(&RdmaHw::m_ack_interval),
+				MakeUintegerChecker<uint32_t>())
+		.AddAttribute("AckEveryNPackets",
+				"Mid-message ack coalescing: acknowledge at least every N in-order packets. "
+				"The analogue of an HCA setting the BTH AckReq bit periodically inside a long "
+				"message, and it exists for one reason -- to keep the sender's unacknowledged "
+				"bytes under its window (RdmaQueuePair::IsWinBound), since snd_una only "
+				"advances on an ack. An ack can trail its packet by up to N-1 packet-times, so "
+				"RdmaFabricHelper sizes each window as BDP + N*MTU to cover that lag; a window "
+				"of the bare BDP would stall every round trip at any N > 1. Progress never "
+				"depends on N: the sender also sets AckReq on the packet that closes a message "
+				"and on the packet that fills its window (RdmaHw::GetNxtPacket), so no N can "
+				"deadlock. 0 leaves only those two. Ignored when L2AckInterval is 0.",
+				UintegerValue(8),
+				MakeUintegerAccessor(&RdmaHw::m_ackEveryNPkts),
 				MakeUintegerChecker<uint32_t>())
 		.AddAttribute("L2BackToZero",
 				"Layer 2 go back to zero transmission.",
@@ -139,6 +163,31 @@ TypeId RdmaHw::GetTypeId (void)
 				BooleanValue(true),
 				MakeBooleanAccessor(&RdmaHw::m_rateBound),
 				MakeBooleanChecker())
+		.AddAttribute("RateTargeting",
+				"Make per-message rate pacing accumulate credit (token-bucket shaper) so a qp "
+				"reaches its target rate rather than only being upper-bounded. Default off "
+				"preserves legacy reset-to-now pacing.",
+				BooleanValue(false),
+				MakeBooleanAccessor(&RdmaHw::m_rateTargeting),
+				MakeBooleanChecker())
+		.AddAttribute("MaxMsgsInFlight",
+				"How many messages a queue pair may have in flight at once, counting from the "
+				"oldest unacknowledged message through the one it is currently sending. This is "
+				"the transport's pipelining depth, and the analogue of NCCL's NCCL_STEPS ring "
+				"slots: real hardware streams the next message's bytes out while earlier ones "
+				"are still awaiting completion. 1 serializes messages, which leaves the wire "
+				"idle for a full RTT at every message boundary. Only matters for a persistent qp "
+				"that is given several messages at once (e.g. MSCCL pipelining); a qp carrying a "
+				"single message behaves identically at any value.",
+				UintegerValue(8),
+				MakeUintegerAccessor(&RdmaHw::m_maxMsgsInFlight),
+				MakeUintegerChecker<uint32_t>(1))
+		.AddAttribute("PaceMaxCreditBytes",
+				"Max banked catch-up burst for the accumulating rate-targeting pacer, in bytes "
+				"(max_burst_sz analog). Only used when RateTargeting is true.",
+				UintegerValue(8192),
+				MakeUintegerAccessor(&RdmaHw::m_paceMaxCreditBytes),
+				MakeUintegerChecker<uint32_t>())
 		.AddAttribute("MultiRate",
 				"Maintain multiple rates in HPCC",
 				BooleanValue(true),
@@ -246,24 +295,82 @@ void RdmaHw::Setup(QpCompleteCallback cb,SendCompleteCallback send_cb){
     m_sendCompleteCallback = send_cb;
 }
 uint32_t ip_to_node_id(Ipv4Address ip) { return (ip.Get() >> 8) & 0xffff; }
+// A qp uses one NIC for its whole life, as on real hardware: a verbs queue pair is bound to
+// a device at creation and cannot migrate. The binding is resolved once, on the first call
+// here, and cached on the qp -- every later call (TriggerTransmit, the ack and rate paths,
+// ...) just reads it back, so the answer can never vary mid-connection.
 uint32_t RdmaHw::GetNicIdxOfQp(Ptr<RdmaQueuePair> qp){
-	uint32_t src = qp->m_src;
-	uint32_t dst = qp->m_dest;
-	if(src / m_gpus_per_server == dst / m_gpus_per_server || m_rtTable_nxthop_nvswitch.count(qp->dip.Get()) != 0){ // src and dst are in the same server, communicate through nvswitch
-		auto &v = m_rtTable_nxthop_nvswitch[qp->dip.Get()];
-		if (v.size() > 0){
-			return v[qp->GetHash() % v.size()];
-		}else{
-			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-		}
-	}else{ // src and dst don't in the same server, communicate through swicth
-		auto &v = m_rtTable[qp->dip.Get()];
-		if (v.size() > 0){
-			return v[qp->GetHash() % v.size()];
-		}else{
-			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-		}
+	if (qp->m_pinnedNicIdx != RdmaQueuePair::NIC_UNPINNED)
+		return qp->m_pinnedNicIdx;
+
+	// Which table holds this destination is decided by actual membership, not by a
+	// src/m_gpus_per_server == dst/m_gpus_per_server guess. That guess assumes every NVSwitch
+	// has the same GPU fan-out, which a heterogeneous fabric (e.g. dual_plane_hetero's 16-GPU
+	// and 8-GPU NVSwitch groups) violates: a pair the guess calls "same server" can still have
+	// its BFS-computed route sitting in m_rtTable rather than m_rtTable_nxthop_nvswitch, and
+	// querying the wrong table hits an empty vector and asserts. rdma-fabric-helper.cc's
+	// Build() already documents GPUsPerServer as a perf hint, not a routing-correctness input.
+	uint32_t dip = qp->dip.Get();
+	qp->m_pinnedNicIdx = ResolveNic(qp, NicCandidates(dip));
+	return qp->m_pinnedNicIdx;
+}
+
+// Binds a new qp to one of the equal-cost NICs BFS computed toward its destination.
+//
+// qp->m_requestedNicIdx is the NIC the schedule dictates, when there is one (AlgoTopology
+// derives it from the switch JSON: the NIC facing the plane whose switches actually hold
+// this connection's flow rules -- see MscclChannel::SetupRdmaSendPeer). Otherwise NICs are
+// handed out round-robin, which is what a real collective library does: it assigns each
+// connection a rail by topology, deliberately and evenly, rather than hashing. Hashing was
+// the previous behavior and is not modeled anymore -- on a node with only two fabric NICs a
+// per-connection coin flip leaves the busiest NIC ~35% over the mean, an artifact of the
+// model rather than anything hardware does.
+uint32_t RdmaHw::ResolveNic(Ptr<RdmaQueuePair> qp, const std::vector<int>& candidates){
+	// NS_ASSERT compiles out in optimized builds, so this needs a real guard: the round-robin
+	// below would otherwise take a modulus by zero.
+	NS_ASSERT_MSG(candidates.size() > 0, "We assume at least one NIC is alive");
+	if (candidates.empty()) return 0;
+	if (candidates.size() == 1)
+		return candidates[0]; // no choice to make, and no reason to disturb the rotation
+
+	if (qp->m_requestedNicIdx != RdmaQueuePair::NIC_UNPINNED){
+		if (std::find(candidates.begin(), candidates.end(), (int) qp->m_requestedNicIdx) != candidates.end())
+			return qp->m_requestedNicIdx;
+		NS_LOG_WARN("RdmaHw on node " << m_node->GetId() << ": qp to " << qp->dip
+			<< " asks for NIC " << qp->m_requestedNicIdx << ", which is not an equal-cost next "
+			<< "hop toward that destination; falling back to round-robin. The switch JSON's "
+			<< "ingress port for this connection likely disagrees with the built topology.");
 	}
+	// Node-global rotation, not per-destination: the point is to spread this node's
+	// connections evenly over its own NICs, and a per-destination counter would restart at
+	// zero for every peer and pile every connection onto the first NIC.
+	return candidates[m_nicRoundRobin++ % candidates.size()];
+}
+// The equal-cost next-hop NICs toward `dip`, preferring the NVSwitch.
+//
+// BFS records a next hop only when it is exactly one hop closer to the destination, so every
+// entry in either table is already on a shortest path and choosing between them can never
+// lengthen the route. For two GPUs behind the same NVSwitch BOTH tables get populated --
+// gpu->nvswitch->gpu and gpu->leaf->gpu are both two hops -- so the tie has to be broken here,
+// and it must be broken toward the NVSwitch: that is the intra-node interconnect (1800 GBps in
+// dual_plane_hetero, ~36x a 400 Gbps fabric link), and a collective's schedule assumes intra-node
+// transfers never touch the fabric at all. Preferring m_rtTable instead silently pushed every
+// same-NVSwitch transfer out onto the network.
+const std::vector<int>& RdmaHw::NicCandidates(uint32_t dip){
+	static const std::vector<int> empty;
+	auto nvs = m_rtTable_nxthop_nvswitch.find(dip);
+	if (nvs != m_rtTable_nxthop_nvswitch.end() && !nvs->second.empty()) return nvs->second;
+	auto net = m_rtTable.find(dip);
+	if (net != m_rtTable.end() && !net->second.empty()) return net->second;
+	NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
+	return empty;
+}
+
+bool RdmaHw::GetNicsToward(Ipv4Address dip, std::vector<int>& out){
+	out.clear();
+	const std::vector<int>& c = NicCandidates(dip.Get());
+	out = c;
+	return !out.empty();
 }
 uint64_t RdmaHw::GetQpKey(uint32_t dip, uint16_t sport, uint16_t pg){
 	return ((uint64_t)dip << 32) | ((uint64_t)sport << 16) | (uint64_t)pg;
@@ -275,9 +382,35 @@ Ptr<RdmaQueuePair> RdmaHw::GetQp(uint32_t dip, uint16_t sport, uint16_t pg){
 		return it->second;
 	return NULL;
 }
-Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose){
+Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t tag, uint64_t size, uint16_t pg, Ipv4Address sip, Ipv4Address dip, uint16_t sport, uint16_t dport, uint32_t win, uint64_t baseRtt, uint32_t mscclFlowId, Callback<void> notifyAppFinish, Callback<void> notifyAppSent, uint8_t* srcDataPtr, bool autoClose, uint32_t pinnedNic, const RdmaMulticastSpec* mcast){
 	// create qp
 	Ptr<RdmaQueuePair> qp = CreateObject<RdmaQueuePair>(pg, sip, dip, sport, dport);
+	if (mcast){
+		// Bound outright, before GetNicIdxOfQp below runs: ResolveNic would check the request
+		// against the routes toward `dip`, which is a single receiver and can even be reached
+		// over NVLink, while the tree leaves by the NIC facing its root switch.
+		if (mcast->memberIps.size() < 2)
+			NS_FATAL_ERROR("RdmaHw on node " << m_node->GetId() << ": a multicast qp needs at least two receivers.");
+		if (pinnedNic == RdmaQueuePair::NIC_UNPINNED || pinnedNic >= m_nic.size())
+			NS_FATAL_ERROR("RdmaHw on node " << m_node->GetId() << ": multicast qp (sport " << sport
+				<< ") has no usable NIC (" << pinnedNic << "); it must leave by the NIC facing its tree's root,"
+				<< " which the switch JSON pins (needs --nicSel=schedule).");
+		qp->m_pinnedNicIdx = pinnedNic;
+		qp->m_mcastMemberIps = mcast->memberIps;
+		qp->m_mcastAcked.assign(mcast->memberIps.size(), 0);
+		qp->m_mcastNakHeld.assign(mcast->memberIps.size(), 0);
+		qp->m_mcastNakSeq.assign(mcast->memberIps.size(), 0);
+		qp->m_noAck = mcast->noAck;
+		m_mcastQpByPort[GetMcastPortKey(sport, pg)] = qp;
+		m_mcastStats.qps++;
+		m_mcastStats.members += mcast->memberIps.size();
+		if (mcast->noAck) m_mcastStats.udQps++;
+	}
+	// Must be set before the GetNicIdxOfQp below, which is what actually resolves and caches
+	// this qp's NIC binding: that call places the qp in a NIC's queue-pair group and seeds
+	// m_rate/m_max_rate from the chosen device. NIC_UNPINNED here means "no scheduled NIC",
+	// and ResolveNic then takes the next one in this node's round-robin rotation.
+	qp->m_requestedNicIdx = pinnedNic;
 	qp->SetSrc(src);
 	qp->SetDest(dest);
 	qp->SetTag(tag);
@@ -285,6 +418,8 @@ Ptr<RdmaQueuePair> RdmaHw::AddQueuePair(uint32_t src, uint32_t dest, uint64_t ta
 	qp->SetWin(win);
 	qp->SetBaseRtt(baseRtt);
 	qp->SetVarWin(m_var_win);
+	qp->m_pacerAccumulate = m_rateTargeting; // must be set before any PushMessage below
+	qp->m_maxMsgsInFlight = m_maxMsgsInFlight;
 	qp->m_autoClose = autoClose;
 	// size == 0 is used to eagerly establish a persistent connection (see
 	// MscclChannel::SetupRdmaSendPeer) with no message queued yet; a non-persistent caller
@@ -338,6 +473,7 @@ void RdmaHw::DeleteQueuePair(Ptr<RdmaQueuePair> qp){
 	// remove qp from the m_qpMap
 	uint64_t key = GetQpKey(qp->dip.Get(), qp->sport, qp->m_pg);
 	m_qpMap.erase(key);
+	if (qp->IsMulticast()) m_mcastQpByPort.erase(GetMcastPortKey(qp->sport, qp->m_pg));
 	qp_cnp.erase(key);
 	last_qp_cnp.erase(key);
 	last_qp_rate.erase(key);
@@ -381,22 +517,15 @@ uint32_t RdmaHw::GetNicIdxOfRxQp(Ptr<RdmaRxQueuePair> q){
 	// BUG就出现在这里了，首先要判断m_rtTable[q->dip]是否存在，若不存在就去判断m_rtTable_nxthop_nvswitch是否存在，如果都不存在，那么就输出错误
 	// auto &v = m_rtTable[q->dip];
 
-	if(m_rtTable.count(q->dip) != 0) {
-		auto &v = m_rtTable[q->dip];
-		if(v.size() > 0)
-			return v[q->GetHash() % v.size()];
-		else
-			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-	} else if(m_rtTable_nxthop_nvswitch.count(q->dip) != 0) {
-		auto &v = m_rtTable_nxthop_nvswitch[q->dip];
-		if(v.size() > 0)
-			return v[q->GetHash() % v.size()];
-		else
-			NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
-	} else {
-		NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
+	// Same NVSwitch-first rule as the data path (see NicCandidates): the reverse direction of a
+	// connection must use the same interconnect the data came in on, or an intra-node transfer's
+	// acks would leak onto the fabric.
+	{
+		const std::vector<int>& v = NicCandidates(q->dip);
+		if (v.size() > 0) return v[q->GetHash() % v.size()];
 	}
 	NS_ASSERT_MSG(false, "We assume at least one NIC is alive");
+	return 0;
 
 }
 void RdmaHw::DeleteRxQp(uint32_t dip, uint16_t pg, uint16_t dport){
@@ -420,10 +549,12 @@ int RdmaHw::SendPacketComplete(Ptr<Packet> p, CustomHeader &ch)
 	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev;
 	SendComplete(qp);
 
-	if (m_ack_interval == 0){
+	if (m_ack_interval == 0 || qp->m_noAck){
 		// No-ack mode: the receiver never sends an Ack back (see
 		// ReceiverCheckSeq), so infer completion locally from this node's own
-		// send completion instead of waiting for one.
+		// send completion instead of waiting for one. A UD multicast qp behaves this way
+		// even with acks on for everyone else.
+		ch.SetMscclFlowIdPresent(qp->m_emitFlowIdHdr); // same correction as ReceiveUdp; qp is this packet's own sender
 		uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 		qp->Acknowledge(seq + payload_size);
 		while (!qp->m_messages.empty() && qp->IsCurMessageFinished()){
@@ -446,17 +577,21 @@ void RdmaHw::SendComplete(Ptr<RdmaQueuePair> qp)
 int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 	uint8_t ecnbits = ch.GetIpv4EcnBits();
 
-	uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 	// TODO find corresponding rx queue pair
 	Ptr<RdmaRxQueuePair> rxQp = GetRxQp(ch.dip, ch.sip, ch.udp.dport, ch.udp.sport, ch.udp.pg, true);
+	// Must precede every use of ch.GetSerializedSize() below: whether this connection's packets
+	// carry a MscclFlowIdHeader is not detectable from the wire, so the parse assumed the field
+	// was present and the rx qp is the only thing that knows better. Hence the lookup moved
+	// above the payload sizing -- it reads nothing the sizing produces.
+	ch.SetMscclFlowIdPresent(rxQp->m_expectFlowIdHdr);
+	uint32_t payload_size = p->GetSize() - ch.GetSerializedSize();
 	if (ecnbits != 0){
 		rxQp->m_ecn_source.ecnbits |= ecnbits;
 		rxQp->m_ecn_source.qfb++;
 	}
 	rxQp->m_ecn_source.total++;
-	rxQp->m_milestone_rx = m_ack_interval;
 
-	int x = ReceiverCheckSeq(ch.udp.seq, rxQp, payload_size);
+	int x = ReceiverCheckSeq(ch.udp.seq, rxQp, payload_size, ch.udp.ackReq != 0);
 
 	// rx-flow completion: fire per-packet copy callback and count down bytes. Registered
 	// directly on this rx qp (eagerly, at connection setup -- see
@@ -488,7 +623,9 @@ int RdmaHw::ReceiveUdp(Ptr<Packet> p, CustomHeader &ch){
 
 		Ipv4Header head;	// Prepare IPv4 header
 		head.SetDestination(Ipv4Address(ch.sip));
-		head.SetSource(Ipv4Address(ch.dip));
+		// A multicast stream's packets all carry one receiver's address, so echoing ch.dip would
+		// make every receiver's ack look like that one's; the sender aggregates by source.
+		head.SetSource(Ipv4Address(rxQp->m_ackFromSelf ? rxQp->sip : ch.dip));
 		head.SetProtocol(x == 1 ? 0xFC : 0xFD); //ack=0xFC nack=0xFD
 		head.SetTtl(64);
 		head.SetPayloadSize(newp->GetSize());
@@ -565,19 +702,37 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 	int i;
 	Ptr<RdmaQueuePair> qp = GetQp(ch.sip, port, qIndex);
 	if (qp == NULL){
-		return 0;
+		// A multicast qp is in m_qpMap under one receiver's address only; the others' acks
+		// find it by port (see m_mcastQpByPort).
+		auto mit = m_mcastQpByPort.find(GetMcastPortKey(port, qIndex));
+		if (mit == m_mcastQpByPort.end()) return 0;
+		qp = mit->second;
 	}
 
 	uint32_t nic_idx = GetNicIdxOfQp(qp);
 	Ptr<QbbNetDevice> dev = m_nic[nic_idx].dev;
+	// Whether to rewind the qp (go-back-N to snd_una). For a unicast, on every NACK. For a
+	// multicast, when a receiver that NAKed is the slowest one -- which may be decided by a
+	// different receiver's plain ack, the one that leaves the NAKing receiver behind.
+	bool rewind = (ch.l3Prot == 0xFD);
 	if (m_ack_interval == 0)
 		std::cout << "ERROR: shouldn't receive ack\n";
 	else {
-		if (!m_backto0){
-			qp->Acknowledge(seq);
-		}else {
-			uint64_t goback_seq = seq / m_chunk * m_chunk;
-			qp->Acknowledge(goback_seq);
+		const uint64_t ackSeq = m_backto0 ? seq / m_chunk * m_chunk : seq;
+		if (qp->IsMulticast()){
+			// Sender-side ack aggregation: snd_una becomes the minimum over the receivers.
+			const bool isNak = (ch.l3Prot == 0xFD);
+			if (!qp->AcknowledgeMember(ch.sip, ackSeq, isNak, rewind)){
+				NS_LOG_WARN("RdmaHw on node " << m_node->GetId() << ": ack for multicast qp (sport " << port
+					<< ") from " << Ipv4Address(ch.sip) << ", which is not one of its receivers; ignored.");
+				return 0;
+			}
+			if (isNak) m_mcastStats.naks++;
+			else m_mcastStats.acks++;
+			if (isNak && !rewind) m_mcastStats.naksHeld++;
+			if (rewind) m_mcastStats.rewinds++;
+		} else {
+			qp->Acknowledge(ackSeq);
 		}
 		while (!qp->m_messages.empty() && qp->IsCurMessageFinished()){
 			QpCompleteMessage(qp);
@@ -586,7 +741,7 @@ int RdmaHw::ReceiveAck(Ptr<Packet> p, CustomHeader &ch){
 			QpComplete(qp);
 		}
 	}
-	if (ch.l3Prot == 0xFD) // NACK
+	if (rewind) // NACK (or, on a multicast qp, a held NACK whose receiver is now the slowest)
 		RecoverQueue(qp);
 
 	// handle cnp
@@ -631,28 +786,60 @@ int RdmaHw::Receive(Ptr<Packet> p, CustomHeader &ch){
 	return 0;
 }
 
-int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size){
+// Two independent reasons to acknowledge, mirroring the two cases in which an InfiniBand
+// requester sets the BTH AckReq bit.
+//
+// `ackReq` is the mandatory one: the sender marks the packet that closes a message, and that
+// ack is what retires the message. (It also marks the packet that fills its window -- the
+// other point at which it cannot continue without an ack; see GetNxtPacket.) Retirement is load-bearing three times over -- it advances
+// snd_una (window credit), it frees a slot against m_maxMsgsInFlight (RdmaQueuePair::
+// GetSendingMessage returns nullptr once the scan reaches the limit, so the qp goes ineligible
+// until something retires), and it fires notifyAppFinish, which is how the collective makes
+// progress. A cadence alone cannot cover it: if the cadence exceeds what m_maxMsgsInFlight
+// messages are worth, the sender fills every slot before the receiver ever reaches it, nothing
+// retires, no further bytes are sent, and so no ack is ever provoked -- a deadlock, not a
+// slowdown. This is exactly why the spec makes AckReq-on-last-packet mandatory.
+//
+// The packet counter is the discretionary one, and its only job is to stop snd_una lagging far
+// enough behind snd_nxt inside one long message that the window gates. See AckEveryNPackets.
+int RdmaHw::ReceiverCheckSeq(uint64_t seq, Ptr<RdmaRxQueuePair> q, uint32_t size, bool ackReq){
 	uint64_t expected = q->ReceiverNextExpectedSeq;
 	if (seq == expected){
 		q->ReceiverNextExpectedSeq = expected + size;
-		if (m_ack_interval == 0){
+		if (m_ack_interval == 0 || q->m_noAck){
 			// No-ack mode: never generate a periodic Ack; the sender infers
 			// completion locally from its own send completion instead.
 			return 5;
 		}
-		if (q->ReceiverNextExpectedSeq >= q->m_milestone_rx){
-			q->m_milestone_rx += m_ack_interval;
+		q->m_pktsSinceAck++;
+		if (ackReq || (m_ackEveryNPkts > 0 && q->m_pktsSinceAck >= m_ackEveryNPkts)){
+			q->m_pktsSinceAck = 0;
 			return 1; //Generate ACK
-		}else if (q->ReceiverNextExpectedSeq % m_chunk == 0){
-			return 1;
-		}else {
-			return 5;
 		}
+		return 5;
+	} else if (seq > expected && q->m_noAck) {
+		// UD multicast: nothing will resend the missing bytes, so this stream can never complete
+		// and the recv step waiting on it hangs (or trips MscclChannel::Close's pending-recv
+		// check). Say so where it happens, once per receiver, instead of leaving only the hang.
+		if (!q->m_gapReported){
+			q->m_gapReported = true;
+			RdmaHw::m_mcastStats.udGaps++;
+			printf("%lu node %u: UD multicast receive gap from %u.%u.%u.%u sport %u: expected seq %lu, got %lu."
+				" UD assumes a lossless fabric, so the lost bytes are never resent.\n",
+				(unsigned long) Simulator::Now().GetTimeStep(), m_node->GetId(),
+				(q->dip >> 24) & 0xff, (q->dip >> 16) & 0xff, (q->dip >> 8) & 0xff, q->dip & 0xff,
+				(unsigned) q->dport, (unsigned long) expected, (unsigned long) seq);
+			fflush(stdout);
+		}
+		return 4; // neither delivered nor acknowledged
 	} else if (seq > expected) {
 		// Generate NACK
 		if (Simulator::Now() >= q->m_nackTimer || q->m_lastNACK != expected){
 			q->m_nackTimer = Simulator::Now() + MicroSeconds(m_nack_interval);
 			q->m_lastNACK = expected;
+			// A NACK carries the cumulative sequence number just as an Ack does, so it
+			// resets the coalescing counter for the same reason returning 1 does.
+			q->m_pktsSinceAck = 0;
 			if (m_backto0){
 				q->ReceiverNextExpectedSeq = q->ReceiverNextExpectedSeq / m_chunk*m_chunk;
 			}
@@ -753,28 +940,70 @@ void RdmaHw::RedistributeQp(){
 }
 
 Ptr<Packet> RdmaHw::GetNxtPacket(Ptr<RdmaQueuePair> qp){
-	uint64_t payload_size = qp->GetBytesLeft();
+	const uint64_t bytesLeftInMsg = qp->GetBytesLeft();
+	uint64_t payload_size = bytesLeftInMsg;
 	if ((uint64_t)m_mtu < payload_size)
 		payload_size = m_mtu;
-	// source pointer, if any, belongs to the current message and is indexed relative to
-	// that message's own start offset -- not the connection-wide snd_nxt -- since each
-	// message on a persistent qp can come from a different source buffer (different
-	// srcbuf/srcoff per MSCCL Send() call).
+	// AckReq (InfiniBand BTH bit A): does this packet close the message it belongs to?
+	// GetBytesLeft is deliberately capped at the *sending* message's end, so a packet never
+	// straddles a boundary and this comparison is exact. The receiver must acknowledge such a
+	// packet -- that ack is what retires the message, releasing window credit, an in-flight
+	// message slot, and the application's completion callback. See ReceiverCheckSeq.
+	const bool lastPktOfMsg = (payload_size == bytesLeftInMsg);
+	// ...or is it the last packet this qp can send before its window gates? A real requester
+	// sets AckReq when it is about to run out of credit, not only at message end: the sender
+	// knows it is about to stall, the receiver's coalescing counter does not. Without this,
+	// AckEveryNPackets * MTU > window deadlocks inside any message longer than the window --
+	// the receiver never counts N packets, the message-closing packet is never sent, and
+	// snd_una never moves again. snd_nxt advances below, so on-the-fly plus this packet is
+	// exactly what IsWinBound will see next. Acks off: the receiver ignores AckReq and the
+	// window never gates, so leave the bit alone and keep no-ack runs bit-identical.
+	bool fillsWindow = false;
+	if (m_ack_interval != 0 && !qp->m_noAck){
+		const uint64_t w = qp->GetWin();
+		fillsWindow = w != 0 && qp->GetOnTheFly() + payload_size >= w;
+		m_ackReqStats.dataPkts++;
+		if (lastPktOfMsg)
+			m_ackReqStats.msgEnd++;
+		else if (fillsWindow)
+			m_ackReqStats.windowFill++;
+	}
+	// Remember the pacing rate of the message this packet is coming out of, while snd_nxt still
+	// points into it. UpdateNextAvail sets the gap that FOLLOWS this packet and runs after the
+	// advance below, by which point GetCurRate() no longer names this message -- see the note
+	// there. Every other qp->GetCur* call in this function has the same window and is likewise
+	// only correct because it happens before the advance.
+	qp->lastPktRate = qp->GetCurRate();
+	// source pointer, if any, belongs to the message snd_nxt is currently in -- which is not
+	// necessarily the front one, since the qp may be pipelining ahead of the oldest
+	// unacknowledged message -- and is indexed relative to that message's own start offset
+	// rather than the connection-wide snd_nxt, since each message on a persistent qp can come
+	// from a different source buffer (different srcbuf/srcoff per MSCCL Send() call).
+	// GetBytesLeft above caps payload_size at that message's end, so a packet never straddles
+	// a boundary and this index stays inside the message's buffer.
 	uint8_t* curSrcDataPtr = qp->GetCurSrcDataPtr();
 	Ptr<Packet> p = (curSrcDataPtr != nullptr)
-		? Create<Packet>(curSrcDataPtr + (qp->snd_nxt - qp->m_messages.front().m_startSeq), (uint32_t)payload_size)
+		? Create<Packet>(curSrcDataPtr + (qp->snd_nxt - qp->GetCurMsgStartSeq()), (uint32_t)payload_size)
 		: Create<Packet>((uint32_t)payload_size);
 	// carry the qp's msccl flow id as a real header (innermost, right next to the
 	// payload) so switches can do custom flow-based forwarding instead of plain
 	// ECMP when enabled. Added before SimpleSeqTsHeader so it doesn't shift the
 	// fixed byte offsets switches use to reach the INT header.
-	MscclFlowIdHeader mscclFlowIdHeader;
-	mscclFlowIdHeader.SetFlowId(qp->GetCurMscclFlowId());
-	p->AddHeader(mscclFlowIdHeader);
+	//
+	// Only on connections that actually have flow ids to carry (see
+	// RdmaQueuePair::m_emitFlowIdHdr). A connection the schedule never labels -- every
+	// intra-NVSwitch one, and all of them when the feature is off -- puts nothing on the wire,
+	// so the ablation compares like with like instead of paying 4 bytes per packet in one arm.
+	if (qp->m_emitFlowIdHdr){
+		MscclFlowIdHeader mscclFlowIdHeader;
+		mscclFlowIdHeader.SetFlowId(qp->GetCurMscclFlowId());
+		p->AddHeader(mscclFlowIdHeader);
+	}
 	// add SimpleSeqTsHeader
 	SimpleSeqTsHeader seqTs;
 	seqTs.SetSeq (qp->snd_nxt);
 	seqTs.SetPG (qp->m_pg);
+	seqTs.SetAckReq (lastPktOfMsg || fillsWindow);
 	p->AddHeader (seqTs);
 	// add udp header
 	UdpHeader udpHeader;
@@ -813,12 +1042,70 @@ void RdmaHw::PktSent(Ptr<RdmaQueuePair> qp, Ptr<Packet> pkt, Time interframeGap)
 }
 
 void RdmaHw::UpdateNextAvail(Ptr<RdmaQueuePair> qp, Time interframeGap, uint32_t pkt_size){
-	Time sendingTime;
-	if (m_rateBound)
-		sendingTime = interframeGap + qp->m_rate.CalculateBytesTxTime(pkt_size);
-	else
-		sendingTime = interframeGap + qp->m_max_rate.CalculateBytesTxTime(pkt_size);
-	qp->m_nextAvail = Simulator::Now() + sendingTime;
+	DataRate paceRate = m_rateBound ? qp->m_rate : qp->m_max_rate;
+	// honor the host-side per-message pacing cap (MSCCL XML "rate", GB/s) if the message whose
+	// bytes just went out carries one -- never let this qp outrun the schedule's requested
+	// rate. A zero/unset cap leaves the congestion-controlled rate untouched.
+	//
+	// Read from qp->lastPktRate, stashed by GetNxtPacket, NOT from GetCurRate() here: this runs
+	// after GetNxtPacket advanced snd_nxt past the packet, so GetSendingMessage() has already
+	// walked on to the NEXT queued message -- and to nothing at all when that packet emptied
+	// the backlog. Asking now therefore charged the packet that ENDS a message the following
+	// message's rate, and the last packet of the last message the congestion-controlled rate,
+	// i.e. line rate. Pipelining hid that at interior boundaries (the next message's rate is
+	// the same one within a widened MSCCL segment), but the packet closing a segment got a
+	// line-rate gap, permanently: the rate-targeting branch below advances m_nextAvail from
+	// its own prior value, so a gap never charged is never recovered. The cost is one packet
+	// per segment, so it was invisible in large messages and dominant in small ones -- at one
+	// MTU per message every packet was a tail and the XML rate did nothing whatsoever.
+	DataRate msgRate = qp->lastPktRate;
+	const bool capped = msgRate.GetBitRate() > 0 && msgRate < paceRate;
+	if (capped)
+		paceRate = msgRate;
+
+	// Diagnostic only -- see RdmaHw::PaceStats. Classify who set the gap that follows this
+	// packet. Every bucket now speaks about the message the packet actually came out of, since
+	// that is what lastPktRate names.
+	if (capped){
+		m_paceStats.cappedPkts++;
+		m_paceStats.cappedBytes += pkt_size;
+		m_paceStats.cappedSeconds += pkt_size * 8.0 / msgRate.GetBitRate();
+	} else if (msgRate.GetBitRate() > 0){
+		m_paceStats.slackPkts++;
+		m_paceStats.slackBytes += pkt_size;
+	} else if (qp->GetSendingMessage() == nullptr){
+		// Uncapped, and nothing queued behind it. This and noCap are both uncapped traffic
+		// (intra-NVSwitch connections, mainly) and differ only in whether more was queued, so
+		// on a fully rate-annotated schedule both should now read zero. They are the regression
+		// signal for this fix: a nonzero tail count beside a nonzero cappedPkts would mean
+		// lastPktRate is not reaching UpdateNextAvail.
+		m_paceStats.tailPkts++;
+		m_paceStats.tailBytes += pkt_size;
+	} else {
+		m_paceStats.noCapPkts++;
+		m_paceStats.noCapBytes += pkt_size;
+	}
+
+	Time sendingTime = interframeGap + paceRate.CalculateBytesTxTime(pkt_size);
+	if (m_rateTargeting){
+		// Token-bucket shaper: advance the qp's next-eligible time from its PRIOR deadline
+		// rather than from Now. This is what lets the pace rate be a *target* instead of a
+		// mere ceiling -- when the arbiter serves this qp late (busy with a sibling), the
+		// lateness is not baked in: m_nextAvail only moves forward by one sendingTime, so the
+		// qp stays eligible and catches back up to its target rate. (Legacy reset-to-now, in
+		// the else branch, permanently loses any scheduling lateness, drifting below target.)
+		// The floor bounds banked credit to m_paceMaxCreditBytes worth of transmission at the
+		// current pace rate (the max_burst_sz analog), so a qp idle for a while cannot then
+		// burst unboundedly. Wake-from-idle resets m_nextAvail to Now in RdmaQueuePair::
+		// PushMessage, so no stale credit crosses an idle gap.
+		Time newAvail = qp->m_nextAvail + sendingTime;
+		Time floor = Simulator::Now() - paceRate.CalculateBytesTxTime(m_paceMaxCreditBytes);
+		if (newAvail < floor)
+			newAvail = floor;
+		qp->m_nextAvail = newAvail;
+	} else {
+		qp->m_nextAvail = Simulator::Now() + sendingTime;
+	}
 }
 
 void RdmaHw::ChangeRate(Ptr<RdmaQueuePair> qp, DataRate new_rate){
@@ -834,6 +1121,104 @@ void RdmaHw::ChangeRate(Ptr<RdmaQueuePair> qp, DataRate new_rate){
 	// change to new rate
 	qp->m_rate = new_rate;
 }
+
+// ---- pacing diagnostic (see RdmaHw::PaceStats) --------------------------------------------
+RdmaHw::PaceStats RdmaHw::m_paceStats;
+
+void RdmaHw::NotePacedMessage(uint64_t bytes, DataRate rate){
+	if (rate.GetBitRate() == 0){
+		m_paceStats.msgsWithoutRate++;
+		return;
+	}
+	m_paceStats.msgsWithRate++;
+	m_paceStats.ratedBytes += bytes;
+	m_paceStats.ratedSeconds += bytes * 8.0 / rate.GetBitRate();
+	// One MTU or less means the message is a single packet, so its rate is expressed entirely
+	// in the gap AFTER that packet -- there is no inter-packet gap inside it. That gap is now
+	// charged correctly (UpdateNextAvail reads qp->lastPktRate), so such a message is shaped
+	// like any other; it is still worth counting, because all of its shaping rides on the one
+	// deferral and none of it on the message's own transmission.
+	if (bytes <= m_mtu)
+		m_paceStats.msgsSinglePkt++;
+}
+
+void RdmaHw::PrintPaceStats(std::ostream& os){
+	const PaceStats& st = m_paceStats;
+	// Restored before returning: this stream is the scratch's own std::cout in every caller.
+	const std::ios_base::fmtflags flags = os.flags();
+	const std::streamsize prec = os.precision();
+	os << std::fixed << std::setprecision(1);
+	struct Restore {
+		std::ostream& os; std::ios_base::fmtflags f; std::streamsize p;
+		~Restore(){ os.flags(f); os.precision(p); }
+	} restore{os, flags, prec};
+	if (st.msgsWithRate == 0 && st.msgsWithoutRate == 0){
+		os << "Pacing diagnostic: no RDMA messages were posted through NotePacedMessage." << std::endl;
+		return;
+	}
+	const uint64_t msgs = st.msgsWithRate + st.msgsWithoutRate;
+	const uint64_t pkts = st.cappedPkts + st.slackPkts + st.noCapPkts + st.tailPkts;
+	const uint64_t pktBytes = st.cappedBytes + st.slackBytes + st.noCapBytes + st.tailBytes;
+	auto pct = [](uint64_t a, uint64_t b){ return b ? 100.0 * a / b : 0.0; };
+	auto mb  = [](uint64_t b){ return b / 1048576.0; };
+
+	os << "Pacing diagnostic (MSCCL XML \"rate\" -> host shaper)" << std::endl;
+	os << "  messages posted: " << msgs
+	   << "  with a rate: " << st.msgsWithRate << " (" << pct(st.msgsWithRate, msgs) << "%)"
+	   << "  without: " << st.msgsWithoutRate << std::endl;
+	if (st.msgsWithRate > 0){
+		os << "    of those, one MTU or less (shaped only by the gap after): " << st.msgsSinglePkt
+		   << " (" << pct(st.msgsSinglePkt, st.msgsWithRate) << "%)" << std::endl;
+		os << "    requested rate, byte-weighted mean: "
+		   << (st.ratedSeconds > 0 ? st.ratedBytes * 8.0 / st.ratedSeconds / 1e9 : 0.0)
+		   << " Gbps over " << mb(st.ratedBytes) << " MB" << std::endl;
+	}
+	os << "  packets paced: " << pkts << " (" << mb(pktBytes) << " MB), gap set by:" << std::endl;
+	os << "    the message's cap:      " << st.cappedPkts << " (" << pct(st.cappedPkts, pkts) << "%)"
+	   << ", " << mb(st.cappedBytes) << " MB";
+	if (st.cappedSeconds > 0)
+		os << ", applied cap " << st.cappedBytes * 8.0 / st.cappedSeconds / 1e9 << " Gbps";
+	os << std::endl;
+	os << "    cc rate (cap slack):    " << st.slackPkts << " (" << pct(st.slackPkts, pkts) << "%)" << std::endl;
+	os << "    cc rate (no cap):       " << st.noCapPkts << " (" << pct(st.noCapPkts, pkts) << "%)" << std::endl;
+	os << "    cc rate (message tail): " << st.tailPkts << " (" << pct(st.tailPkts, pkts) << "%)" << std::endl;
+	os << "  bytes shaped by the XML rate: " << mb(st.cappedBytes) << " of " << mb(pktBytes)
+	   << " MB (" << pct(st.cappedBytes, pktBytes) << "%)" << std::endl;
+}
+
+// ---- ack-request diagnostic (see RdmaHw::AckReqStats) ---------------------------------------
+RdmaHw::AckReqStats RdmaHw::m_ackReqStats;
+
+void RdmaHw::PrintAckReqStats(std::ostream& os){
+	const AckReqStats& st = m_ackReqStats;
+	if (st.dataPkts == 0){
+		os << "Ack requests: none (acks off, or no RDMA data sent)" << std::endl;
+		return;
+	}
+	const std::ios_base::fmtflags flags = os.flags();
+	const std::streamsize prec = os.precision();
+	os << std::fixed << std::setprecision(2);
+	os << "Ack requests (AckReq) over " << st.dataPkts << " data packets: "
+	   << st.msgEnd << " closing a message, "
+	   << st.windowFill << " filling the window ("
+	   << 100.0 * st.windowFill / st.dataPkts << "% of packets)" << std::endl;
+	os.flags(flags);
+	os.precision(prec);
+}
+
+RdmaHw::McastStats RdmaHw::m_mcastStats;
+
+void RdmaHw::PrintMcastStats(std::ostream& os){
+	const McastStats& st = m_mcastStats;
+	if (st.qps == 0) return; // no multicast in this run: keep its output unchanged
+	os << "Multicast transport: " << st.qps << " qp(s) to " << st.members << " receiver(s) in all ("
+	   << st.udQps << " UD, " << (st.qps - st.udQps) << " sender-aggregated acks); "
+	   << st.acks << " receiver ack(s) and " << st.naks << " NAK(s) reached the senders ("
+	   << st.naksHeld << " held for a slower receiver; " << st.rewinds << " go-back-N rewind(s))";
+	if (st.udGaps > 0) os << "; " << st.udGaps << " UD receiver(s) LOST packets (unrecoverable)";
+	os << std::endl;
+}
+
 /**
  * when nic send a packet, update the bytes it has sent
 */

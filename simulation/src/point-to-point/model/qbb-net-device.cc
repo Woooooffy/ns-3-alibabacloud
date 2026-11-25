@@ -325,10 +325,19 @@ namespace ns3 {
 				m_rdmaPktSent(lastQp, p, m_tInterframeGap);
 			}else { // no packet to send
 				NS_LOG_INFO("PAUSE prohibits send at node " << m_node->GetId());
+				// Only qps that still have bytes queued AND are merely rate-blocked (their
+				// m_nextAvail is in the future) tell us when to next attempt a send. Idle,
+				// fully-drained qps keep a stale m_nextAvail that drifts into the past as
+				// time advances; including them here would drag `t` to a past value and, via
+				// the `t > Now` guard below, silently skip rescheduling -- stranding a
+				// genuinely rate-limited qp so its message never gets sent. (Harmless at line
+				// rate, where m_nextAvail is always ~Now; exposed once per-message rate pacing
+				// pushes m_nextAvail well into the future.)
 				Time t = Simulator::GetMaximumSimulationTime();
 				for (uint32_t i = 0; i < m_rdmaEQ->GetFlowCount(); i++){
 					Ptr<RdmaQueuePair> qp = m_rdmaEQ->GetQp(i);
-					t = Min(qp->m_nextAvail, t);
+					if (qp->GetBytesLeft() > 0 && qp->m_nextAvail > Simulator::Now())
+						t = Min(qp->m_nextAvail, t);
 				}
 				if (m_nextSend.IsExpired() && t < Simulator::GetMaximumSimulationTime() && t > Simulator::Now()){
 					m_nextSend = Simulator::Schedule(t - Simulator::Now(), &QbbNetDevice::DequeueAndTransmit, this);
@@ -360,10 +369,14 @@ namespace ns3 {
 			}else{ //No queue can deliver any packet
 				NS_LOG_INFO("PAUSE prohibits send at node " << m_node->GetId());
 				if (m_node->GetNodeType() == 0 && m_qcnEnabled){ //nothing to send, possibly due to qcn flow control, if so reschedule sending
+					// see the matching comment in the host-send branch above: only rate-blocked
+					// qps that still have bytes queued may set the next wakeup time; a drained
+					// qp's stale (past) m_nextAvail would otherwise suppress the reschedule.
 					Time t = Simulator::GetMaximumSimulationTime();
 					for (uint32_t i = 0; i < m_rdmaEQ->GetFlowCount(); i++){
 						Ptr<RdmaQueuePair> qp = m_rdmaEQ->GetQp(i);
-						t = Min(qp->m_nextAvail, t);
+						if (qp->GetBytesLeft() > 0 && qp->m_nextAvail > Simulator::Now())
+							t = Min(qp->m_nextAvail, t);
 					}
 					if (m_nextSend.IsExpired() && t < Simulator::GetMaximumSimulationTime() && t > Simulator::Now()){
 						m_nextSend = Simulator::Schedule(t - Simulator::Now(), &QbbNetDevice::DequeueAndTransmit, this);
@@ -403,10 +416,14 @@ namespace ns3 {
 			m_rdmaPktSent(lastQp, p, m_tInterframeGap);
 		}else { // no packet to send
 			NS_LOG_INFO("PAUSE prohibits send at node " << m_node->GetId());
+			// see the matching comment in DequeueAndTransmit's host-send branch: only
+			// rate-blocked qps that still have bytes queued may set the next wakeup time;
+			// a drained qp's stale (past) m_nextAvail would otherwise suppress the reschedule.
 			Time t = Simulator::GetMaximumSimulationTime();
 			for (uint32_t i = 0; i < m_rdmaEQ->GetFlowCount(); i++){
 				Ptr<RdmaQueuePair> qp = m_rdmaEQ->GetQp(i);
-				t = Min(qp->m_nextAvail, t);
+				if (qp->GetBytesLeft() > 0 && qp->m_nextAvail > Simulator::Now())
+					t = Min(qp->m_nextAvail, t);
 			}
 			if (m_nextSend.IsExpired() && t < Simulator::GetMaximumSimulationTime() && t > Simulator::Now()){
 				m_nextSend = Simulator::Schedule(t - Simulator::Now(), &QbbNetDevice::SwitchAsHostSend, this);
@@ -465,9 +482,17 @@ namespace ns3 {
 		m_paused[qIndex] = false;
 		NS_LOG_INFO("Node " << m_node->GetId() << " dev " << m_ifIndex << " queue " << qIndex <<
 			" resumed at " << Simulator::Now().GetSeconds());
-		Ptr<RdmaQueuePair> lastQp = m_rdmaEQ->GetQp(qIndex);
-		if(lastQp->nvls_enable == 1 && m_node->GetNodeType() == 2) SwitchAsHostSend(); 
-		else DequeueAndTransmit();
+		// qIndex is a PFC priority class (0..7), not a qp index. Only an NVSwitch acting as a
+		// host needs to consult a qp's nvls flag on resume, and only when a qp actually exists
+		// at this index. A plain switch's RDMA egress queue holds no qps at all, and a host may
+		// have fewer qps than priority classes, so GetQp(qIndex) would index out of bounds and
+		// return a null/garbage Ptr -- guard the lookup instead of dereferencing unconditionally.
+		if (m_node->GetNodeType() == 2 && qIndex < m_rdmaEQ->GetFlowCount()
+			&& m_rdmaEQ->GetQp(qIndex)->nvls_enable == 1){
+			SwitchAsHostSend();
+		}else{
+			DequeueAndTransmit();
+		}
 	}
 
 	void
@@ -545,7 +570,14 @@ namespace ns3 {
 		p->AddHeader(pauseh);
 		Ipv4Header ipv4h;  // Prepare IPv4 header
 		ipv4h.SetProtocol(0xFE);
-		ipv4h.SetSource(m_node->GetObject<Ipv4>()->GetAddress(m_ifIndex, 0).GetLocal());
+		// Switch nodes forward at L2 and have no Ipv4 stack, so GetObject<Ipv4>() is null on
+		// them. The PFC frame's source IP is link-local scaffolding the receiver never reads:
+		// PFC (l3Prot 0xFE) is consumed hop-by-hop in QbbNetDevice::Receive purely on
+		// pfc.qIndex/pfc.time and is never forwarded (so it never reaches ECMP/GetOutDev where
+		// ch.sip is used). Fall back to a null source rather than dereferencing a missing stack.
+		Ptr<Ipv4> ipv4 = m_node->GetObject<Ipv4>();
+		if (ipv4) ipv4h.SetSource(ipv4->GetAddress(m_ifIndex, 0).GetLocal());
+		else ipv4h.SetSource(Ipv4Address("0.0.0.0"));
 		ipv4h.SetDestination(Ipv4Address("255.255.255.255"));
 		ipv4h.SetPayloadSize(p->GetSize());
 		ipv4h.SetTtl(1);

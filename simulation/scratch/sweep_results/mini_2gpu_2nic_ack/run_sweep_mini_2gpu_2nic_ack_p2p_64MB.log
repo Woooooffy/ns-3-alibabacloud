@@ -1,0 +1,27 @@
+Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_a2a_p2p_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_ack_p2p_64MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_2nic_ack_p2p_64MB.csv
+Total simulated time: 65113481 nanoseconds
+Simulator end (last event of any kind): 65116297 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_2nic_ack_p2p_64MB.csv
+Fabric end (last switch data dequeue): 65112450 ns
+Switch-to-switch data bytes over 8 ports: min 271843328 / mean 543686656 / max 815529984 (max/mean 1.5)
+Busiest switch port: sw 8 port 4 -> node 10, 65242398 ns of data at line rate (100.2% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 1792  with a rate: 0 (0.0%)  without: 1792
+  packets paced: 917504 (3629.5 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       917448 (100.0%)
+    cc rate (message tail): 56 (0.0%)
+  bytes shaped by the XML rate: 0.0 of 3629.5 MB (0.0%)
+Ack requests (AckReq) over 917504 data packets: 1792 closing a message, 84831 filling the window (9.25% of packets)
+alltoall algorithm bandwidth: 65.9613 GB/s
+Algorithm XML: honoring 0 network dependence(s) over 56 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
+Skipping correctness check.
+Done simulation

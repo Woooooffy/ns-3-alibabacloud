@@ -1,0 +1,30 @@
+Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: schedule-pinned (one qp per connection)
+Network flow ids: on (custom headers + per-flow switch forwarding)
+Network deps (netdepid/netdeps): skipped
+Remote deps (remotedep/remotenotify): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_a2a_no_rate.xml
+Switch queue trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_sweep_mini_2gpu_2nic_ack_flowId+nic_1MB.csv
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_ack_flowId+nic_1MB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_2nic_ack_flowId+nic_1MB.csv
+Total simulated time: 698032 nanoseconds
+Simulator end (last event of any kind): 700848 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_2nic_ack_flowId+nic_1MB.csv
+Fabric end (last switch data dequeue): 697000 ns
+Switch-to-switch data bytes over 8 ports: min 8503296 / mean 8503296 / max 8503296 (max/mean 1)
+Busiest switch port: sw 8 port 4 -> node 10, 680263 ns of data at line rate (97.5988% of fabric end)
+Flow-forwarding rule coverage: 28672 hit / 0 miss (100% of flow-id packets steered by the schedule)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 126  with a rate: 0 (0.0%)  without: 126
+  packets paced: 14336 (56.8 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       14256 (99.4%)
+    cc rate (message tail): 80 (0.6%)
+  bytes shaped by the XML rate: 0.0 of 56.8 MB (0.0%)
+Ack requests (AckReq) over 14336 data packets: 126 closing a message, 649 filling the window (4.53% of packets)
+alltoall algorithm bandwidth: 96.1401 GB/s
+Algorithm XML: honoring 86 network dependence(s) and 10 epoch-pacing depid(s) over 126 send step(s); 0 remote gate(s) fed by 0 remote notification(s) (enforced only with HonorRemoteDeps).
+Switch JSON: pinned the scheduled egress NIC on 72 RDMA connection(s); 0 left unpinned due to conflicting plane assignments.
+Skipping correctness check.
+Done simulation

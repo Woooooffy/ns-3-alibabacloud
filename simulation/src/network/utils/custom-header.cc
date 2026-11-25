@@ -160,7 +160,7 @@ void CustomHeader::Serialize (Buffer::Iterator start) const{
 		  i.WriteHtonU16 (0);
 		  // SeqTsHeader
 		  i.WriteHtonU64 (udp.seq);
-		  i.WriteHtonU16 (udp.pg);
+		  i.WriteHtonU16 (udp.pg | (udp.ackReq ? 0x8000 : 0));
 		  udp.ih.Serialize(i);
 		  // MscclFlowIdHeader
 		  i.WriteHtonU32 (udp.mscclFlowId);
@@ -295,6 +295,11 @@ CustomHeader::Deserialize (Buffer::Iterator start)
 		  // SeqTsHeader
 		  udp.seq = i.ReadNtohU64 ();
 		  udp.pg =  i.ReadNtohU16 ();
+		  // Split the AckReq flag back out of the pg field it travels in, so that every
+		  // downstream reader of udp.pg (switch qIndex, rx-qp key, ack echo) sees the
+		  // plain priority group exactly as before.
+		  udp.ackReq = (udp.pg >> 15) & 1;
+		  udp.pg &= 0x7fff;
 		  if (getInt)
 			  udp.ih.Deserialize(i);
 		  else
@@ -339,11 +344,12 @@ uint32_t CustomHeader::GetAckSerializedSize(void){
 	return sizeof(ack.sport) + sizeof(ack.dport) + sizeof(ack.flags) + sizeof(ack.pg) + sizeof(ack.seq) + IntHeader::GetStaticSize();
 }
 
-uint32_t CustomHeader::GetUdpHeaderSize(void){
-	return 8 + sizeof(udp.pg) + sizeof(udp.seq) + IntHeader::GetStaticSize() + sizeof(udp.mscclFlowId);
+uint32_t CustomHeader::GetUdpHeaderSize(void) const{
+	return 8 + sizeof(udp.pg) + sizeof(udp.seq) + IntHeader::GetStaticSize()
+		+ (m_hasMscclFlowId ? sizeof(udp.mscclFlowId) : 0);
 }
 
-uint32_t CustomHeader::GetStaticWholeHeaderSize(void){
+uint32_t CustomHeader::GetStaticWholeHeaderSize(void) const{
 	return 14 + 20 + GetUdpHeaderSize();
 }
 

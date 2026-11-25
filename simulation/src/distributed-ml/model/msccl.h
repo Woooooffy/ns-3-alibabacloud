@@ -5,11 +5,27 @@
 #include <stdint.h>
 #include <ostream>
 #include <cstring>
+#include <limits>
+#include <type_traits>
 namespace ns3 {
 // TODO: double check predefined params for topology specificity
-#define MSCCL_MAX_NUM_STEPS 256
-#define MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL 32
-#define MSCCL_MAX_NUM_THREAD_BLOCKS (108*2) // set this to 108 which is the number of SMs on A100
+#define MSCCL_MAX_NUM_STEPS 1024
+// A rail-optimized 256-GPU allgather puts up to 76 threadblocks (one per peer it talks
+// to) on a single channel, so this is 128 rather than the upstream 32. MAXCHANNELS is
+// traded down to keep MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL — the size of
+// mscclAlgorithm::mscclTBs, the dominant per-GPU allocation — unchanged at 1024.
+#define MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL 128
+// Matches MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL (the mscclTBs storage capacity)
+// rather than an SM count: the real runtime also caps at 1024 thread blocks per GPU, and stores
+// the id in a plain int, so there is no narrower hardware ceiling to mirror here. One threadblock
+// per connection means the count grows with peers x channels -- large all-to-all schedules on
+// wide topologies (e.g. a 96-GPU alltoall) can need several hundred per GPU.
+#define MSCCL_MAX_NUM_THREAD_BLOCKS 1024
+// Threadblock ids are STORED as int16_t -- in mscclThreadBlock::dependentBid, and in the bid /
+// depbid locals threaded through collectives.cc -- which comfortably covers the 0..1023 range
+// MSCCL_MAX_NUM_THREAD_BLOCKS allows; the static_assert below keeps that honest if either bound
+// ever changes.
+#define MSCCL_MAX_THREAD_BLOCK_ID (MSCCL_MAX_NUM_THREAD_BLOCKS - 1)
 #define MSCCL_MAX_NUM_ALGOS 4
 #define MSCCL_MAX_COUNT 72 // make sure this does not overflow wrt the size of mscclWorkElem::mscclMaxAllowCount
 #define MSCCL_MAX_REDUCE_FUSION 16
@@ -17,10 +33,11 @@ namespace ns3 {
 #define MSCCL_SLICESTEPS (NCCL_STEPS/4)
 #define MSCCL_CHUNKSTEPS (NCCL_STEPS/2)
 
-#define MAXCHANNELS 32
+// No XML under scratch/xml_input declares more than 2 channels; 8 keeps ample headroom.
+#define MAXCHANNELS 8
 
 static_assert(MAXCHANNELS*MSCCL_MAX_NUM_THREAD_BLOCKS_PER_CHANNEL >= MSCCL_MAX_NUM_THREAD_BLOCKS);
-static_assert(MSCCL_MAX_NUM_STEPS <= 256, "MSCCL interpreter doesn't allow for more than nthreads dependences");
+// static_assert(MSCCL_MAX_NUM_STEPS <= 256, "MSCCL interpreter doesn't allow for more than nthreads dependences");
 
 #define MSCCL_INPUT_BUFFER 0
 #define MSCCL_OUTPUT_BUFFER 1
@@ -28,6 +45,16 @@ static_assert(MSCCL_MAX_NUM_STEPS <= 256, "MSCCL interpreter doesn't allow for m
 
 // sentinel for mscclTransfer::mscclFlowId meaning "no flow id assigned"
 #define MSCCL_FLOW_ID_NONE 0xFFFFFFFFu
+
+// Switch multicast (TE-CCL ncclize multicast_output_design.md): `<tb send="2,3">` is ONE send
+// stream that the fabric replicates to every listed receiver. Such a threadblock stores its
+// receivers in mscclThreadBlock::sendPeers and carries this sentinel in `sendpeer`, so every
+// code path that treats `sendpeer` as a single node id rejects it (it is < 0) instead of
+// silently sending to the first receiver only.
+#define MSCCL_PEER_MULTICAST (-2)
+// Receivers one multicast threadblock may list. Bounds a fan-out to every other GPU of a
+// 257-GPU topology; the parser rejects a longer list rather than truncating it.
+#define MSCCL_MAX_MULTICAST_PEERS 256
 
 #define MSCCL_SEND 0
 #define MSCCL_RECV 1
@@ -77,7 +104,59 @@ struct mscclTransfer {
   // custom flow-based forwarding instead of plain ECMP. MSCCL_FLOW_ID_NONE if
   // the XML algorithm didn't assign one to this step.
   uint32_t mscclFlowId;
+  // host-side pacing rate for this step's RDMA transfer, in GB/s (gigabytes per
+  // second), as specified by the XML "rate" attribute. 0 means unspecified/no cap.
+  // Ignored for gpu<->gpu p2p (socket) transfers; for RDMA transfers it caps the
+  // rate at which this step's fragments are paced onto the wire.
+  double rate;
+  // Network gates (XML "netgate"/"netwait"). A gate is a node-local one-shot latch that
+  // expresses *wire* ordering, as opposed to depid/deps which express *buffer readiness*.
+  // netGate names the gate this op opens when its RDMA message completes on the qp (the
+  // CQE an RC verb actually gives you); netWait names the gate this op blocks on -- it is
+  // not posted until that gate is open. Both are -1 when unused, and both are only valid
+  // on RDMA send-bearing ops. Gates never close; a gate has exactly one owner.
+  int16_t netGate;
+  int16_t netWait;
+  // Network dependence (XML "netdepid"/"netdeps"): this op may not start until step
+  // `netDepStep` of threadblock `netDepBid` -- on this same GPU -- has physically drained onto
+  // the wire, i.e. its RDMA message completed on the qp. Both -1 when unused.
+  //
+  // This is the *wire* counterpart of depid/deps, which express buffer readiness: a send step
+  // "completes" for depid purposes the moment it is posted to the transport, long before its
+  // bytes are gone. A time-indexed solver (TE-CCL) relies on the wire meaning -- it separates
+  // flows into epochs so that concurrent link demand never exceeds capacity, and only network
+  // completion marks an epoch boundary. Dropping these turns a congestion-free schedule into
+  // an unthrottled release of every flow at once.
+  int16_t netDepBid;
+  int16_t netDepStep;
+  // Remote (cross-GPU) pacing gate (XML "remotedep"/"remotedeps"): this send may not start until
+  // this GPU has received `remoteDepOrdinal` notifications from GPU `remoteDepRank` in the
+  // current pipeline pass. Both -1 when unused. Addressed by rank and count rather than by
+  // (threadblock, step) because the producer lives on another GPU. Honored only while the
+  // HonorRemoteDeps attribute is on.
+  int16_t remoteDepRank;
+  int16_t remoteDepOrdinal;
+  // The notifying side (XML "remotenotify", a comma-separated rank list on a recv): when this
+  // step completes, one notification goes to each listed rank. The ranks live in
+  // mscclThreadBlock::remoteNotifyRank[remoteNotifyPointer .. +numRemoteNotify).
+  int16_t remoteNotifyPointer;
+  int16_t numRemoteNotify;
 };
+
+// Sentinel for netGate/netWait: this op neither opens nor waits on a gate.
+#define MSCCL_GATE_NONE ((int16_t)-1)
+// Sentinel for netDepBid/netDepStep: this op has no network dependence.
+#define MSCCL_NETDEP_NONE ((int16_t)-1)
+// Sentinel for remoteDepRank/remoteDepOrdinal: this op waits on no remote notification.
+#define MSCCL_REMOTEDEP_NONE ((int16_t)-1)
+// Suffix on an XML depid value marking it as an epoch-pacing gate (see
+// mscclThreadBlock::dependentPacing). A stock MSCCL runtime reads the id with atoi/strtol, which
+// stops at the suffix, so it keeps enforcing the gate as an ordinary dependence.
+#define MSCCL_PACING_DEPID_SUFFIX 'p'
+// Largest gate id a schedule may use. Not a capacity the runtime preallocates -- gate state is
+// sized per node from the highest id actually seen -- just a bound that keeps a typo'd id from
+// allocating a large gate vector on every node. Six gates per GPU is the measured need.
+#define MSCCL_MAX_GATE_ID 4095
 
 // print method
 inline std::ostream& operator<<(std::ostream& os, const mscclTransfer& t) {
@@ -110,29 +189,74 @@ inline std::ostream& operator<<(std::ostream& os, const mscclTransfer& t) {
     os << ", mscclFlowId=" << t.mscclFlowId;
   }
 
+  if (t.netGate != MSCCL_GATE_NONE) {
+    os << ", netGate=" << t.netGate;
+  }
+  if (t.netWait != MSCCL_GATE_NONE) {
+    os << ", netWait=" << t.netWait;
+  }
+  if (t.netDepBid != MSCCL_NETDEP_NONE) {
+    os << ", netDep=(tb " << t.netDepBid << ", step " << t.netDepStep << ")";
+  }
+  if (t.remoteDepRank != MSCCL_REMOTEDEP_NONE) {
+    os << ", remoteDep=(gpu " << t.remoteDepRank << ", #" << t.remoteDepOrdinal << ")";
+  }
+  if (t.numRemoteNotify > 0) {
+    os << ", remoteNotify=" << t.numRemoteNotify << " rank(s)";
+  }
+
   os << " }";
 
   return os;
 }
 
 struct mscclThreadBlock {
+  // The single receiver of a unicast threadblock, -1 for none, or MSCCL_PEER_MULTICAST when
+  // the XML lists several (see sendPeers).
   int16_t sendpeer;
   int16_t recvpeer;
+  // Every receiver of this threadblock's sends, ascending: 0 entries for no sender, 1 for a
+  // unicast (== sendpeer), >= 2 for a switch multicast. The full set is the identity of a
+  // multicast connection, the way `sendpeer` is the identity of a unicast one.
+  int16_t nSendPeers;
+  int16_t sendPeers[MSCCL_MAX_MULTICAST_PEERS];
   uint16_t nsteps;
   int8_t channelId; // associated channel. -1 indicates a threadblock with only local copies
   // step is used to index into this array. transfers[step] is the addr to transfer.
-  int8_t dependentBid[MSCCL_MAX_NUM_STEPS]; // -1 if not dependent on any threadblock
+  int16_t dependentBid[MSCCL_MAX_NUM_STEPS]; // -1 if not dependent on any threadblock
   int16_t dependentStep[MSCCL_MAX_NUM_STEPS];
+  // 1 if this dependence is an epoch-PACING gate rather than a data dependence (XML depid with
+  // the MSCCL_PACING_DEPID_SUFFIX, e.g. depid="2p"). A recv-sourced pacing gate rides depid/deps
+  // because the runtime edge is identical -- "wait until that recv has landed" -- but it orders
+  // the wire, not buffer readiness, so it belongs to the netDeps ablation: enforced only while
+  // HonorNetDeps is on. The slot counts toward numDependences either way, so global step
+  // numbering does not depend on the knob.
+  int8_t dependentPacing[MSCCL_MAX_NUM_STEPS];
+  // Waiter ranks of every remotenotify in this threadblock, packed; see
+  // mscclTransfer::remoteNotifyPointer.
+  int16_t remoteNotifyRank[MSCCL_MAX_NUM_STEPS];
   int16_t reductionSrcOffsets[MSCCL_MAX_NUM_STEPS]; // in case there are multiple reductions with the same dstwewqwqew
   struct mscclTransfer transfers[MSCCL_MAX_NUM_STEPS];
   int64_t pad;
 };
 
+// Keeps MSCCL_MAX_THREAD_BLOCK_ID honest if dependentBid is ever widened or narrowed: the parse
+// guard must reject exactly the ids this field cannot hold, no more and no less.
+static_assert(MSCCL_MAX_THREAD_BLOCK_ID <=
+                  std::numeric_limits<
+                      std::remove_extent<decltype(mscclThreadBlock::dependentBid)>::type>::max(),
+              "MSCCL_MAX_THREAD_BLOCK_ID exceeds the type threadblock ids are stored in");
+
 // print method
 inline std::ostream& operator<<(std::ostream& os, const mscclThreadBlock& tb) {
   os << "mscclThreadBlock { "
-     << "sendpeer=" << tb.sendpeer
-     << ", recvpeer=" << tb.recvpeer
+     << "sendpeer=" << tb.sendpeer;
+  if (tb.nSendPeers > 1) {
+    os << " (multicast to";
+    for (int16_t i = 0; i < tb.nSendPeers; ++i) os << (i ? "," : " ") << tb.sendPeers[i];
+    os << ")";
+  }
+  os << ", recvpeer=" << tb.recvpeer
      << ", nsteps=" << tb.nsteps
      << ", channelId=" << static_cast<int>(tb.channelId)
      << " }\n";
@@ -247,6 +371,10 @@ struct mscclAlgorithm {
   // number of scratch chunks that MSCCL will use
   int nScratchChunks;
   int8_t needsProxy;
+  // highest gate id any of this GPU's transfers declares via netGate/netWait, or -1 if the
+  // schedule uses no gates. The runtime sizes its gate vectors from this, so there is no
+  // compile-time maximum to keep in sync with the emitter.
+  int16_t maxNetGate;
 };
 
 // print

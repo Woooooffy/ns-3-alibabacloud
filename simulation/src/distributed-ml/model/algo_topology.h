@@ -4,6 +4,8 @@
 #include "gpu.h"
 #include "msccl.h"
 #include <map>
+#include <set>
+#include <tuple>
 #include <vector>
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
@@ -35,18 +37,158 @@ namespace ns3
 		int GetNSwitchNodes();
 		Ptr<Node> GetSwitchNode(int i);
 
+		// Algorithm-level parameters captured from the parsed XML. Valid only after a
+		// successful ParseAlgoXml (0 / empty before then). Exposing them here makes the parsed
+		// algorithm the single source of truth for the chunk count, so the app's ChunkSize and
+		// the tester's setup/verify no longer have to be hand-kept in sync with the XML.
+		//
+		// GetNInputChunks() is the per-GPU input chunk count (the <gpu> i_chunks attribute) and
+		// is the value the CollectiveTester wants: it equals the number of chunks each rank
+		// contributes. For alltoall this coincides with nchunksperloop; for allgather it does
+		// not (there nchunksperloop == ngpus * i_chunks), so use this rather than
+		// GetNChunksPerLoop() to drive the tester.
+		int GetNInputChunks() const { return m_nInputChunks; }
+		// Largest per-GPU s_chunks over the active GPUs. The scratch buffer the tester allocates
+		// must hold this many chunks, otherwise steps staging into high scratch offsets trip the
+		// bounds check in CollectivesApplication::GetBufferPtrRawBytes.
+		int GetNScratchChunks() const { return m_nScratchChunks; }
+		int GetNChunksPerLoop() const { return m_nChunksPerLoop; }
+		int GetNChannels() const { return m_nChannels; }
+		// GPU ids carrying a non-empty algorithm (>=1 threadblock), ascending. These are the
+		// GPUs that RUN, so they are the ones an application must be installed on; any other
+		// GPU in the container is passive for this algorithm.
+		const std::vector<int>& GetActiveGpuIds() const { return m_activeGpuIds; }
+		// The active GPUs that hold a slice of the collective (i_chunks > 0), ascending. On a
+		// whole-topology solve this equals GetActiveGpuIds(); on a partial-participation one it
+		// is the subset the collective is actually defined over, and it is THIS count and
+		// ordering that the buffer layout is numbered by -- see GetRelayGpuIds().
+		const std::vector<int>& GetDataGpuIds() const { return m_dataGpuIds; }
+		// The active GPUs with no input chunks of their own: they forward other ranks' data
+		// through scratch and nothing else. A solver produces these on a partial problem by
+		// routing through an idle GPU. They must still be installed and still need buffers
+		// (their steps read and write scratch), but they own no participant rank and there is
+		// nothing to verify on them -- hand them to CollectiveTester::SetRelayGpus.
+		const std::vector<int>& GetRelayGpuIds() const { return m_relayGpuIds; }
+
 		AlgoParseResult ParseAlgoXml(const char* xmlFilePath);
-		AlgoParseResult ParseSwitchJson(const char* jsonFilePath);
+		// Parses the switch JSON, which describes two independent things:
+		//
+		//   installSwitchRules -- the per-flow forwarding table, plus CustomFlowForwarding on each
+		//     switch it names, so those switches route by msccl flow id instead of hashing ECMP.
+		//   pinNics -- the egress NIC each RDMA connection should use, published onto the GPU
+		//     nodes for CollectivesApplication's NIC_SCHEDULED mode.
+		//
+		// They were fused when this took no flags, which made them impossible to ablate apart:
+		// asking for schedule-pinned NICs forced custom switch forwarding on, and turning custom
+		// forwarding off silently took the NIC pinning with it. Callers now choose each.
+		AlgoParseResult ParseSwitchJson(const char* jsonFilePath,
+			bool installSwitchRules = true, bool pinNics = true);
 
 		private:
 
+		// One send step's endpoints, recorded by ParseAlgoXml and consumed by ParseSwitchJson.
+		// The XML knows flowId -> (sender, peer, channel) but not which link the flow takes;
+		// the switch JSON knows flowId -> (switch, out port) but names no channel. Joining the
+		// two on the flow id is the only way to recover which of a multi-homed GPU's NICs the
+		// schedule intended a given connection to leave by (see ResolveScheduledNics).
+		struct FlowEndpoints {
+			uint32_t srcGpu;
+			int16_t peer;                // the tb's sendpeer: a rank, or MSCCL_PEER_MULTICAST
+			int chan;
+			std::vector<int16_t> peers;  // every receiver, ascending (one entry for a unicast)
+		};
+		// (sender gpu id, peer, channel) -- the identity of one persistent RDMA connection,
+		// which is the granularity at which a NIC can be pinned (RdmaHw binds a qp to one NIC
+		// for its lifetime). A schedule that sent one such connection's flows out different
+		// NICs could not be honored; ResolveScheduledNics detects and reports that rather than
+		// silently following whichever flow it saw first. A multicast connection is named by
+		// its receiver set: `peer` is then MSCCL_PEER_MULTICAST and `group` holds the set
+		// (empty for a unicast), since two trees from one GPU may share a channel number.
+		struct ConnectionKey {
+			uint32_t srcGpu;
+			int16_t peer;
+			int chan;
+			std::vector<int16_t> group;
+			bool operator<(const ConnectionKey& o) const {
+				return std::tie(srcGpu, peer, chan, group) < std::tie(o.srcGpu, o.peer, o.chan, o.group);
+			}
+		};
+		// One route of a format-2 switch JSON's "flows" section: the sender and the receiver
+		// set, plus the raw TE-CCL id of the switch every branch starts at (the tree's root).
+		struct JsonFlow {
+			int srcGpu;
+			std::vector<int16_t> dsts;  // ascending
+			int rootTecclId;
+		};
+
 		NodeContainer m_gpuNodes;
 		NodeContainer m_switchNodes;
-		// switch node id -> (neighbor node id -> outgoing ifIndex), built lazily
-		// the first time a given switch is touched by ParseSwitchJson
-		std::map<uint32_t, std::map<uint32_t, uint32_t>> m_switchPortCache;
+		int m_nNetDeps = 0;                  // netdepid/netdeps pairs honored, for the parse summary
+		int m_nPacingDeps = 0;               // depid="<n>p" epoch-pacing gates, for the parse summary
+		int m_nRemoteDeps = 0;               // remotedep/remotedeps gates, for the parse summary
+		int m_nRemoteNotifies = 0;           // remotenotify entries, for the parse summary
+		// One remotedep waiter, kept until every GPU is parsed so the cross-GPU ordinal check
+		// (a waiter must not ask for more notifications than its notifier sends) can run.
+		struct RemoteWait {
+			int waiter;
+			int16_t notifier;
+			int16_t ordinal;
+			int bid;
+			int s;
+		};
+		std::vector<RemoteWait> m_remoteWaits;
+		int m_nSendSteps = 0;                // send-bearing steps seen, the summary's denominator
+		int m_nMulticastBlocks = 0;          // threadblocks whose `send` lists >= 2 receivers
+		int m_nMulticastSendSteps = 0;       // send-bearing steps in those threadblocks
+		int m_nInputChunks = 0;              // per-GPU input chunk count (i_chunks); tester n_chunks
+		int m_nScratchChunks = 0;            // max per-GPU scratch chunk count (s_chunks) over active GPUs
+		int m_nChunksPerLoop = 0;            // nchunksperloop from the <algo> root
+		int m_nChannels = 0;                 // nchannels from the <algo> root
+		std::vector<int> m_activeGpuIds;     // gpu ids with a non-empty algorithm, ascending
+		std::vector<int> m_dataGpuIds;       // active AND i_chunks > 0 (the participant ranks)
+		std::vector<int> m_relayGpuIds;      // active AND i_chunks == 0 (forward-only)
+		// switch node id -> (neighbor node id -> every outgoing ifIndex reaching that
+		// neighbor), built lazily the first time a given switch is touched by
+		// ParseSwitchJson. The value is a vector, not a single port, because a realistic
+		// fat tree runs several parallel links between the same switch pair (e.g. each
+		// leaf's multiple uplinks to one spine) -- keying one port per neighbor would let
+		// the last-installed device silently overwrite its siblings.
+		// Despite the name this caches GPU ports too: resolving a flow's ingress hop needs the
+		// sending GPU's own port map (which of its NICs faces the leaf named by the rule), and
+		// the lookup is identical -- walk the node's qbb channels and group ports by neighbor.
+		std::map<uint32_t, std::map<uint32_t, std::vector<uint32_t>>> m_switchPortCache;
+		// flow id -> the send step's endpoints, filled by ParseAlgoXml. Only send-bearing steps
+		// carrying a real flow id are recorded; the matching recv step repeats the same id but
+		// would name the receiver as "src".
+		std::map<uint32_t, FlowEndpoints> m_flowEndpoints;
+		// connection -> the sending GPU's ifIndex the schedule routes it out of, derived by
+		// ResolveScheduledNics and published onto the GPU nodes at the end of ParseSwitchJson.
+		std::map<ConnectionKey, uint32_t> m_scheduledNic;
+		// connections whose flows disagreed about the egress NIC (see ConnectionKey); left
+		// unpinned so they keep RdmaHw's ECMP hashing rather than honoring half a schedule.
+		std::set<ConnectionKey> m_scheduledNicConflicts;
 
-		bool ResolveOutPort(Ptr<SwitchNode> sw, Ptr<Node> target, uint32_t& outIfIndex);
+		std::map<uint32_t, std::vector<uint32_t>>& SwitchPortCache(Ptr<Node> node);
+		bool ResolveOutPorts(Ptr<SwitchNode> sw, Ptr<Node> target, std::vector<uint32_t>& outIfIndices);
+		bool ResolvePortNeighbor(Ptr<SwitchNode> sw, uint32_t ifIndex, uint32_t& neighborNodeId);
+		// Format-2 switch JSON ("format": 2, written by TE-CCL's multicast-aware ncclize). Its
+		// per-switch "ports" list means REPLICATE to every port, the opposite of format 1's port
+		// array (spread over parallel links), so the two are parsed by separate paths.
+		// JsonDoc wraps the parsed nlohmann::json root; defined in the .cc so that json.hpp stays
+		// out of this header.
+		struct JsonDoc;
+		AlgoParseResult ParseSwitchJsonFormat2(const JsonDoc& doc, const char* file_path,
+			bool installSwitchRules, bool pinNics);
+		// Follows flow `flowId`'s installed ports from its root switch through the real ns-3
+		// wiring and checks it reaches exactly `flow.dsts`, each once. Format 2 only.
+		AlgoParseResult CheckMulticastTree(uint32_t flowId, const JsonFlow& flow,
+			const std::map<int, int>& tecclToSwitchIdx,
+			const std::map<uint32_t, std::map<int, std::vector<uint32_t>>>& rules);
+		// If `sw` is the ingress hop of `flowId` (i.e. it neighbors that flow's sending GPU),
+		// record the GPU-side NIC facing it as that connection's scheduled egress NIC.
+		void ResolveScheduledNics(Ptr<SwitchNode> sw, uint32_t flowId);
+		// Push m_scheduledNic onto the GPU nodes and log a one-line summary.
+		void PublishScheduledNics();
 	};
 
 	AlgoParseResult mscclGetBufferType(const char* str, uint8_t* output);

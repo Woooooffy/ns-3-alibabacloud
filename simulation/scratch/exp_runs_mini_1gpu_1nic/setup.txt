@@ -1,0 +1,5 @@
+l2ack=1
+coll=alltoall
+ack_every_n_pkts=8
+proto_chunk_bytes=2097152
+max_msgs_in_flight=8

@@ -1,0 +1,28 @@
+Participants: 6 of 8 GPUs carry data (schedule mini_2g2n_3A_a2a_p2p_no_rate.xml)
+Topology: mini_2g2n (8 GPUs, 4 switches, 4 host switches)
+NIC selection: merged NIC (one qp per NIC, message split across them)
+Network flow ids: off (no header on the wire, plain ECMP)
+Network deps (netdepid/netdeps): skipped
+Algorithm XML: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/xml_input/mini_2g2n_3A_a2a_p2p_no_rate.xml
+Switch queue trace: (rows off)
+Switch peak-queue summary: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_qlen_max_sweep_mini_2gpu_2nic_3A_ack_p2p+sync_4GB.csv
+Switch drop/PFC trace: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_events_sweep_mini_2gpu_2nic_3A_ack_p2p+sync_4GB.csv
+Total simulated time: 1825014377 nanoseconds
+Simulator end (last event of any kind): 1825017193 nanoseconds
+Switch port utilization: /data/commit/graphit/wangyj05/workspace/ns-3-alibabacloud/simulation/build/scratch/../../scratch/logs/switch_port_util_sweep_mini_2gpu_2nic_3A_ack_p2p+sync_4GB.csv
+Fabric end (last switch data dequeue): 1825013346 ns
+Switch-to-switch data bytes over 8 ports: min 17397972992 / mean 19572719616 / max 21747466240 (max/mean 1.11111)
+Busiest switch port: sw 8 port 0 -> node 0, 1739797299 ns of data at line rate (95.3307% of fabric end)
+Pacing diagnostic (MSCCL XML "rate" -> host shaper)
+  messages posted: 61440  with a rate: 0 (0.0%)  without: 61440
+  packets paced: 31457280 (124440.0 MB), gap set by:
+    the message's cap:      0 (0.0%), 0.0 MB
+    cc rate (cap slack):    0 (0.0%)
+    cc rate (no cap):       31402485 (99.8%)
+    cc rate (message tail): 54795 (0.2%)
+  bytes shaped by the XML rate: 0.0 of 124440.0 MB (0.0%)
+Ack requests (AckReq) over 31457280 data packets: 61440 closing a message, 1485862 filling the window (4.72% of packets)
+alltoall algorithm bandwidth: 84.722 GB/s
+Algorithm XML: honoring 0 network dependence(s) over 30 send step(s). NOTE: no netdepid/netdeps found -- every send is released as soon as its data dependences allow, so a time-indexed schedule will not be paced as solved.
+Skipping correctness check.
+Done simulation

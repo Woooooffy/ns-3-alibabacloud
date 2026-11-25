@@ -31,7 +31,7 @@ namespace ns3 {
 NS_OBJECT_ENSURE_REGISTERED (SimpleSeqTsHeader);
 
 SimpleSeqTsHeader::SimpleSeqTsHeader ()
-  : m_seq (0)
+  : m_seq (0), m_pg (0)     // m_pg carries the AckReq bit; SetPG reads it, so it must start defined
 {
 	if (IntHeader::mode == 1)
 		ih.ts = Simulator::Now().GetTimeStep();
@@ -51,12 +51,24 @@ SimpleSeqTsHeader::GetSeq (void) const
 void
 SimpleSeqTsHeader::SetPG (uint16_t pg)
 {
-	m_pg = pg;
+	// Preserve bit 15 (AckReq) so the two setters may be called in either order.
+	NS_ASSERT_MSG (pg < 0x8000, "priority group " << pg << " collides with the AckReq bit");
+	m_pg = (m_pg & 0x8000) | (pg & 0x7fff);
 }
 uint16_t
 SimpleSeqTsHeader::GetPG (void) const
 {
-	return m_pg;
+	return m_pg & 0x7fff;
+}
+void
+SimpleSeqTsHeader::SetAckReq (bool ackReq)
+{
+	m_pg = ackReq ? (m_pg | 0x8000) : (uint16_t)(m_pg & 0x7fff);
+}
+bool
+SimpleSeqTsHeader::GetAckReq (void) const
+{
+	return (m_pg & 0x8000) != 0;
 }
 
 Time

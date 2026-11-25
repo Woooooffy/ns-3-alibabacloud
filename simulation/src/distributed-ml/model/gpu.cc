@@ -81,4 +81,24 @@ namespace ns3
 		return it != m_peerBaseRtt.end() ? it->second : 0;
 	}
 
+	void GPU::PushPeerNic(int16_t peer, int chan, uint32_t ifIndex){
+		m_peerNic[std::make_pair(peer, chan)] = ifIndex;
+	}
+	bool GPU::GetPeerNic(int16_t peer, int chan, uint32_t& ifIndex) const{
+		auto it = m_peerNic.find(std::make_pair(peer, chan));
+		if (it == m_peerNic.end()) return false;
+		ifIndex = it->second;
+		return true;
+	}
+
+	void GPU::PushGroupNic(const std::vector<int16_t>& group, int chan, uint32_t ifIndex){
+		m_groupNic[std::make_pair(group, chan)] = ifIndex;
+	}
+	bool GPU::GetGroupNic(const std::vector<int16_t>& group, int chan, uint32_t& ifIndex) const{
+		auto it = m_groupNic.find(std::make_pair(group, chan));
+		if (it == m_groupNic.end()) return false;
+		ifIndex = it->second;
+		return true;
+	}
+
 }
