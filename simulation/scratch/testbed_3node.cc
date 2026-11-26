@@ -32,8 +32,10 @@
 // netDeps, milp and p2p configs run here. flowId+nic, nicSel, noRate, noNetDeps and all ask
 // for a JSON and stop with an error that says so.
 //
-//     ./ns3 run "testbed_3node --xml=testbed_3node_a2a_teccl.xml --inputBytes=3000000 --rate=0"
-// Testbed sizes are per-GPU chunks in decimal MB, so that is the 1 MB solve: 3 x 10^6 bytes per rank.
+//     ./ns3 run "testbed_3node --xml=testbed_3node_a2a_teccl-two-alltoall-1MB.xml --inputBytes=3145728"
+// Sizes are base 2 (KB = 2^10, MB = 2^20, as nccl-tests counts them), per-GPU chunks C: AllToAll's
+// --inputBytes is a rank's whole send buffer, 3 x C (3 x 2^20 for 1 MB), and AllGather's is its one
+// chunk, C, with --coll=allgather. scratch/sweep_testbed.py runs every schedule this way.
 
 #include "mini_harness.h"
 

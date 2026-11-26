@@ -19,15 +19,23 @@ msccl_perf.sbatch in the experiments repo:
     UNSUPPORTED_STEPS) is listed as skipped with the reason instead of being run. Today that is
     ForestColl, whose AllGather trees forward with rcs.
 
-SIZES. A size S is a per-GPU chunk in decimal MB, as on the hardware, where nccl-tests' buffer is
-3 x S x 10^6 bytes for both collectives (the summaries' `bytes` column). The harness's
---inputBytes is one rank's INPUT, which differs between the two:
+SIZES are base 2: KB = 2^10 bytes, MB = 2^20, nccl-tests' convention and every earlier ns-3
+sweep's. A size is a per-GPU chunk C, written the way the schedule files and the hardware
+summaries name it: 0.016 / 0.064 / 0.256 are 16 / 64 / 256 KB (C = 16 x 2^10, ...), and 1 / 4 /
+16 / 64 are MB (C = 2^20, ...). --sizes takes either spelling (0.016 or 16KB, 1 or 1MB). The
+nccl-tests buffer is 3 x C for both collectives. The harness's --inputBytes is one rank's
+INPUT, which differs between the two:
 
-    alltoall   a rank sends a chunk to every rank:   --inputBytes = 3 x S x 10^6
-    allgather  a rank contributes one chunk:         --inputBytes =     S x 10^6, --coll=allgather
+    alltoall   a rank sends a chunk to every rank:   --inputBytes = 3 x C
+    allgather  a rank contributes one chunk:         --inputBytes =     C, --coll=allgather
+
+The solves and the 2026-11-25 hardware runs (experiments scripts/cluster/msccl_perf.sbatch)
+used DECIMAL sizes instead, C = S x 10^6 bytes: 4.9% smaller at MB sizes and 2.3% at KB sizes.
+That is too little to need a re-solve, but a sim/hw ratio compares slightly different byte
+counts until the hardware runs use base 2 too.
 
 Time is the harness's "Total simulated time" (the collective's last step). Bandwidth is
-computed here as bytes / time, which is nccl-tests' algbw. The harness's own "algorithm
+computed here as buffer / time, which is nccl-tests' algbw. The harness's own "algorithm
 bandwidth" line multiplies the input by the rank count, so for AllToAll it reads 3x higher.
 
 Every run keeps the correctness check on (cheap at 3 ranks) and passes --qlenRows=0. Otherwise
@@ -44,17 +52,35 @@ NS3_DIR = os.path.dirname(HERE)
 XML_DIR = os.path.join(HERE, "xml_input")
 PROGRAM = "testbed_3node"
 RANKS = 3
-SIZES_MB = ["0.016", "0.064", "0.256", "1", "4", "16", "64"]   # msccl_perf.sbatch's SIZES_MB
+SIZES_MB = ["0.016", "0.064", "0.256", "1", "4", "16", "64"]   # the schedules' and summaries' labels
 # MSCCL step types collectives.cc does not implement yet (it aborts on them). A schedule with any
 # of them is reported as skipped, with the reason, rather than run and counted as a failure.
 UNSUPPORTED_STEPS = {"rcs": "RecvCpSend", "rrs": "RecvRedSend", "rrcs": "RecvRedCpSend"}
-FIELDS = ["case", "schedule", "coll", "size_mb", "hw_bytes", "input_bytes", "sim_ns", "sim_us",
+FIELDS = ["case", "schedule", "coll", "size_mb", "chunk_bytes", "buffer_bytes", "input_bytes", "sim_ns", "sim_us",
           "sim_GBps", "check", "status"]
 
 
-def hw_bytes(mb):
-    """msccl_perf.sbatch's bytes_of: int(S * 1e6 + 0.5) * N."""
-    return int(float(mb) * 1e6 + 0.5) * RANKS
+def chunk_bytes(label):
+    """A size label's per-GPU chunk, base 2: below 1 the label is KB/1000 (0.016 = 16 KB)."""
+    v = float(label)
+    n = v * 2**20 if v >= 1 else round(v * 1000) * 2**10
+    if n != int(n) or n <= 0:
+        raise SystemExit(f"size {label}: not a whole number of bytes in base 2")
+    return int(n)
+
+
+def label_of(size):
+    """'16KB' -> '0.016', '1MB' -> '1'; a bare label passes through."""
+    m = re.fullmatch(r"([0-9.]+)\s*(KB|MB)?", size.strip(), re.I)
+    if not m:
+        raise SystemExit(f"cannot read size {size!r}: give 0.016 or 16KB, 1 or 1MB")
+    v, unit = float(m.group(1)), (m.group(2) or "").upper()
+    v = v / 1000 if unit == "KB" else v
+    return f"{v:g}"
+
+
+def input_bytes(coll, label):
+    return chunk_bytes(label) * (RANKS if coll == "alltoall" else 1)
 
 
 def cases(sizes, only):
@@ -85,10 +111,11 @@ def unsupported(xml):
 
 
 def run_one(case, xml, coll, mb, outdir):
-    chunk = int(float(mb) * 1e6 + 0.5)
-    input_bytes = chunk * (RANKS if coll == "alltoall" else 1)
+    chunk = chunk_bytes(mb)
+    buf = chunk * RANKS
+    ib = input_bytes(coll, mb)
     row = dict(case=case, schedule=case.rsplit("@", 1)[0], coll=coll, size_mb=mb,
-               hw_bytes=hw_bytes(mb), input_bytes=input_bytes, sim_ns="", sim_us="", sim_GBps="",
+               chunk_bytes=chunk, buffer_bytes=buf, input_bytes=ib, sim_ns="", sim_us="", sim_GBps="",
                check="none")
     bad = unsupported(xml)
     if bad:
@@ -96,7 +123,7 @@ def run_one(case, xml, coll, mb, outdir):
                         + " step in the simulator"
         return row
     label = "tb_" + re.sub(r"[^A-Za-z0-9_.-]", "_", case)
-    args = [PROGRAM, f"--xml={xml}", f"--coll={coll}", f"--inputBytes={input_bytes}",
+    args = [PROGRAM, f"--xml={xml}", f"--coll={coll}", f"--inputBytes={ib}",
             "--correctness=1", "--checkLog=minimal", "--qlenRows=0", f"--label={label}"]
     proc = subprocess.run(["./ns3", "run", "--no-build", " ".join(args)], cwd=NS3_DIR,
                           capture_output=True, text=True)
@@ -110,7 +137,7 @@ def run_one(case, xml, coll, mb, outdir):
     status = "ok" if proc.returncode == 0 and sim_ns and check == "verified" else (
         f"FAILED exit={proc.returncode}" if proc.returncode else "FAILED")
     row.update(sim_ns=sim_ns or "", sim_us=f"{sim_ns / 1e3:.2f}" if sim_ns else "",
-               sim_GBps=f"{hw_bytes(mb) / sim_ns:.2f}" if sim_ns else "", check=check, status=status)
+               sim_GBps=f"{buf / sim_ns:.2f}" if sim_ns else "", check=check, status=status)
     return row
 
 
@@ -123,7 +150,7 @@ def write_summary(rows, path):
             gb = r["sim_GBps"] or "-"
             chk = ("ok" if r["status"] == "ok" else r["status"] if r["status"].startswith("skipped")
                    else f"{r['status']} check={r['check']}")
-            f.write(f"{r['case']:<38}{r['hw_bytes']:>11}{us:>11}{gb:>9}{'-':>11}{'-':>9} {chk}\n")
+            f.write(f"{r['case']:<38}{r['buffer_bytes']:>11}{us:>11}{gb:>9}{'-':>11}{'-':>9} {chk}\n")
 
 
 def read_hw(paths):
@@ -140,6 +167,8 @@ def read_hw(paths):
 
 
 def print_compare(rows, hw):
+    print("\nThe simulator runs base-2 sizes (1MB = 2^20 B per GPU). The 2026-11-25 hardware runs used\n"
+          "decimal ones (10^6 B), so at MB sizes the simulator moves 4.9% more bytes, and 2.3% at KB.")
     print(f"\n{'case':<38}{'hw_us':>10}{'sim_us':>10}{'sim/hw':>8}")
     for r in rows:
         h = hw.get(r["case"])
@@ -155,7 +184,7 @@ def print_compare(rows, hw):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--sizes", default=",".join(SIZES_MB),
-                    help=f"per-GPU sizes in decimal MB (default {','.join(SIZES_MB)})")
+                    help=f"per-GPU chunk sizes, base 2: 0.016 or 16KB, 1 or 1MB (default {','.join(SIZES_MB)})")
     ap.add_argument("--only", help="regex on the schedule name, e.g. 'teccl-two|taccl'")
     ap.add_argument("--jobs", "-j", type=int, default=os.cpu_count() or 1,
                     help="runs in parallel (default: CPU count); each is single-threaded")
@@ -166,12 +195,12 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="list the cases and stop")
     args = ap.parse_args()
 
-    todo = cases(args.sizes.split(","), args.only)
+    todo = cases([label_of(x) for x in args.sizes.split(",")], args.only)
     if not todo:
         sys.exit(f"no {PROGRAM}_<a2a|ag>_*.xml schedules in {XML_DIR} match")
     if args.dry_run:
         for case, xml, coll, mb in todo:
-            ib = int(float(mb) * 1e6 + 0.5) * (RANKS if coll == "alltoall" else 1)
+            ib = input_bytes(coll, mb)
             bad = unsupported(xml)
             print(f"{case:<38} --xml={xml} --coll={coll} --inputBytes={ib}"
                   + (f"   SKIP: {','.join(bad)} not in the simulator" if bad else ""))
