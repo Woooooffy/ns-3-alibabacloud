@@ -263,6 +263,10 @@ PROGRAM_DEFAULTS = {
     "mini_2gpu_1nic": dict(host_tx_gbps=100.0, nic_line_gbps=100.0),
     # 2 GPUs, one 100Gbps NIC each, so the host presents 200Gbps.
     "mini_2gpu_2nic": dict(host_tx_gbps=200.0, nic_line_gbps=100.0),
+    # 1 GPU per host whose only link is host staging (~65 Gbps on the measured days), in
+    # front of a ~195 Gbps IB NIC. Staging bounds a GPU, and it is the link the per-NIC trace
+    # samples, so both numbers are the staging rate.
+    "testbed_3node": dict(host_tx_gbps=65.0, nic_line_gbps=65.0),
 }
 
 

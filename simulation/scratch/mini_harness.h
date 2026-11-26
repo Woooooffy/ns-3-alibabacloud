@@ -302,6 +302,12 @@ struct Options {
     // reverse-path ack load. (Against a bare-BDP window, N=8 capped a lone qp at ~55% of a
     // 50 Gbps tapered uplink, and N >= window/MTU deadlocked mid-message.)
     uint32_t ackEveryNPkts = 8;
+    // RdmaHw's packet size. Set by the scratch, not by the command line, to the device MTU its
+    // generated links carry (the .topo's `rdma Mtu=`): RdmaHw::GetNxtPacket caps a packet's
+    // payload at this value whatever the device MTU is, so the two must agree. The mini
+    // topologies are 4096 throughout, and so is the testbed (its InfiniBand MTU). It is a
+    // field rather than a constant so that a topology with another MTU stays consistent.
+    uint32_t mtu = 4096;
     // Reliability of switch-multicast connections (schedules with <tb send="a,b,...">); inert
     // otherwise. agg: every receiver acks, the sender advances on the slowest one. ud: no acks
     // on the multicast connection (unicast keeps them), loss unrecoverable. --l2Ack=0 removes
@@ -386,7 +392,7 @@ struct Options {
         // in RdmaHw, the per-peer window stays at the BDP RdmaFabricHelper computed, and
         // pacing comes entirely from the schedule's own rates.
         Config::SetDefault("ns3::RdmaHw::VarWin", BooleanValue(false));
-        Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(4096));
+        Config::SetDefault("ns3::RdmaHw::Mtu", UintegerValue(mtu));
         Config::SetDefault("ns3::RdmaHw::MaxMsgsInFlight", UintegerValue(maxMsgsInFlight));
     }
 };
