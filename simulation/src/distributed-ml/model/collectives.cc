@@ -22,6 +22,11 @@
 #define MSCCL_RDMA_DPORT 21000
 #define MSCCL_RDMA_PG 3
 
+// The MSCCL runtime's gridOffset chunk at NCCL's default 4 MiB Simple buffer: 512 KiB per step
+// (buffSize/NCCL_STEPS) x MSCCL_CHUNKSTEPS = 4. Used only where a fused op's slice floor needs a
+// chunk size and pipelining is off (ProtoChunkBytes = 0); see MscclChannel::FusedSliceEnds.
+#define MSCCL_DEFAULT_PROTO_CHUNK_BYTES (2u << 20)
+
 // flags are a 3-tuple of (workindex, gridoffset_iter, step) and it follows a lexicographical order. a threadblock is ahead of another iff its flag is ahead
 #define COMPUTE_FLAG(__WORKINDEX__,__GRIDOFFSET_ITER__,__STEP__) \
  	 MSCCL_MAX_ITER*MSCCL_MAX_NUM_STEPS*(uint64_t)__WORKINDEX__ + ((uint64_t)__GRIDOFFSET_ITER__ * MSCCL_MAX_NUM_STEPS + (uint64_t)__STEP__)
@@ -228,6 +233,11 @@ namespace ns3 {
 			NS_LOG_DEBUG("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": recv frag from peer "
 				<< peer << " lane " << (int)lane << " dst=(" << cur.dstBuf << "," << cur.dstOffset << ") fragBytes=" << fragSize
 				<< " accum=" << cur.receivedBytes << "/" << cur.pendingBytes);
+			// A fused op forwards whatever slices this fragment completed. The bytes are already in
+			// dst (copied above), and this runs before the completion below, so by the time the op
+			// completes its last slice has been handed to the send qps.
+			if (cur.op == MSCCL_RECV_COPY_SEND && cur.receivedBytes <= cur.pendingBytes)
+				NoteFusedProgress(cur.bid, cur.sid, cur.part, lane, cur.receivedBytes);
 			if (cur.receivedBytes < cur.pendingBytes) return;
 			if (cur.receivedBytes > cur.pendingBytes){
 				NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << ": accumulator overshot for peer " << peer
@@ -304,6 +314,9 @@ namespace ns3 {
 					}
 				}
 				unclaimed.gotBytes = remaining;
+				// An empty lane carries nothing to forward, and may be claimed after the forward has
+				// already finished (and its state gone) on the lanes before it.
+				if (op == MSCCL_RECV_COPY_SEND && laneBytes > 0) NoteFusedProgress(bid, sid, part, lane, laneBytes);
 				NoteRecvLaneComplete(bid, sid, part);
 				continue;
 			}
@@ -327,6 +340,7 @@ namespace ns3 {
 				free(unclaimed.stagingBuf);
 				unclaimed.stagingBuf = nullptr;
 				unclaimed.gotBytes = 0;
+				if (op == MSCCL_RECV_COPY_SEND) NoteFusedProgress(bid, sid, part, lane, pt.receivedBytes);
 			}
 			m_pendingRecvQueue[std::make_pair(recvPeer, lane)].push(pt);
 		}
@@ -610,27 +624,57 @@ namespace ns3 {
 		m_app->NoteNetworkStepComplete(bid);
 	}
 
-	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter, uint16_t part){
-		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
-
-		std::vector<Ptr<RdmaQueuePair>>* qpsFound = nullptr;
+	std::vector<Ptr<RdmaQueuePair>>& MscclChannel::ResolveSendQps(int16_t bid, int16_t sendpeer){
 		if (sendpeer == MSCCL_PEER_MULTICAST){
 			auto g = m_rdmaQpByGroup.find(m_app->GetSendGroup(bid));
 			if (g == m_rdmaQpByGroup.end()){
 				NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << " TB " << bid
 					<< ": multicast send but no multicast qp was established (SetupRdmaGroupSendPeer).");
 			}
-			qpsFound = &g->second;
-		} else {
-			auto it = m_rdmaQpByPeer.find(sendpeer);
-			if (it == m_rdmaQpByPeer.end()){
-				NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
-					<< ": SendRdma to peer " << sendpeer << " but no persistent qp was established -- "
-					<< "peer " << sendpeer << " is missing from this channel's sendPeerInfo in the algorithm XML.");
-			}
-			qpsFound = &it->second;
+			return g->second;
 		}
-		std::vector<Ptr<RdmaQueuePair>>& qps = *qpsFound;
+		auto it = m_rdmaQpByPeer.find(sendpeer);
+		if (it == m_rdmaQpByPeer.end()){
+			NS_FATAL_ERROR("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id
+				<< ": SendRdma to peer " << sendpeer << " but no persistent qp was established -- "
+				<< "peer " << sendpeer << " is missing from this channel's sendPeerInfo in the algorithm XML.");
+		}
+		return it->second;
+	}
+
+	void MscclChannel::WakeQp(Ptr<RdmaQueuePair> qp){
+		m_app->GetRdmaDriver()->m_rdma->TriggerTransmit(qp);
+	}
+
+	void MscclChannel::PushLaneMessage(Ptr<RdmaQueuePair> qp, uint32_t bytes, uint8_t* srcDataPtr, uint32_t mscclFlowId, DataRate paceRate, int16_t bid, int16_t sid, uint32_t iter, int16_t sendpeer, uint32_t nElems, bool deferWake){
+		// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
+		// requires operator!= on the functor, which closures don't have), so bind the
+		// context onto a member-function Callback one argument at a time instead.
+		Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
+			.Bind(bid).Bind(sid).Bind(iter).Bind(sendpeer).Bind(nElems);
+
+		qp->PushMessage(bytes, srcDataPtr, mscclFlowId, finishCb, Callback<void>(), paceRate);
+		// Diagnostic only: record what the schedule asked for at the moment it is asked
+		// for, so a run can report whether its rates were applied, ignored, or (for a
+		// message of a single MTU) not expressible at all. See RdmaHw::PaceStats.
+		m_app->GetRdmaDriver()->m_rdma->NotePacedMessage(bytes, paceRate);
+		// PushMessage only enqueues onto the qp; unlike AddQueuePair (which calls NewQp once
+		// at bootstrap for this persistent qp's creation), it doesn't wake up the NIC. Without
+		// this, a qp that had drained to idle between Send() calls never gets re-polled and
+		// the message sits forever -- see RdmaHw::TriggerTransmit.
+		//
+		// Deferred by one same-time event when asked: a fused op pushes from inside RdmaHw's
+		// per-packet receive callback, and waking the NIC there would put the forwarded packet on
+		// the wire ahead of the ACK RdmaHw enqueues for the arriving one right after the callback
+		// returns. On hardware the GPU's copy comes well after the NIC's ACK.
+		if (deferWake) Simulator::ScheduleNow(&MscclChannel::WakeQp, this, qp);
+		else WakeQp(qp);
+	}
+
+	void MscclChannel::SendRdma(int16_t bid, int16_t sid, int16_t sendpeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter, uint16_t part){
+		uint32_t totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
+
+		std::vector<Ptr<RdmaQueuePair>>& qps = ResolveSendQps(bid, sendpeer);
 		const uint8_t nLanes = static_cast<uint8_t>(qps.size());
 
 		// srcDataPtr is passed into PushMessage so RdmaHw can resolve it BEFORE the first
@@ -671,24 +715,8 @@ namespace ns3 {
 			uint32_t laneOff = 0, laneBytes = 0;
 			LaneSlice(totalBytes, nLanes, lane, laneOff, laneBytes);
 			if (laneBytes == 0) continue;
-
-			// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
-			// requires operator!= on the functor, which closures don't have), so bind the
-			// context onto a member-function Callback one argument at a time instead.
-			Callback<void> finishCb = MakeCallback(&MscclChannel::OnRdmaSendComplete, this)
-				.Bind(bid).Bind(sid).Bind(iter).Bind(sendpeer).Bind(nElems);
-
-			qps[lane]->PushMessage(laneBytes, srcDataPtr ? srcDataPtr + laneOff : nullptr,
-				mscclFlowId, finishCb, Callback<void>(), paceRate);
-			// Diagnostic only: record what the schedule asked for at the moment it is asked
-			// for, so a run can report whether its rates were applied, ignored, or (for a
-			// message of a single MTU) not expressible at all. See RdmaHw::PaceStats.
-			m_app->GetRdmaDriver()->m_rdma->NotePacedMessage(laneBytes, paceRate);
-			// PushMessage only enqueues onto the qp; unlike AddQueuePair (which calls NewQp once
-			// at bootstrap for this persistent qp's creation), it doesn't wake up the NIC. Without
-			// this, a qp that had drained to idle between Send() calls never gets re-polled and
-			// the message sits forever -- see RdmaHw::TriggerTransmit.
-			m_app->GetRdmaDriver()->m_rdma->TriggerTransmit(qps[lane]);
+			PushLaneMessage(qps[lane], laneBytes, srcDataPtr ? srcDataPtr + laneOff : nullptr,
+				mscclFlowId, paceRate, bid, sid, iter, sendpeer, nElems);
 		}
 
 		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": RDMA send to "
@@ -728,8 +756,150 @@ namespace ns3 {
 		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV, gridByteOff, part);
 	}
 
-	void MscclChannel::RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
-	NS_FATAL_ERROR("RecvCpSend not yet implemented");
+	// The slices of one fused op, as the MSCCL kernel cuts them. prims.recvCopySend is genericOp
+	// under ProtoSimple<SlicePerChunk = MSCCL_CHUNKSTEPS/MSCCL_SLICESTEPS = 2, StepPerSlice = 2>
+	// (msccl-executor-nccl, prims_simple.h), which walks an op of n elements as
+	//   sliceSize = max(divUp(n, 16*SlicePerChunk)*16, stepSize*StepPerSlice/32)
+	// for at most SlicePerChunk slices, the last one short or empty. stepSize*StepPerSlice is
+	// one slice of a full gridOffset chunk, i.e. chunkEffectiveSize/SlicePerChunk, so the floor is
+	// ProtoChunkBytes/(32*SlicePerChunk): 32 KiB at the testbed's 2 MiB. With pipelining off
+	// (ProtoChunkBytes = 0) there is no chunk to take it from, so the floor uses the MSCCL runtime's
+	// own chunk at NCCL's default buffer. Empty slices are dropped: the kernel posts them, but a
+	// zero-byte RDMA message is never acknowledged, so it would never complete here.
+	//
+	// SlicePerChunk is the FusedSendSlices attribute; 1 gives a single slice, i.e. the whole
+	// sub-transfer is received before any of it is forwarded.
+	std::vector<uint32_t> MscclChannel::FusedSliceEnds(uint32_t nElems) const {
+		const uint64_t elemSize = DataType::GetSizeBytes(m_dataType);
+		const uint64_t nSlices = std::max<uint32_t>(1, m_app->GetFusedSendSlices());
+		const uint64_t chunkBytes = m_app->GetProtoChunkBytes() > 0
+			? m_app->GetProtoChunkBytes() : MSCCL_DEFAULT_PROTO_CHUNK_BYTES;
+		const uint64_t floorElems = std::max<uint64_t>(1, chunkBytes / (32 * nSlices) / elemSize);
+		const uint64_t sliceElems = std::max<uint64_t>(
+			((uint64_t) nElems + 16 * nSlices - 1) / (16 * nSlices) * 16, floorElems);
+		std::vector<uint32_t> ends;
+		for (uint64_t start = 0; start < nElems; start += sliceElems){
+			ends.push_back((uint32_t)(std::min<uint64_t>(start + sliceElems, nElems) * elemSize));
+		}
+		// sliceElems * nSlices >= nElems by construction; a violation would strand bytes unforwarded.
+		NS_ASSERT_MSG(ends.size() <= nSlices, "fused op cut into " << ends.size() << " slices, more than " << nSlices);
+		return ends;
+	}
+
+	void MscclChannel::RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter, uint16_t part){
+		if (dstoff < 0) NS_FATAL_ERROR("Invalid dst offset in RecvCpSend");
+		if (nElems == 0){
+			// Nothing to forward, so no state and no sentinel: the receive completes at once.
+			ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV_COPY_SEND, gridByteOff, part);
+			return;
+		}
+		auto key = std::make_tuple(bid, sid, part);
+		if (m_fusedFwd.count(key)){
+			NS_FATAL_ERROR("BUG: node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << " TB " << bid
+				<< " step " << sid << " part " << part << ": rcs posted while its previous post is still forwarding.");
+		}
+		FusedForward& st = m_fusedFwd[key];
+		st.sendPeer = sendpeer;
+		st.nElems = nElems;
+		st.totalBytes = nElems * DataType::GetSizeBytes(m_dataType);
+		st.dstBuf = dstbuf;
+		st.dstOffset = dstoff;
+		st.gridByteOff = gridByteOff;
+		st.iter = iter;
+		st.mscclFlowId = mscclFlowId;
+		st.rateGBps = rateGBps;
+		st.sliceEnds = FusedSliceEnds(nElems);
+		st.qps = &ResolveSendQps(bid, sendpeer);
+		// Same lane count ClaimOrRegisterPendingRecv stripes the receive over.
+		st.recvLanded.assign(m_app->GetRdmaLaneCount(recvpeer), 0);
+		const uint8_t nSend = static_cast<uint8_t>(st.qps->size());
+		st.sendFwd.resize(nSend);
+		for (uint8_t j = 0; j < nSend; ++j){
+			uint32_t off = 0, sz = 0;
+			LaneSlice(st.totalBytes, nSend, j, off, sz);
+			st.sendFwd[j] = off;
+		}
+		// This sub-transfer's sentinel on the step's send countdown. RunStep closes its own
+		// sentinel (EndSendStep) as soon as every part has been posted, which for a plain send is
+		// after its lanes were counted; a fused op has forwarded nothing yet at that point, so
+		// without this the step's netFlag and gate would fire before a byte had left. Dropped by
+		// NoteFusedProgress once the last slice is on the send qps.
+		m_sendLanesLeft[std::make_tuple(bid, sid, iter)] += 1;
+
+		NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": rcs posted bid=" << (int)bid
+			<< " sid=" << sid << " part=" << part << " iter=" << iter << " " << recvpeer << " -> " << sendpeer
+			<< " totalBytes=" << st.totalBytes << " in " << st.sliceEnds.size() << " slice(s), "
+			<< (int)st.recvLanded.size() << " recv / " << (int)nSend << " send lane(s)"
+			<< " at t=" << Simulator::Now().GetNanoSeconds());
+
+		// The receive itself is an ordinary one into (dstbuf, dstoff): bytes that already arrived
+		// are claimed (and forwarded) inside this call, the rest as they come.
+		ClaimOrRegisterPendingRecv(bid, sid, recvpeer, nElems, dstbuf, dstoff, MSCCL_RECV_COPY_SEND, gridByteOff, part);
+	}
+
+	void MscclChannel::NoteFusedProgress(int16_t bid, int16_t sid, uint16_t part, uint8_t lane, uint32_t landedBytes){
+		auto it = m_fusedFwd.find(std::make_tuple(bid, sid, part));
+		if (it == m_fusedFwd.end()){
+			NS_FATAL_ERROR("BUG: node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << " TB " << bid
+				<< " step " << sid << " part " << part << ": rcs bytes landed with no forwarding state.");
+		}
+		FusedForward& st = it->second;
+		const uint8_t nRecv = static_cast<uint8_t>(st.recvLanded.size());
+		const uint8_t nSend = static_cast<uint8_t>(st.qps->size());
+		if (lane >= nRecv){
+			NS_FATAL_ERROR("BUG: rcs bytes landed on lane " << (int)lane << " of a " << (int)nRecv << "-lane receive.");
+		}
+		st.recvLanded[lane] = std::max(st.recvLanded[lane], landedBytes);
+
+		// Whether every byte of [a, b) of the transfer has landed. Receive lane i fills its slice
+		// [off_i, off_i + sz_i) from the front, so it covers the part of [a, b) it holds once its
+		// landed count reaches that part's end.
+		auto landed = [&](uint32_t a, uint32_t b){
+			for (uint8_t i = 0; i < nRecv; ++i){
+				uint32_t off = 0, sz = 0;
+				LaneSlice(st.totalBytes, nRecv, i, off, sz);
+				const uint32_t hi = std::min(b, off + sz);
+				if (std::max(a, off) < hi && off + st.recvLanded[i] < hi) return false;
+			}
+			return true;
+		};
+
+		// Same rate split as SendRdma: lanes run concurrently, so each carries its share. Slices
+		// queue back to back on one lane, so each carries the lane's full share.
+		const DataRate paceRate = st.rateGBps > 0.0 ? DataRate((uint64_t)(st.rateGBps * 8e9 / nSend)) : DataRate(0);
+		uint8_t* base = m_app->GetCorrectnessCheck()
+			? (uint8_t*) m_app->GetBufferPtr(st.dstBuf, st.dstOffset, st.gridByteOff) : nullptr;
+		const auto sendKey = std::make_tuple(bid, sid, st.iter);
+
+		bool allForwarded = true;
+		for (uint8_t j = 0; j < nSend; ++j){
+			uint32_t sOff = 0, sSz = 0;
+			LaneSlice(st.totalBytes, nSend, j, sOff, sSz);
+			const uint32_t sEnd = sOff + sSz;
+			size_t k = 0;
+			// Lane j forwards its range in order, one piece per slice it overlaps, each piece only
+			// once its WHOLE slice has landed (the kernel waits for the full slice before copying).
+			while (st.sendFwd[j] < sEnd){
+				const uint32_t pos = st.sendFwd[j];
+				while (st.sliceEnds[k] <= pos) ++k; // in range: the last end is totalBytes >= sEnd > pos
+				const uint32_t sliceStart = (k == 0) ? 0 : st.sliceEnds[k - 1];
+				if (!landed(sliceStart, st.sliceEnds[k])) break;
+				const uint32_t pieceEnd = std::min(st.sliceEnds[k], sEnd);
+				m_sendLanesLeft[sendKey] += 1; // retired by OnRdmaSendComplete when it drains
+				PushLaneMessage((*st.qps)[j], pieceEnd - pos, base ? base + pos : nullptr,
+					st.mscclFlowId, paceRate, bid, sid, st.iter, st.sendPeer, st.nElems, /* deferWake */ true);
+				NS_LOG_INFO("Node " << m_app->GetNode()->GetId() << " chan " << (int)m_id << ": rcs forward to "
+					<< st.sendPeer << " bid=" << (int)bid << " sid=" << sid << " part=" << part << " iter=" << st.iter
+					<< " slice " << k << " lane " << (int)j << " bytes [" << pos << "," << pieceEnd << ")/" << st.totalBytes
+					<< " rateGBps=" << st.rateGBps << " at t=" << Simulator::Now().GetNanoSeconds());
+				st.sendFwd[j] = pieceEnd;
+			}
+			if (st.sendFwd[j] < sEnd) allForwarded = false;
+		}
+		if (!allForwarded) return;
+		const uint32_t iter = st.iter;
+		m_fusedFwd.erase(it);
+		NoteSendLaneComplete(bid, sid, iter); // this sub-transfer's sentinel (see RecvCpSend)
 	}
 
 	void MscclChannel::RecvRedSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems){
@@ -761,6 +931,13 @@ namespace ns3 {
 			if (unclaimed.second.gotBytes > 0){
 				NS_FATAL_ERROR("BUG: has " << unclaimed.second.gotBytes << " unclaimed bytes from peer " << unclaimed.first.first << " lane " << (int)unclaimed.first.second << " on node " << m_app->GetNode()->GetId() << " channel " << (int)m_id << " at application close.");
 			}
+		}
+		// rcs sub-transfers that never forwarded their last slice
+		if (!m_fusedFwd.empty()){
+			const auto& k = m_fusedFwd.begin()->first;
+			NS_FATAL_ERROR("BUG: has " << m_fusedFwd.size() << " rcs sub-transfer(s) still forwarding on node "
+				<< m_app->GetNode()->GetId() << " channel " << (int)m_id << " at application close (first: TB "
+				<< std::get<0>(k) << " step " << std::get<1>(k) << " part " << std::get<2>(k) << ").");
 		}
 		// socket close
 		if (m_listenSocket) m_listenSocket->Close();
@@ -837,6 +1014,18 @@ namespace ns3 {
 					BooleanValue(false),
 					MakeBooleanAccessor(&CollectivesApplication::m_syncBlocks),
 					MakeBooleanChecker())
+				.AddAttribute(
+					"FusedSendSlices",
+					"How many slices a fused receive-and-send op (XML type rcs) forwards one "
+					"sub-transfer in; each slice is forwarded once the whole of it has landed. "
+					"2, the default, is the MSCCL kernel's prims.recvCopySend (ProtoSimple<2, 2>): "
+					"slices of max(ceil(n/32)*16 elements, ProtoChunkBytes/64), i.e. about half a "
+					"sub-transfer, at least 32 KiB at 2 MiB pipelining. 1 receives the whole "
+					"sub-transfer before forwarding any of it (store-and-forward), as a separate "
+					"r step followed by an s step would.",
+					UintegerValue(2),
+					MakeUintegerAccessor(&CollectivesApplication::m_fusedSendSlices),
+					MakeUintegerChecker<uint32_t>(1))
 				.AddAttribute(
 					"CorrectnessCheck",
 					"When true, perform actual memcpy and reduce operations for correctness verification. "
@@ -1202,7 +1391,8 @@ namespace ns3 {
 					chan->Recv(bid, sid, recvPeer, nElems, dstbuf, partDstOff, gridByteOff, part);
 					break;
 				case MSCCL_RECV_COPY_SEND:
-					chan->RecvCpSend(bid, sid, sendPeer, recvPeer, nElems);
+					chan->RecvCpSend(bid, sid, sendPeer, static_cast<int16_t>(recvPeer), nElems, dstbuf, partDstOff,
+						tran->mscclFlowId, tran->rate, gridByteOff, iter, part);
 					break;
 				case MSCCL_RECV_REDUCE_SEND:
 					chan->RecvRedSend(bid, sid, sendPeer, recvPeer, nElems);
@@ -1650,6 +1840,20 @@ namespace ns3 {
 			}
 		}
 		DerivePipelining();
+		// rcs forwards over RDMA only: the socket path completes a send per message from
+		// SendCallback, which would race the fused op's receive-side completion. Every peer is RDMA
+		// in the current topologies; this makes the constraint fail at start rather than mid-run.
+		for (int16_t bid = 0; bid < m_algo->nBlocks; ++bid){
+			const mscclThreadBlock* tb = &m_algo->mscclTBs[bid];
+			for (uint16_t sid = 0; sid < tb->nsteps; ++sid){
+				if (tb->transfers[sid].type != MSCCL_RECV_COPY_SEND) continue;
+				if (tb->nSendPeers < 2 && (tb->sendpeer < 0 || !IsRdmaPeer(tb->sendpeer))){
+					NS_FATAL_ERROR("Node " << GetNode()->GetId() << " TB " << (int)bid << " step " << sid
+						<< " is an rcs whose sendpeer (" << tb->sendpeer << ") is not an RDMA peer;"
+						<< " rcs forwarding is implemented on the RDMA path only.");
+				}
+			}
+		}
 		Bootstrap();
 
 		// Network gates (see mscclTransfer::netGate/netWait): one independent gate set per

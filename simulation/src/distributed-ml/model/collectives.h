@@ -128,6 +128,36 @@ namespace ns3 {
 		UnclaimedBytes(): gotBytes(0), stagingBuf(nullptr){}
 	};
 
+	// Forwarding state of one sub-transfer of a fused receive-and-send op (rcs), from the moment
+	// it is posted until its last slice has been handed to the send qps.
+	//
+	// It models the MSCCL kernel's prims.recvCopySend (prims_simple.h genericOp): the op's
+	// elements are cut into at most SlicePerChunk slices, and slice k is forwarded only once the
+	// WHOLE of slice k has landed -- store-and-forward per slice, cut-through across slices. The
+	// bytes land in the op's dst exactly as for a plain recv, and the forward is sent from there:
+	// RdmaHw reads a message's source pointer when it builds each packet, by which time the slice
+	// is in place.
+	//
+	// The receive and the send can be striped over different numbers of lanes. Arrivals are
+	// tracked per receive lane (each lane fills its contiguous slice of the transfer in order), and
+	// each send lane forwards its own contiguous range in order, one piece per slice it overlaps,
+	// so the downstream receiver's lane-i FIFO sees exactly its slice of the transfer.
+	struct FusedForward{
+		int16_t sendPeer = -1;
+		uint32_t totalBytes = 0;
+		uint32_t nElems = 0;
+		uint16_t dstBuf = 0;
+		int16_t dstOffset = -1;
+		uint32_t gridByteOff = 0;
+		uint32_t iter = 0;
+		uint32_t mscclFlowId = 0;
+		double rateGBps = 0.0;
+		std::vector<uint32_t> sliceEnds;   // exclusive byte end of each non-empty slice, ascending
+		std::vector<uint32_t> recvLanded;  // per receive lane: bytes of its slice landed so far
+		std::vector<uint32_t> sendFwd;     // per send lane: transfer byte offset forwarded up to
+		std::vector<Ptr<RdmaQueuePair>>* qps = nullptr; // the send connection's lanes
+	};
+
 	// How a connection picks the NIC it is bound to. Deliberately an explicit three-way choice
 	// rather than a bool: NIC selection used to be a side effect of whether the switch JSON was
 	// parsed, which fused it with custom flow-id forwarding and made the two impossible to
@@ -193,7 +223,13 @@ namespace ns3 {
 			inline void PushPendingSend(Ptr<Socket> sendpeer, PendingTransfer send);
 			void Send(int16_t bid, int16_t sid, int16_t sendPeer, uint32_t nElems, uint16_t srcbuf, int16_t srcoff, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId = MSCCL_FLOW_ID_NONE, double rateGBps = 0.0, uint32_t gridByteOff = 0, uint32_t iter = 0, uint16_t part = 0);
 			void Recv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff = 0, uint16_t part = 0);
-			void RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
+			// Fused receive-and-forward (XML type "rcs", the kernel's prims.recvCopySend): receives
+			// nElems from recvpeer into (dstbuf, dstoff) like Recv(), and forwards them to sendpeer
+			// slice by slice as each slice lands (see FusedForward). Completes, like a recv, once
+			// every byte has landed -- by which point every slice has been handed to the send qps;
+			// its netFlag and network gate fire once the forwarded bytes have drained. RDMA send
+			// peers only (unicast or multicast); InterpretAlgo rejects anything else.
+			void RecvCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t mscclFlowId, double rateGBps, uint32_t gridByteOff, uint32_t iter, uint16_t part);
 			void RecvRedSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
 			void RecvRedCp(int16_t bid, int16_t sid, int16_t recvpeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, uint32_t gridByteOff = 0, uint16_t part = 0);
 			void RecvRedCpSend(int16_t bid, int16_t sid, int16_t sendpeer, int16_t recvpeer, uint32_t nElems);
@@ -269,6 +305,24 @@ namespace ns3 {
 			// order), else registers a new pending recv (m_pendingRecvQueue) to be matched by
 			// a future arrival.
 			void ClaimOrRegisterPendingRecv(int16_t bid, int16_t sid, int16_t recvPeer, uint32_t nElems, uint16_t dstbuf, int16_t dstoff, int8_t op, uint32_t gridByteOff, uint16_t part);
+			// The send connection's lanes for threadblock `bid` sending to `sendpeer` (a unicast
+			// peer, or MSCCL_PEER_MULTICAST for the threadblock's tree). Fatal if none was set up.
+			std::vector<Ptr<RdmaQueuePair>>& ResolveSendQps(int16_t bid, int16_t sendpeer);
+			// Queues one message of `bytes` on lane qp `qp` and wakes the NIC. Completion is
+			// reported to OnRdmaSendComplete(bid, sid, iter, sendpeer, nElems); the caller accounts
+			// for it on m_sendLanesLeft.
+			// deferWake schedules the NIC wake-up for the same instant instead of doing it inline
+			// (see the definition).
+			void PushLaneMessage(Ptr<RdmaQueuePair> qp, uint32_t bytes, uint8_t* srcDataPtr, uint32_t mscclFlowId, DataRate paceRate, int16_t bid, int16_t sid, uint32_t iter, int16_t sendpeer, uint32_t nElems, bool deferWake = false);
+			void WakeQp(Ptr<RdmaQueuePair> qp); // RdmaHw::TriggerTransmit, as a schedulable member
+			// rcs: `lane`'s slice of sub-transfer (bid, sid, part) now has `landedBytes` in place.
+			// Forwards every slice that has fully landed, and when the last one is forwarded drops
+			// the sub-transfer's sentinel on the send countdown. Called wherever received bytes land,
+			// always before the matching NoteRecvLaneComplete.
+			void NoteFusedProgress(int16_t bid, int16_t sid, uint16_t part, uint8_t lane, uint32_t landedBytes);
+			// Byte ends of the slices one fused op of `nElems` elements is cut into; see the
+			// definition for the kernel's rule.
+			std::vector<uint32_t> FusedSliceEnds(uint32_t nElems) const;
 
 			int8_t m_id;
 			DataType::Type m_dataType;
@@ -309,7 +363,13 @@ namespace ns3 {
 			// completion of their own -- over-advancing netFlag past what has actually drained,
 			// and releasing netdep waiters early.
 			std::map<std::tuple<int16_t, int16_t, uint16_t>, uint8_t> m_recvLanesLeft;
-			std::map<std::tuple<int16_t, int16_t, uint32_t>, uint8_t> m_sendLanesLeft;
+			// uint16_t, not uint8_t: a fused op's step counts one message per slice per lane per
+			// sub-transfer on top of the lanes, which a byte could overflow.
+			std::map<std::tuple<int16_t, int16_t, uint32_t>, uint16_t> m_sendLanesLeft;
+			// rcs sub-transfers still forwarding, keyed (bid, sid, part). Safe without the iteration
+			// for the same reason as m_recvLanesLeft: the op completes on its receive side, so its
+			// threadblock stays busy until the entry is gone.
+			std::map<std::tuple<int16_t, int16_t, uint16_t>, FusedForward> m_fusedFwd;
 			#ifdef FLOW_ID_TEST
 			std::map<std::pair<int, int>, uint32_t>* m_flowIds;
 			uint32_t m_flowId_counter = 0;
@@ -401,6 +461,8 @@ namespace ns3 {
 			// did mix them would round up to "emit on all of this connection's steps", which stays
 			// correct: unlabelled steps send MSCCL_FLOW_ID_NONE and switches fall through to ECMP.
 			bool ConnectionCarriesFlowIds(int16_t peer, int8_t chan);
+			uint32_t GetFusedSendSlices() const { return m_fusedSendSlices; }
+			uint32_t GetProtoChunkBytes() const { return m_protoChunkBytes; }
 			bool GetHonorNetDeps() const { return m_honorNetDeps; }
 			bool GetHonorRemoteDeps() const { return m_honorRemoteDeps; }
 			MulticastTransport GetMulticastTransport() const { return m_mcastTransport; }
@@ -514,6 +576,10 @@ namespace ns3 {
 			// instead of letting each roll over the instant its own last step lands. Off by
 			// default, which is the pre-existing (and kernel-faithful) overlapping behaviour.
 			bool m_syncBlocks = false;
+			// FusedSendSlices attribute: how many slices a fused receive-and-send op (rcs) forwards
+			// one sub-transfer in. 2 is the MSCCL kernel's SlicePerChunk (ProtoSimple<2, 2>); 1 is
+			// store-and-forward of the whole sub-transfer. See MscclChannel::FusedSliceEnds.
+			uint32_t m_fusedSendSlices = 2;
 			// Threadblocks that must reach the barrier before it releases: those with at least
 			// one step, since a zero-step threadblock never completes a step and so could never
 			// arrive. Computed once in InterpretAlgo.

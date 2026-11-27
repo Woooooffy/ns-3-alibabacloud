@@ -15,9 +15,11 @@ msccl_perf.sbatch in the experiments repo:
   - OptCCL (-K<k>) and ForestColl (-k<k>) are size-independent, so each runs at every --sizes.
     The plain optccl-<coll> file is the same bytes as optccl-<coll>-K16; the hardware has no row for
     it either, so it is skipped.
-  - A schedule using an MSCCL step type the simulator does not implement yet (rcs, rrs, rrcs: see
-    UNSUPPORTED_STEPS) is listed as skipped with the reason instead of being run. Today that is
-    ForestColl, whose AllGather trees forward with rcs.
+  - A schedule using an MSCCL step type the simulator does not implement yet (rrs, rrcs: see
+    UNSUPPORTED_STEPS) is listed as skipped with the reason instead of being run. None does today.
+    ForestColl's AllGather trees forward with rcs, which runs; --fused-slices sets how it forwards
+    (2, the default, is the kernel's recvCopySend: two slices per sub-transfer, each sent once it
+    has wholly landed, at least 32 KiB; 1 is store-and-forward of the whole sub-transfer).
 
 SIZES are base 2: KB = 2^10 bytes, MB = 2^20, nccl-tests' convention and every earlier ns-3
 sweep's. A size is a per-GPU chunk C, written the way the schedule files and the hardware
@@ -64,10 +66,12 @@ RANKS = 3
 SIZES_MB = ["0.016", "0.064", "0.256", "1", "4", "16", "64"]   # the schedules' and summaries' labels
 # MSCCL step types collectives.cc does not implement yet (it aborts on them). A schedule with any
 # of them is reported as skipped, with the reason, rather than run and counted as a failure.
-UNSUPPORTED_STEPS = {"rcs": "RecvCpSend", "rrs": "RecvRedSend", "rrcs": "RecvRedCpSend"}
+UNSUPPORTED_STEPS = {"rrs": "RecvRedSend", "rrcs": "RecvRedCpSend"}
+# FusedSendSlices for rcs steps (--fusedSlices); 2 is the MSCCL kernel's recvCopySend.
+FUSED_SLICES = 2
 # The MSCCL kernel's gridOffset step on the testbed's runtime; see PIPELINING above.
 PROTO_CHUNK_BYTES = 2 * 1024 * 1024
-FIELDS = ["proto_chunk_bytes", "case", "schedule", "coll", "size_mb", "chunk_bytes", "buffer_bytes", "input_bytes", "sim_ns", "sim_us",
+FIELDS = ["proto_chunk_bytes", "fused_slices", "case", "schedule", "coll", "size_mb", "chunk_bytes", "buffer_bytes", "input_bytes", "sim_ns", "sim_us",
           "sim_GBps", "check", "status"]
 
 
@@ -121,11 +125,11 @@ def unsupported(xml):
     return sorted(t for t in types if t in UNSUPPORTED_STEPS)
 
 
-def run_one(case, xml, coll, mb, outdir, proto):
+def run_one(case, xml, coll, mb, outdir, proto, fused):
     chunk = chunk_bytes(mb)
     buf = chunk * RANKS
     ib = input_bytes(coll, mb)
-    row = dict(proto_chunk_bytes=proto, case=case, schedule=case.rsplit("@", 1)[0], coll=coll, size_mb=mb,
+    row = dict(proto_chunk_bytes=proto, fused_slices=fused, case=case, schedule=case.rsplit("@", 1)[0], coll=coll, size_mb=mb,
                chunk_bytes=chunk, buffer_bytes=buf, input_bytes=ib, sim_ns="", sim_us="", sim_GBps="",
                check="none")
     bad = unsupported(xml)
@@ -135,7 +139,7 @@ def run_one(case, xml, coll, mb, outdir, proto):
         return row
     label = "tb_" + re.sub(r"[^A-Za-z0-9_.-]", "_", case)
     args = [PROGRAM, f"--xml={xml}", f"--coll={coll}", f"--inputBytes={ib}",
-            f"--protoChunkBytes={proto}", "--correctness=1", "--checkLog=minimal", "--qlenRows=0",
+            f"--protoChunkBytes={proto}", f"--fusedSlices={fused}", "--correctness=1", "--checkLog=minimal", "--qlenRows=0",
             f"--label={label}"]
     proc = subprocess.run(["./ns3", "run", "--no-build", " ".join(args)], cwd=NS3_DIR,
                           capture_output=True, text=True)
@@ -201,6 +205,9 @@ def main():
     ap.add_argument("--proto-chunk-bytes", type=int, default=PROTO_CHUNK_BYTES, metavar="B",
                     help=f"--protoChunkBytes for every run (default {PROTO_CHUNK_BYTES}, the runtime's "
                          "gridOffset step; 0 = no pipelining)")
+    ap.add_argument("--fused-slices", type=int, default=FUSED_SLICES, metavar="N",
+                    help=f"--fusedSlices for every run (default {FUSED_SLICES}, the kernel's recvCopySend; "
+                         "1 = store-and-forward). Affects only schedules with rcs steps")
     ap.add_argument("--jobs", "-j", type=int, default=os.cpu_count() or 1,
                     help="runs in parallel (default: CPU count); each is single-threaded")
     ap.add_argument("--outdir", default=os.path.join(HERE, "sweep_results", f"{PROGRAM}_hw"))
@@ -218,7 +225,7 @@ def main():
             ib = input_bytes(coll, mb)
             bad = unsupported(xml)
             print(f"{case:<38} --xml={xml} --coll={coll} --inputBytes={ib} "
-                  f"--protoChunkBytes={args.proto_chunk_bytes}"
+                  f"--protoChunkBytes={args.proto_chunk_bytes} --fusedSlices={args.fused_slices}"
                   + (f"   SKIP: {','.join(bad)} not in the simulator" if bad else ""))
         print(f"{len(todo)} cases")
         return
@@ -231,16 +238,19 @@ def main():
     if os.path.exists(csv_path) and not args.force:
         with open(csv_path) as f:
             # a row counts as done only if it ran with this pipelining setting; rows from
-            # before the column existed (no pipelining) or with another value are re-run
+            # before the column existed (no pipelining) or with another value are re-run.
+            # Likewise for fused_slices, where a row from before that column ran the default.
             done = {r["case"]: r for r in csv.DictReader(f) if r["status"] == "ok"
-                    and r.get("proto_chunk_bytes") == str(args.proto_chunk_bytes)}
+                    and r.get("proto_chunk_bytes") == str(args.proto_chunk_bytes)
+                    and (r.get("fused_slices") or str(FUSED_SLICES)) == str(args.fused_slices)}
     pending = [c for c in todo if c[0] not in done]
     print(f"{len(todo)} cases, {len(todo) - len(pending)} already in {csv_path}, "
           f"running {len(pending)} with {args.jobs} in parallel")
 
     results = dict(done)
     with cf.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(run_one, *c, args.outdir, args.proto_chunk_bytes): c for c in pending}
+        futs = {pool.submit(run_one, *c, args.outdir, args.proto_chunk_bytes, args.fused_slices): c
+                for c in pending}
         for i, fut in enumerate(cf.as_completed(futs), 1):
             r = fut.result()
             results[r["case"]] = r

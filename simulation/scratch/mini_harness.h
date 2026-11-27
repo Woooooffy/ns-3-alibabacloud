@@ -281,6 +281,10 @@ struct Options {
     // the kernel has no such barrier, so this measures what the unsynchronized replay costs
     // a time-indexed schedule's phase rather than modelling the hardware.
     bool syncBlocks = false;
+    // Slices a fused receive-and-send step (rcs) forwards each sub-transfer in, each sent once it
+    // has wholly landed (CollectivesApplication's FusedSendSlices). 2 is the MSCCL kernel's
+    // recvCopySend; 1 is store-and-forward, the same as an r step followed by an s step.
+    uint32_t fusedSlices = 2;
     // Transport pipelining depth (NCCL_STEPS analogue): how many messages a qp may have in
     // flight before waiting for a completion. It binds only when --l2Ack is nonzero: with acks
     // off the sender self-acknowledges at send completion and messages retire without a round
@@ -346,6 +350,7 @@ struct Options {
         cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
         cmd.AddValue("correctness", "Run the collective correctness check (cheap at these sizes, so on by default)", correctness);
         cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
+        cmd.AddValue("fusedSlices", "Slices an rcs step forwards each sub-transfer in, each once fully landed (2 = MSCCL kernel, 1 = store-and-forward)", fusedSlices);
         cmd.AddValue("syncBlocks", "Barrier all threadblocks at each gridOffset iteration boundary (inert unless --protoChunkBytes makes nLoops > 1)", syncBlocks);
         cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
         cmd.AddValue("l2Ack", "Ack mode: 0 = no-ack (sender self-acknowledges at send completion), nonzero = acks on", l2AckInterval);
@@ -508,6 +513,7 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     app_helper.SetAttribute("CorrectnessCheck", BooleanValue(opt.correctness));
     app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(opt.protoChunkBytes));
     app_helper.SetAttribute("SyncBlocks", BooleanValue(opt.syncBlocks));
+    app_helper.SetAttribute("FusedSendSlices", UintegerValue(opt.fusedSlices));
     app_helper.SetAttribute("NicSelection", StringValue(
         opt.nicSel == "schedule" ? "SCHEDULED" : (opt.nicSel == "merged" ? "MERGED" : "ROUND_ROBIN")));
     app_helper.SetAttribute("NetworkFlowIds", BooleanValue(opt.flowId));
