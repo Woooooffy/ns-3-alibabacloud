@@ -48,6 +48,12 @@ int main(int argc, char *argv[]) {
     mini::Options opt = mini::Options::For("testbed_3node", 3);
     opt.flowId = false;
     opt.nicSel = "merged";
+    // The MSCCL kernel's gridOffset step on the testbed's runtime: NCCL Simple's 4 MiB buffer over
+    // NCCL_STEPS = 8 is 512 KiB per FIFO step, and msccl_kernel.cu advances MSCCL_CHUNKSTEPS = 4
+    // steps per iteration, 2 MiB. Dependencies between threadblocks are checked per iteration, so
+    // a send gated on a receive starts after the receive's first 2 MiB, as on the hardware.
+    // (mini_harness.h's default, 0, waits for the whole chunk.) --protoChunkBytes overrides it.
+    opt.protoChunkBytes = 2u << 20;
     CommandLine cmd;
     opt.AddTo(cmd);
     cmd.Parse(argc, argv);

@@ -38,6 +38,15 @@ Time is the harness's "Total simulated time" (the collective's last step). Bandw
 computed here as buffer / time, which is nccl-tests' algbw. The harness's own "algorithm
 bandwidth" line multiplies the input by the rank count, so for AllToAll it reads 3x higher.
 
+PIPELINING. Every run passes --protoChunkBytes=2097152 (2 MiB; --proto-chunk-bytes to change it),
+the MSCCL kernel's gridOffset step on the testbed's runtime (executor a84c69f6): NCCL's Simple
+protocol buffer, 4 MiB (DEFAULT_BUFFSIZE, NCCL_BUFFSIZE unset on the testbed), over NCCL_STEPS = 8
+FIFO steps is 512 KiB per step (calcBytePerStep), and msccl_kernel.cu walks a chunk
+MSCCL_CHUNKSTEPS = 4 steps at a time, 2 MiB. Cross-threadblock dependencies are checked per
+iteration (the flag is (workIndex, iter, step)), so a send that depends on a receive starts once
+the receive's first 2 MiB has arrived, not the whole chunk. At 0, the harness default, the
+simulator waits for the whole chunk, which made OptCCL's AllGather K1 up to 1.46x the hardware.
+
 Every run keeps the correctness check on (cheap at 3 ranks) and passes --qlenRows=0. Otherwise
 it runs testbed_3node's defaults (--flowId=0 --nicSel=merged, acks on, MTU 4096). Results go to
 sweep_results/testbed_3node_hw/: summary.txt in the hardware summaries' column layout (the
@@ -56,7 +65,9 @@ SIZES_MB = ["0.016", "0.064", "0.256", "1", "4", "16", "64"]   # the schedules' 
 # MSCCL step types collectives.cc does not implement yet (it aborts on them). A schedule with any
 # of them is reported as skipped, with the reason, rather than run and counted as a failure.
 UNSUPPORTED_STEPS = {"rcs": "RecvCpSend", "rrs": "RecvRedSend", "rrcs": "RecvRedCpSend"}
-FIELDS = ["case", "schedule", "coll", "size_mb", "chunk_bytes", "buffer_bytes", "input_bytes", "sim_ns", "sim_us",
+# The MSCCL kernel's gridOffset step on the testbed's runtime; see PIPELINING above.
+PROTO_CHUNK_BYTES = 2 * 1024 * 1024
+FIELDS = ["proto_chunk_bytes", "case", "schedule", "coll", "size_mb", "chunk_bytes", "buffer_bytes", "input_bytes", "sim_ns", "sim_us",
           "sim_GBps", "check", "status"]
 
 
@@ -110,11 +121,11 @@ def unsupported(xml):
     return sorted(t for t in types if t in UNSUPPORTED_STEPS)
 
 
-def run_one(case, xml, coll, mb, outdir):
+def run_one(case, xml, coll, mb, outdir, proto):
     chunk = chunk_bytes(mb)
     buf = chunk * RANKS
     ib = input_bytes(coll, mb)
-    row = dict(case=case, schedule=case.rsplit("@", 1)[0], coll=coll, size_mb=mb,
+    row = dict(proto_chunk_bytes=proto, case=case, schedule=case.rsplit("@", 1)[0], coll=coll, size_mb=mb,
                chunk_bytes=chunk, buffer_bytes=buf, input_bytes=ib, sim_ns="", sim_us="", sim_GBps="",
                check="none")
     bad = unsupported(xml)
@@ -124,7 +135,8 @@ def run_one(case, xml, coll, mb, outdir):
         return row
     label = "tb_" + re.sub(r"[^A-Za-z0-9_.-]", "_", case)
     args = [PROGRAM, f"--xml={xml}", f"--coll={coll}", f"--inputBytes={ib}",
-            "--correctness=1", "--checkLog=minimal", "--qlenRows=0", f"--label={label}"]
+            f"--protoChunkBytes={proto}", "--correctness=1", "--checkLog=minimal", "--qlenRows=0",
+            f"--label={label}"]
     proc = subprocess.run(["./ns3", "run", "--no-build", " ".join(args)], cwd=NS3_DIR,
                           capture_output=True, text=True)
     text = proc.stdout + proc.stderr
@@ -186,6 +198,9 @@ def main():
     ap.add_argument("--sizes", default=",".join(SIZES_MB),
                     help=f"per-GPU chunk sizes, base 2: 0.016 or 16KB, 1 or 1MB (default {','.join(SIZES_MB)})")
     ap.add_argument("--only", help="regex on the schedule name, e.g. 'teccl-two|taccl'")
+    ap.add_argument("--proto-chunk-bytes", type=int, default=PROTO_CHUNK_BYTES, metavar="B",
+                    help=f"--protoChunkBytes for every run (default {PROTO_CHUNK_BYTES}, the runtime's "
+                         "gridOffset step; 0 = no pipelining)")
     ap.add_argument("--jobs", "-j", type=int, default=os.cpu_count() or 1,
                     help="runs in parallel (default: CPU count); each is single-threaded")
     ap.add_argument("--outdir", default=os.path.join(HERE, "sweep_results", f"{PROGRAM}_hw"))
@@ -202,7 +217,8 @@ def main():
         for case, xml, coll, mb in todo:
             ib = input_bytes(coll, mb)
             bad = unsupported(xml)
-            print(f"{case:<38} --xml={xml} --coll={coll} --inputBytes={ib}"
+            print(f"{case:<38} --xml={xml} --coll={coll} --inputBytes={ib} "
+                  f"--protoChunkBytes={args.proto_chunk_bytes}"
                   + (f"   SKIP: {','.join(bad)} not in the simulator" if bad else ""))
         print(f"{len(todo)} cases")
         return
@@ -214,14 +230,17 @@ def main():
     done = {}
     if os.path.exists(csv_path) and not args.force:
         with open(csv_path) as f:
-            done = {r["case"]: r for r in csv.DictReader(f) if r["status"] == "ok"}
+            # a row counts as done only if it ran with this pipelining setting; rows from
+            # before the column existed (no pipelining) or with another value are re-run
+            done = {r["case"]: r for r in csv.DictReader(f) if r["status"] == "ok"
+                    and r.get("proto_chunk_bytes") == str(args.proto_chunk_bytes)}
     pending = [c for c in todo if c[0] not in done]
     print(f"{len(todo)} cases, {len(todo) - len(pending)} already in {csv_path}, "
           f"running {len(pending)} with {args.jobs} in parallel")
 
     results = dict(done)
     with cf.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(run_one, *c, args.outdir): c for c in pending}
+        futs = {pool.submit(run_one, *c, args.outdir, args.proto_chunk_bytes): c for c in pending}
         for i, fut in enumerate(cf.as_completed(futs), 1):
             r = fut.result()
             results[r["case"]] = r
