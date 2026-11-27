@@ -1,155 +1,155 @@
 case                                        bytes     oop_us oop_GBps      ip_us  ip_GBps checks
 optccl-alltoall-K1@0.016MB                  49152       30.3     1.62          -        - ok
-optccl-alltoall-K1@0.064MB                 196608       42.5     4.62          -        - ok
+optccl-alltoall-K1@0.064MB                 196608       42.6     4.62          -        - ok
 optccl-alltoall-K1@0.256MB                 786432       91.6     8.59          -        - ok
-optccl-alltoall-K1@1MB                    3145728      288.2    10.91          -        - ok
-optccl-alltoall-K1@4MB                   12582912     1076.0    11.69          -        - ok
-optccl-alltoall-K1@16MB                  50331648     4227.1    11.91          -        - ok
-optccl-alltoall-K1@64MB                 201326592    16831.5    11.96          -        - ok
-optccl-alltoall-K16@0.016MB                 49152       77.4     0.63          -        - ok
-optccl-alltoall-K16@0.064MB                196608       86.0     2.29          -        - ok
-optccl-alltoall-K16@0.256MB                786432      114.5     6.87          -        - ok
-optccl-alltoall-K16@1MB                   3145728      288.2    10.91          -        - ok
-optccl-alltoall-K16@4MB                  12582912     1076.0    11.69          -        - ok
-optccl-alltoall-K16@16MB                 50331648     4227.1    11.91          -        - ok
-optccl-alltoall-K16@64MB                201326592    16831.5    11.96          -        - ok
+optccl-alltoall-K1@1MB                    3145728      288.3    10.91          -        - ok
+optccl-alltoall-K1@4MB                   12582912     1076.1    11.69          -        - ok
+optccl-alltoall-K1@16MB                  50331648     4227.7    11.91          -        - ok
+optccl-alltoall-K1@64MB                 201326592    16836.7    11.96          -        - ok
+optccl-alltoall-K16@0.016MB                 49152       34.2     1.44          -        - ok
+optccl-alltoall-K16@0.064MB                196608       43.2     4.55          -        - ok
+optccl-alltoall-K16@0.256MB                786432       91.7     8.57          -        - ok
+optccl-alltoall-K16@1MB                   3145728      288.3    10.91          -        - ok
+optccl-alltoall-K16@4MB                  12582912     1076.1    11.69          -        - ok
+optccl-alltoall-K16@16MB                 50331648     4227.8    11.90          -        - ok
+optccl-alltoall-K16@64MB                201326592    16836.7    11.96          -        - ok
 optccl-alltoall-K2@0.016MB                  49152       30.3     1.62          -        - ok
-optccl-alltoall-K2@0.064MB                 196608       42.5     4.62          -        - ok
+optccl-alltoall-K2@0.064MB                 196608       42.6     4.62          -        - ok
 optccl-alltoall-K2@0.256MB                 786432       91.6     8.59          -        - ok
-optccl-alltoall-K2@1MB                    3145728      288.2    10.91          -        - ok
-optccl-alltoall-K2@4MB                   12582912     1076.0    11.69          -        - ok
-optccl-alltoall-K2@16MB                  50331648     4227.1    11.91          -        - ok
-optccl-alltoall-K2@64MB                 201326592    16831.5    11.96          -        - ok
-optccl-alltoall-K32@0.016MB                 49152      126.3     0.39          -        - ok
-optccl-alltoall-K32@0.064MB                196608      132.0     1.49          -        - ok
-optccl-alltoall-K32@0.256MB                786432      147.8     5.32          -        - ok
-optccl-alltoall-K32@1MB                   3145728      288.2    10.91          -        - ok
-optccl-alltoall-K32@4MB                  12582912     1076.0    11.69          -        - ok
-optccl-alltoall-K32@16MB                 50331648     4227.1    11.91          -        - ok
-optccl-alltoall-K32@64MB                201326592    16831.5    11.96          -        - ok
+optccl-alltoall-K2@1MB                    3145728      288.3    10.91          -        - ok
+optccl-alltoall-K2@4MB                   12582912     1076.1    11.69          -        - ok
+optccl-alltoall-K2@16MB                  50331648     4227.7    11.91          -        - ok
+optccl-alltoall-K2@64MB                 201326592    16836.7    11.96          -        - ok
+optccl-alltoall-K32@0.016MB                 49152       39.7     1.24          -        - ok
+optccl-alltoall-K32@0.064MB                196608       46.7     4.21          -        - ok
+optccl-alltoall-K32@0.256MB                786432       91.8     8.57          -        - ok
+optccl-alltoall-K32@1MB                   3145728      288.3    10.91          -        - ok
+optccl-alltoall-K32@4MB                  12582912     1076.1    11.69          -        - ok
+optccl-alltoall-K32@16MB                 50331648     4227.8    11.91          -        - ok
+optccl-alltoall-K32@64MB                201326592    16836.7    11.96          -        - ok
 optccl-alltoall-K4@0.016MB                  49152       30.3     1.62          -        - ok
-optccl-alltoall-K4@0.064MB                 196608       42.5     4.62          -        - ok
+optccl-alltoall-K4@0.064MB                 196608       42.6     4.62          -        - ok
 optccl-alltoall-K4@0.256MB                 786432       91.6     8.59          -        - ok
-optccl-alltoall-K4@1MB                    3145728      288.2    10.91          -        - ok
-optccl-alltoall-K4@4MB                   12582912     1076.0    11.69          -        - ok
-optccl-alltoall-K4@16MB                  50331648     4227.1    11.91          -        - ok
-optccl-alltoall-K4@64MB                 201326592    16831.5    11.96          -        - ok
+optccl-alltoall-K4@1MB                    3145728      288.3    10.91          -        - ok
+optccl-alltoall-K4@4MB                   12582912     1076.1    11.69          -        - ok
+optccl-alltoall-K4@16MB                  50331648     4227.7    11.91          -        - ok
+optccl-alltoall-K4@64MB                 201326592    16836.7    11.96          -        - ok
 optccl-alltoall-K8@0.016MB                  49152       29.7     1.66          -        - ok
-optccl-alltoall-K8@0.064MB                 196608       42.5     4.62          -        - ok
+optccl-alltoall-K8@0.064MB                 196608       42.6     4.61          -        - ok
 optccl-alltoall-K8@0.256MB                 786432       91.6     8.59          -        - ok
-optccl-alltoall-K8@1MB                    3145728      288.2    10.91          -        - ok
-optccl-alltoall-K8@4MB                   12582912     1076.0    11.69          -        - ok
-optccl-alltoall-K8@16MB                  50331648     4227.1    11.91          -        - ok
-optccl-alltoall-K8@64MB                 201326592    16831.5    11.96          -        - ok
+optccl-alltoall-K8@1MB                    3145728      288.3    10.91          -        - ok
+optccl-alltoall-K8@4MB                   12582912     1076.1    11.69          -        - ok
+optccl-alltoall-K8@16MB                  50331648     4227.7    11.91          -        - ok
+optccl-alltoall-K8@64MB                 201326592    16836.7    11.96          -        - ok
 taccl-alltoall-0.016MB@0.016MB              49152       30.3     1.62          -        - ok
-taccl-alltoall-0.064MB@0.064MB             196608       42.5     4.62          -        - ok
+taccl-alltoall-0.064MB@0.064MB             196608       42.6     4.62          -        - ok
 taccl-alltoall-0.256MB@0.256MB             786432       91.6     8.59          -        - ok
-taccl-alltoall-16MB@16MB                 50331648     4227.1    11.91          -        - ok
-taccl-alltoall-1MB@1MB                    3145728      288.2    10.91          -        - ok
-taccl-alltoall-4MB@4MB                   12582912     1076.0    11.69          -        - ok
-taccl-alltoall-64MB@64MB                201326592    16831.5    11.96          -        - ok
+taccl-alltoall-16MB@16MB                 50331648     4227.7    11.91          -        - ok
+taccl-alltoall-1MB@1MB                    3145728      288.3    10.91          -        - ok
+taccl-alltoall-4MB@4MB                   12582912     1076.1    11.69          -        - ok
+taccl-alltoall-64MB@64MB                201326592    16836.7    11.96          -        - ok
 teccl-flat-alltoall-0.016MB@0.016MB         49152       30.3     1.62          -        - ok
-teccl-flat-alltoall-0.064MB@0.064MB        196608       42.5     4.62          -        - ok
+teccl-flat-alltoall-0.064MB@0.064MB        196608       42.6     4.62          -        - ok
 teccl-flat-alltoall-0.256MB@0.256MB        786432       91.6     8.59          -        - ok
-teccl-flat-alltoall-16MB@16MB            50331648     4227.1    11.91          -        - ok
-teccl-flat-alltoall-1MB@1MB               3145728      288.2    10.91          -        - ok
-teccl-flat-alltoall-4MB@4MB              12582912     1076.0    11.69          -        - ok
-teccl-flat-alltoall-64MB@64MB           201326592    16831.5    11.96          -        - ok
+teccl-flat-alltoall-16MB@16MB            50331648     4227.7    11.91          -        - ok
+teccl-flat-alltoall-1MB@1MB               3145728      288.3    10.91          -        - ok
+teccl-flat-alltoall-4MB@4MB              12582912     1076.1    11.69          -        - ok
+teccl-flat-alltoall-64MB@64MB           201326592    16836.7    11.96          -        - ok
 teccl-two-alltoall-0.016MB@0.016MB          49152       30.3     1.62          -        - ok
-teccl-two-alltoall-0.064MB@0.064MB         196608       42.5     4.62          -        - ok
+teccl-two-alltoall-0.064MB@0.064MB         196608       42.6     4.62          -        - ok
 teccl-two-alltoall-0.256MB@0.256MB         786432       91.6     8.59          -        - ok
-teccl-two-alltoall-16MB@16MB             50331648     4227.1    11.91          -        - ok
-teccl-two-alltoall-1MB@1MB                3145728      288.2    10.91          -        - ok
-teccl-two-alltoall-4MB@4MB               12582912     1076.0    11.69          -        - ok
-teccl-two-alltoall-64MB@64MB            201326592    16831.5    11.96          -        - ok
-forestcoll-allgather-k1@0.016MB             49152          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@0.064MB            196608          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@0.256MB            786432          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@1MB               3145728          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@4MB              12582912          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@16MB             50331648          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@64MB            201326592          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@0.016MB             49152          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@0.064MB            196608          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@0.256MB            786432          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@1MB               3145728          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@4MB              12582912          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@16MB             50331648          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@64MB            201326592          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@0.016MB             49152          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@0.064MB            196608          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@0.256MB            786432          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@1MB               3145728          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@4MB              12582912          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@16MB             50331648          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@64MB            201326592          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@0.016MB                49152          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@0.064MB               196608          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@0.256MB               786432          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@1MB                  3145728          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@4MB                 12582912          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@16MB                50331648          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@64MB               201326592          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-optccl-allgather-K1@0.016MB                 49152       57.1     0.86          -        - ok
+teccl-two-alltoall-16MB@16MB             50331648     4227.7    11.91          -        - ok
+teccl-two-alltoall-1MB@1MB                3145728      288.3    10.91          -        - ok
+teccl-two-alltoall-4MB@4MB               12582912     1076.1    11.69          -        - ok
+teccl-two-alltoall-64MB@64MB            201326592    16836.7    11.96          -        - ok
+forestcoll-allgather-k1@0.016MB             49152       55.5     0.89          -        - ok
+forestcoll-allgather-k1@0.064MB            196608       63.7     3.09          -        - ok
+forestcoll-allgather-k1@0.256MB            786432      100.7     7.81          -        - ok
+forestcoll-allgather-k1@1MB               3145728      288.3    10.91          -        - ok
+forestcoll-allgather-k1@4MB              12582912     1076.1    11.69          -        - ok
+forestcoll-allgather-k1@16MB             50331648     4227.6    11.91          -        - ok
+forestcoll-allgather-k1@64MB            201326592    16836.8    11.96          -        - ok
+forestcoll-allgather-k2@0.016MB             49152       55.5     0.89          -        - ok
+forestcoll-allgather-k2@0.064MB            196608       63.7     3.09          -        - ok
+forestcoll-allgather-k2@0.256MB            786432      100.7     7.81          -        - ok
+forestcoll-allgather-k2@1MB               3145728      288.3    10.91          -        - ok
+forestcoll-allgather-k2@4MB              12582912     1076.1    11.69          -        - ok
+forestcoll-allgather-k2@16MB             50331648     4227.6    11.91          -        - ok
+forestcoll-allgather-k2@64MB            201326592    16836.8    11.96          -        - ok
+forestcoll-allgather-k4@0.016MB             49152       55.5     0.89          -        - ok
+forestcoll-allgather-k4@0.064MB            196608       63.7     3.09          -        - ok
+forestcoll-allgather-k4@0.256MB            786432      100.7     7.81          -        - ok
+forestcoll-allgather-k4@1MB               3145728      288.3    10.91          -        - ok
+forestcoll-allgather-k4@4MB              12582912     1076.1    11.69          -        - ok
+forestcoll-allgather-k4@16MB             50331648     4227.6    11.91          -        - ok
+forestcoll-allgather-k4@64MB            201326592    16836.8    11.96          -        - ok
+forestcoll-allgather@0.016MB                49152       55.5     0.89          -        - ok
+forestcoll-allgather@0.064MB               196608       63.7     3.09          -        - ok
+forestcoll-allgather@0.256MB               786432      100.7     7.81          -        - ok
+forestcoll-allgather@1MB                  3145728      288.3    10.91          -        - ok
+forestcoll-allgather@4MB                 12582912     1076.1    11.69          -        - ok
+forestcoll-allgather@16MB                50331648     4227.6    11.91          -        - ok
+forestcoll-allgather@64MB               201326592    16836.8    11.96          -        - ok
+optccl-allgather-K1@0.016MB                 49152       57.0     0.86          -        - ok
 optccl-allgather-K1@0.064MB                196608       75.5     2.60          -        - ok
 optccl-allgather-K1@0.256MB                786432      149.2     5.27          -        - ok
-optccl-allgather-K1@1MB                   3145728      444.5     7.08          -        - ok
-optccl-allgather-K1@4MB                  12582912     1361.9     9.24          -        - ok
-optccl-allgather-K1@16MB                 50331648     4513.0    11.15          -        - ok
-optccl-allgather-K1@64MB                201326592    17117.4    11.76          -        - ok
-optccl-allgather-K16@0.016MB                49152       77.4     0.63          -        - ok
-optccl-allgather-K16@0.064MB               196608       86.0     2.29          -        - ok
-optccl-allgather-K16@0.256MB               786432      114.5     6.87          -        - ok
-optccl-allgather-K16@1MB                  3145728      288.2    10.91          -        - ok
-optccl-allgather-K16@4MB                 12582912     1076.0    11.69          -        - ok
-optccl-allgather-K16@16MB                50331648     4227.1    11.91          -        - ok
-optccl-allgather-K16@64MB               201326592    16831.5    11.96          -        - ok
+optccl-allgather-K1@1MB                   3145728      438.5     7.17          -        - ok
+optccl-allgather-K1@4MB                  12582912     1348.6     9.33          -        - ok
+optccl-allgather-K1@16MB                 50331648     4494.0    11.20          -        - ok
+optccl-allgather-K1@64MB                201326592    17100.2    11.77          -        - ok
+optccl-allgather-K16@0.016MB                49152       34.2     1.44          -        - ok
+optccl-allgather-K16@0.064MB               196608       43.2     4.55          -        - ok
+optccl-allgather-K16@0.256MB               786432       91.7     8.57          -        - ok
+optccl-allgather-K16@1MB                  3145728      288.3    10.91          -        - ok
+optccl-allgather-K16@4MB                 12582912     1076.1    11.69          -        - ok
+optccl-allgather-K16@16MB                50331648     4227.8    11.90          -        - ok
+optccl-allgather-K16@64MB               201326592    16836.7    11.96          -        - ok
 optccl-allgather-K2@0.016MB                 49152       80.7     0.61          -        - ok
 optccl-allgather-K2@0.064MB                196608       93.0     2.11          -        - ok
-optccl-allgather-K2@0.256MB                786432      145.8     5.39          -        - ok
-optccl-allgather-K2@1MB                   3145728      375.9     8.37          -        - ok
-optccl-allgather-K2@4MB                  12582912     1356.2     9.28          -        - ok
-optccl-allgather-K2@16MB                 50331648     4516.0    11.15          -        - ok
-optccl-allgather-K2@64MB                201326592    17130.6    11.75          -        - ok
-optccl-allgather-K32@0.016MB                49152      126.4     0.39          -        - ok
-optccl-allgather-K32@0.064MB               196608      131.8     1.49          -        - ok
-optccl-allgather-K32@0.256MB               786432      147.3     5.34          -        - ok
-optccl-allgather-K32@1MB                  3145728      288.2    10.91          -        - ok
-optccl-allgather-K32@4MB                 12582912     1076.0    11.69          -        - ok
-optccl-allgather-K32@16MB                50331648     4227.1    11.91          -        - ok
-optccl-allgather-K32@64MB               201326592    16831.5    11.96          -        - ok
+optccl-allgather-K2@0.256MB                786432      145.8     5.40          -        - ok
+optccl-allgather-K2@1MB                   3145728      390.6     8.05          -        - ok
+optccl-allgather-K2@4MB                  12582912     1368.6     9.19          -        - ok
+optccl-allgather-K2@16MB                 50331648     4519.9    11.14          -        - ok
+optccl-allgather-K2@64MB                201326592    17124.3    11.76          -        - ok
+optccl-allgather-K32@0.016MB                49152       39.7     1.24          -        - ok
+optccl-allgather-K32@0.064MB               196608       47.4     4.15          -        - ok
+optccl-allgather-K32@0.256MB               786432       91.8     8.57          -        - ok
+optccl-allgather-K32@1MB                  3145728      288.3    10.91          -        - ok
+optccl-allgather-K32@4MB                 12582912     1076.1    11.69          -        - ok
+optccl-allgather-K32@16MB                50331648     4227.8    11.91          -        - ok
+optccl-allgather-K32@64MB               201326592    16836.7    11.96          -        - ok
 optccl-allgather-K4@0.016MB                 49152       30.3     1.62          -        - ok
-optccl-allgather-K4@0.064MB                196608       42.5     4.62          -        - ok
+optccl-allgather-K4@0.064MB                196608       42.6     4.62          -        - ok
 optccl-allgather-K4@0.256MB                786432       91.6     8.59          -        - ok
-optccl-allgather-K4@1MB                   3145728      288.2    10.91          -        - ok
-optccl-allgather-K4@4MB                  12582912     1076.0    11.69          -        - ok
-optccl-allgather-K4@16MB                 50331648     4227.1    11.91          -        - ok
-optccl-allgather-K4@64MB                201326592    16831.5    11.96          -        - ok
+optccl-allgather-K4@1MB                   3145728      288.3    10.91          -        - ok
+optccl-allgather-K4@4MB                  12582912     1076.1    11.69          -        - ok
+optccl-allgather-K4@16MB                 50331648     4227.7    11.91          -        - ok
+optccl-allgather-K4@64MB                201326592    16836.7    11.96          -        - ok
 optccl-allgather-K8@0.016MB                 49152       29.7     1.66          -        - ok
-optccl-allgather-K8@0.064MB                196608       42.5     4.62          -        - ok
+optccl-allgather-K8@0.064MB                196608       42.6     4.61          -        - ok
 optccl-allgather-K8@0.256MB                786432       91.6     8.59          -        - ok
-optccl-allgather-K8@1MB                   3145728      288.2    10.91          -        - ok
-optccl-allgather-K8@4MB                  12582912     1076.0    11.69          -        - ok
-optccl-allgather-K8@16MB                 50331648     4227.1    11.91          -        - ok
-optccl-allgather-K8@64MB                201326592    16831.5    11.96          -        - ok
+optccl-allgather-K8@1MB                   3145728      288.3    10.91          -        - ok
+optccl-allgather-K8@4MB                  12582912     1076.1    11.69          -        - ok
+optccl-allgather-K8@16MB                 50331648     4227.7    11.91          -        - ok
+optccl-allgather-K8@64MB                201326592    16836.7    11.96          -        - ok
 taccl-allgather-0.016MB@0.016MB             49152       30.3     1.62          -        - ok
-taccl-allgather-0.064MB@0.064MB            196608       42.5     4.62          -        - ok
+taccl-allgather-0.064MB@0.064MB            196608       42.6     4.62          -        - ok
 taccl-allgather-0.256MB@0.256MB            786432       91.6     8.59          -        - ok
-taccl-allgather-16MB@16MB                50331648     4227.1    11.91          -        - ok
-taccl-allgather-1MB@1MB                   3145728      288.2    10.91          -        - ok
-taccl-allgather-4MB@4MB                  12582912     1076.0    11.69          -        - ok
-taccl-allgather-64MB@64MB               201326592    16831.5    11.96          -        - ok
+taccl-allgather-16MB@16MB                50331648     4227.7    11.91          -        - ok
+taccl-allgather-1MB@1MB                   3145728      288.3    10.91          -        - ok
+taccl-allgather-4MB@4MB                  12582912     1076.1    11.69          -        - ok
+taccl-allgather-64MB@64MB               201326592    16836.7    11.96          -        - ok
 teccl-flat-allgather-0.016MB@0.016MB        49152       30.3     1.62          -        - ok
-teccl-flat-allgather-0.064MB@0.064MB       196608       42.5     4.62          -        - ok
+teccl-flat-allgather-0.064MB@0.064MB       196608       42.6     4.62          -        - ok
 teccl-flat-allgather-0.256MB@0.256MB       786432       91.6     8.59          -        - ok
-teccl-flat-allgather-16MB@16MB           50331648     6299.8     7.99          -        - ok
-teccl-flat-allgather-1MB@1MB              3145728      288.2    10.91          -        - ok
-teccl-flat-allgather-4MB@4MB             12582912     1594.3     7.89          -        - ok
-teccl-flat-allgather-64MB@64MB          201326592    25121.9     8.01          -        - ok
+teccl-flat-allgather-16MB@16MB           50331648     6301.1     7.99          -        - ok
+teccl-flat-allgather-1MB@1MB              3145728      288.3    10.91          -        - ok
+teccl-flat-allgather-4MB@4MB             12582912     1594.5     7.89          -        - ok
+teccl-flat-allgather-64MB@64MB          201326592    25131.0     8.01          -        - ok
 teccl-two-allgather-0.016MB@0.016MB         49152       30.3     1.62          -        - ok
-teccl-two-allgather-0.064MB@0.064MB        196608       42.5     4.62          -        - ok
+teccl-two-allgather-0.064MB@0.064MB        196608       42.6     4.62          -        - ok
 teccl-two-allgather-0.256MB@0.256MB        786432       91.6     8.59          -        - ok
-teccl-two-allgather-16MB@16MB            50331648     4227.1    11.91          -        - ok
-teccl-two-allgather-1MB@1MB               3145728      288.2    10.91          -        - ok
-teccl-two-allgather-4MB@4MB              12582912     1076.0    11.69          -        - ok
-teccl-two-allgather-64MB@64MB           201326592    16831.5    11.96          -        - ok
+teccl-two-allgather-16MB@16MB            50331648     4227.7    11.91          -        - ok
+teccl-two-allgather-1MB@1MB               3145728      288.3    10.91          -        - ok
+teccl-two-allgather-4MB@4MB              12582912     1076.1    11.69          -        - ok
+teccl-two-allgather-64MB@64MB           201326592    16836.7    11.96          -        - ok
