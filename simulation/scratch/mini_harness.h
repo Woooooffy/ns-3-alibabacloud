@@ -312,6 +312,11 @@ struct Options {
     // topologies are 4096 throughout, and so is the testbed (its InfiniBand MTU). It is a
     // field rather than a constant so that a topology with another MTU stays consistent.
     uint32_t mtu = 4096;
+    // Per-message send overhead in ns (CollectivesApplication's SendOverhead): each message
+    // reaches its qp this long after its send is posted. 0 for the mini topologies. A negative
+    // value means "let the scratch derive it", and the scratch must resolve it before Run (see
+    // testbed_3node.cc, which moves the host-staging latency off the GPU-host links into it).
+    int64_t sendOverheadNs = 0;
     // Reliability of switch-multicast connections (schedules with <tb send="a,b,...">); inert
     // otherwise. agg: every receiver acks, the sender advances on the slowest one. ud: no acks
     // on the multicast connection (unicast keeps them), loss unrecoverable. --l2Ack=0 removes
@@ -350,6 +355,7 @@ struct Options {
         cmd.AddValue("maxMismatches", "Mismatch lines to print before giving up (minimal mode)", maxMismatches);
         cmd.AddValue("correctness", "Run the collective correctness check (cheap at these sizes, so on by default)", correctness);
         cmd.AddValue("protoChunkBytes", "Pipelining granularity in bytes; 0 disables pipelining", protoChunkBytes);
+        cmd.AddValue("sendOverheadNs", "Per-message send overhead in ns: each message reaches the NIC this long after its send is posted (concurrently for messages posted together; ACKs never pay it). Negative = the scratch's derived value, where it has one", sendOverheadNs);
         cmd.AddValue("fusedSlices", "Slices an rcs step forwards each sub-transfer in, each once fully landed (2 = MSCCL kernel, 1 = store-and-forward)", fusedSlices);
         cmd.AddValue("syncBlocks", "Barrier all threadblocks at each gridOffset iteration boundary (inert unless --protoChunkBytes makes nLoops > 1)", syncBlocks);
         cmd.AddValue("maxMsgsInFlight", "Messages a qp may have in flight at once", maxMsgsInFlight);
@@ -514,6 +520,10 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
     app_helper.SetAttribute("ProtoChunkBytes", UintegerValue(opt.protoChunkBytes));
     app_helper.SetAttribute("SyncBlocks", BooleanValue(opt.syncBlocks));
     app_helper.SetAttribute("FusedSendSlices", UintegerValue(opt.fusedSlices));
+    if (opt.sendOverheadNs < 0)
+        NS_FATAL_ERROR("--sendOverheadNs=" << opt.sendOverheadNs << " was never resolved: this scratch "
+            "derives no send overhead, so give a value >= 0.");
+    app_helper.SetAttribute("SendOverhead", TimeValue(NanoSeconds(opt.sendOverheadNs)));
     app_helper.SetAttribute("NicSelection", StringValue(
         opt.nicSel == "schedule" ? "SCHEDULED" : (opt.nicSel == "merged" ? "MERGED" : "ROUND_ROBIN")));
     app_helper.SetAttribute("NetworkFlowIds", BooleanValue(opt.flowId));
@@ -693,6 +703,8 @@ static int Run(const Options& opt, NodeContainer gpunodes, NodeContainer regswtc
                                                      : "off (no header on the wire, plain ECMP)") << std::endl;
     std::cout << "Network deps (netdepid/netdeps): " << (opt.netDeps ? "honored" : "skipped") << std::endl;
     std::cout << "Remote deps (remotedep/remotenotify): " << (opt.remoteDeps ? "honored" : "skipped") << std::endl;
+    std::cout << "Send overhead: " << opt.sendOverheadNs << " ns per message"
+              << (opt.sendOverheadNs ? " (on posting, before the NIC; ACKs exempt)" : " (none)") << std::endl;
     std::cout << "Algorithm XML: " << XML_ALGO << std::endl;
     std::cout << "Switch queue trace: " << (opt.qlenRows ? qlenPath : std::string("(rows off)")) << std::endl;
     std::cout << "Switch peak-queue summary: " << qmaxPath << std::endl;

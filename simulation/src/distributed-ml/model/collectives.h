@@ -158,6 +158,21 @@ namespace ns3 {
 		std::vector<Ptr<RdmaQueuePair>>* qps = nullptr; // the send connection's lanes
 	};
 
+	// One RDMA message waiting out the SendOverhead before it reaches its qp. Bundled because
+	// ns-3's MakeEvent takes at most six arguments after the object.
+	struct DeferredLanePush{
+		Ptr<RdmaQueuePair> qp;
+		uint32_t bytes;
+		uint8_t* srcDataPtr;
+		uint32_t mscclFlowId;
+		DataRate paceRate;
+		int16_t bid;
+		int16_t sid;
+		uint32_t iter;
+		int16_t sendpeer;
+		uint32_t nElems;
+	};
+
 	// How a connection picks the NIC it is bound to. Deliberately an explicit three-way choice
 	// rather than a bool: NIC selection used to be a side effect of whether the switch JSON was
 	// parsed, which fused it with custom flow-id forwarding and made the two impossible to
@@ -313,7 +328,11 @@ namespace ns3 {
 			// for it on m_sendLanesLeft.
 			// deferWake schedules the NIC wake-up for the same instant instead of doing it inline
 			// (see the definition).
+			// With a SendOverhead, the message reaches the qp that long after this call (see
+			// PushLaneMessageNow): every RDMA message, plain send or rcs forward, passes here once.
 			void PushLaneMessage(Ptr<RdmaQueuePair> qp, uint32_t bytes, uint8_t* srcDataPtr, uint32_t mscclFlowId, DataRate paceRate, int16_t bid, int16_t sid, uint32_t iter, int16_t sendpeer, uint32_t nElems, bool deferWake = false);
+			void PushLaneMessageNow(Ptr<RdmaQueuePair> qp, uint32_t bytes, uint8_t* srcDataPtr, uint32_t mscclFlowId, DataRate paceRate, int16_t bid, int16_t sid, uint32_t iter, int16_t sendpeer, uint32_t nElems, bool deferWake);
+			void PushDeferredLaneMessage(DeferredLanePush m); // PushLaneMessageNow, after the overhead
 			void WakeQp(Ptr<RdmaQueuePair> qp); // RdmaHw::TriggerTransmit, as a schedulable member
 			// rcs: `lane`'s slice of sub-transfer (bid, sid, part) now has `landedBytes` in place.
 			// Forwards every slice that has fully landed, and when the last one is forwarded drops
@@ -462,6 +481,7 @@ namespace ns3 {
 			// correct: unlabelled steps send MSCCL_FLOW_ID_NONE and switches fall through to ECMP.
 			bool ConnectionCarriesFlowIds(int16_t peer, int8_t chan);
 			uint32_t GetFusedSendSlices() const { return m_fusedSendSlices; }
+			Time GetSendOverhead() const { return m_sendOverhead; }
 			uint32_t GetProtoChunkBytes() const { return m_protoChunkBytes; }
 			bool GetHonorNetDeps() const { return m_honorNetDeps; }
 			bool GetHonorRemoteDeps() const { return m_honorRemoteDeps; }
@@ -580,6 +600,14 @@ namespace ns3 {
 			// one sub-transfer in. 2 is the MSCCL kernel's SlicePerChunk (ProtoSimple<2, 2>); 1 is
 			// store-and-forward of the whole sub-transfer. See MscclChannel::FusedSliceEnds.
 			uint32_t m_fusedSendSlices = 2;
+			// SendOverhead attribute: how long after a send is posted its message reaches the NIC's
+			// qp, per message (every lane of every sub-transfer, and every rcs forward). A latency,
+			// not an occupancy: messages posted together wait it concurrently, the step itself
+			// completes on posting as before, and ACKs never pay it. 0, the default, is the
+			// unchanged behaviour. For a host-staged fabric (GPUDirect off), it carries the
+			// per-message staging cost that would otherwise sit on the GPU-host link as a delay,
+			// where every packet and every ACK would pay it.
+			Time m_sendOverhead = Seconds(0);
 			// Threadblocks that must reach the barrier before it releases: those with at least
 			// one step, since a zero-step threadblock never completes a step and so could never
 			// arrive. Computed once in InterpretAlgo.

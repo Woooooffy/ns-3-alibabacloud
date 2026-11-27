@@ -9,8 +9,10 @@
 // memory, and staging (about 65 Gbps), not the NIC (about 195 Gbps), limits a GPU. Staging is
 // its own link, GPU to host, in front of the NIC link, host to switch. The host is an
 // NVSwitchNode: a self-routing forwarder with no switch program, which is what a host bounce
-// buffer is. This is the two-hop model (testbed_3node.topo.tmpl), the fabric every planner's
-// testbed schedule runs on. Planners that see only GPUs solved the flat model
+// buffer is. The staging link's LATENCY is not left on the link: all but 1 us of it becomes a
+// per-message send overhead (--sendOverheadNs; see after the generated topology), so a message
+// still takes the measured end-to-end time but ACKs don't pay it. This is the two-hop model
+// (testbed_3node.topo.tmpl), the fabric every planner's testbed schedule runs on. Planners that see only GPUs solved the flat model
 // (testbed_3node_flat.topo.tmpl), but their schedules name only GPUs, so they run here as well.
 //
 // The topology body is generated, not hand-written. The testbed is measured anew each day, and
@@ -39,6 +41,8 @@
 
 #include "mini_harness.h"
 
+#include <cmath>
+
 using namespace ns3;
 
 int main(int argc, char *argv[]) {
@@ -54,6 +58,10 @@ int main(int argc, char *argv[]) {
     // a send gated on a receive starts after the receive's first 2 MiB, as on the hardware.
     // (mini_harness.h's default, 0, waits for the whole chunk.) --protoChunkBytes overrides it.
     opt.protoChunkBytes = 2u << 20;
+    // Host-staging latency as a per-message send overhead instead of a GPU-host link delay; see
+    // the block after the generated topology. -1 derives it there; --sendOverheadNs=0 (or any
+    // value >= 0) keeps the generated link delays as they are and uses that overhead instead.
+    opt.sendOverheadNs = -1;
     CommandLine cmd;
     opt.AddTo(cmd);
     cmd.Parse(argc, argv);
@@ -113,6 +121,49 @@ int main(int argc, char *argv[]) {
     NetDeviceContainer devs4_4 = link_helper4.Install(nvswtches.Get(1), regswtches.Get(0));
     NetDeviceContainer devs5_5 = link_helper5.Install(nvswtches.Get(2), regswtches.Get(0));
     // ---- end generated topology ----
+
+    // ---- host staging: off the GPU-host links, into a per-message send overhead ----
+    // The .topo's staging latency (~11.8 us per GPU) is half an 8-byte NCCL sendrecv between two
+    // GPUs, minus the IB hop: mostly host-side work per message (the GPU-host copy, the proxy
+    // thread picking it up), measured once per message. As a link delay, every packet and every
+    // ACK pays it, so an ACK round trip costs ~50 us, and a connection with more messages than
+    // its 8-message window waits one of those per extra window (OptCCL AllToAll K16/K32 at small
+    // sizes ran 2-3x the hardware's time). Charged instead once per message, on the send side, a
+    // message still takes the measured end-to-end time, and ACKs cost only the wires.
+    //
+    // Each GPU-host link keeps kStagingWireNs of its delay, not 0: RdmaFabricHelper sizes every
+    // switch port's PFC headroom as rate x delay x 3, which would be zero. The overhead is
+    // 2 x (staging delay - kStagingWireNs) averaged over the GPUs: a message pays both ends'
+    // staging, its sender's and its receiver's, and the per-GPU values differ by < 0.1 us.
+    constexpr int64_t kStagingWireNs = 1000;
+    if (opt.sendOverheadNs < 0) {
+        double movedNs = 0;
+        uint32_t nLinks = 0;
+        for (uint32_t g = 0; g < gpunodes.GetN(); ++g) {
+            Ptr<Node> gpu = gpunodes.Get(g);
+            for (uint32_t d = 0; d < gpu->GetNDevices(); ++d) {
+                Ptr<QbbNetDevice> dev = DynamicCast<QbbNetDevice>(gpu->GetDevice(d));
+                if (!dev) continue;
+                Ptr<QbbChannel> ch = DynamicCast<QbbChannel>(dev->GetChannel());
+                if (!ch) continue;
+                Ptr<NetDevice> peer = (ch->GetDevice(0) == dev) ? ch->GetDevice(1) : ch->GetDevice(0);
+                if (!DynamicCast<NVSwitchNode>(peer->GetNode())) continue; // only the GPU-host link
+                const int64_t wasNs = ch->GetDelay().GetNanoSeconds();
+                if (wasNs < kStagingWireNs)
+                    NS_FATAL_ERROR("GPU " << g << "'s staging link has " << wasNs << " ns of delay, less than "
+                        "the " << kStagingWireNs << " ns it keeps; pass --sendOverheadNs explicitly.");
+                movedNs += wasNs - kStagingWireNs;
+                ++nLinks;
+                ch->SetAttribute("Delay", TimeValue(NanoSeconds(kStagingWireNs)));
+            }
+        }
+        if (nLinks != gpunodes.GetN())
+            NS_FATAL_ERROR("found " << nLinks << " GPU-host staging links for " << gpunodes.GetN() << " GPUs");
+        opt.sendOverheadNs = static_cast<int64_t>(std::llround(2.0 * movedNs / nLinks));
+        std::cout << "Host staging: GPU-host link delay -> " << kStagingWireNs << " ns; the rest, "
+                  << movedNs / nLinks << " ns per GPU on average, charged per message as a "
+                  << opt.sendOverheadNs << " ns send overhead (both ends' share)" << std::endl;
+    }
 
     opt.mtu = kTopoMtu;
     opt.SetRdmaDefaults();

@@ -49,6 +49,12 @@ iteration (the flag is (workIndex, iter, step)), so a send that depends on a rec
 the receive's first 2 MiB has arrived, not the whole chunk. At 0, the harness default, the
 simulator waits for the whole chunk, which made OptCCL's AllGather K1 up to 1.46x the hardware.
 
+STAGING LATENCY. Every run passes --sendOverheadNs=-1 (--send-overhead-ns to change it):
+testbed_3node moves the host-staging latency off the GPU-host links (all but 1 us) into a
+per-message send overhead, so a message still takes the measured 8-byte sendrecv time end to
+end but ACKs don't pay it twice per round trip. 0 is the earlier model, with the latency on the
+links. results.csv records the value, and rows from before that column count as 0.
+
 Every run keeps the correctness check on (cheap at 3 ranks) and passes --qlenRows=0. Otherwise
 it runs testbed_3node's defaults (--flowId=0 --nicSel=merged, acks on, MTU 4096). Results go to
 sweep_results/testbed_3node_hw/: summary.txt in the hardware summaries' column layout (the
@@ -69,9 +75,13 @@ SIZES_MB = ["0.016", "0.064", "0.256", "1", "4", "16", "64"]   # the schedules' 
 UNSUPPORTED_STEPS = {"rrs": "RecvRedSend", "rrcs": "RecvRedCpSend"}
 # FusedSendSlices for rcs steps (--fusedSlices); 2 is the MSCCL kernel's recvCopySend.
 FUSED_SLICES = 2
+# --sendOverheadNs for every run. -1 is testbed_3node's default: the host-staging latency moves off
+# the GPU-host links into a per-message send overhead (see testbed_3node.cc). 0 is the earlier
+# model, the staging latency as a link delay that every packet and ACK pays.
+SEND_OVERHEAD_NS = -1
 # The MSCCL kernel's gridOffset step on the testbed's runtime; see PIPELINING above.
 PROTO_CHUNK_BYTES = 2 * 1024 * 1024
-FIELDS = ["proto_chunk_bytes", "fused_slices", "case", "schedule", "coll", "size_mb", "chunk_bytes", "buffer_bytes", "input_bytes", "sim_ns", "sim_us",
+FIELDS = ["proto_chunk_bytes", "fused_slices", "send_overhead_ns", "case", "schedule", "coll", "size_mb", "chunk_bytes", "buffer_bytes", "input_bytes", "sim_ns", "sim_us",
           "sim_GBps", "check", "status"]
 
 
@@ -125,11 +135,11 @@ def unsupported(xml):
     return sorted(t for t in types if t in UNSUPPORTED_STEPS)
 
 
-def run_one(case, xml, coll, mb, outdir, proto, fused):
+def run_one(case, xml, coll, mb, outdir, proto, fused, overhead):
     chunk = chunk_bytes(mb)
     buf = chunk * RANKS
     ib = input_bytes(coll, mb)
-    row = dict(proto_chunk_bytes=proto, fused_slices=fused, case=case, schedule=case.rsplit("@", 1)[0], coll=coll, size_mb=mb,
+    row = dict(proto_chunk_bytes=proto, fused_slices=fused, send_overhead_ns=overhead, case=case, schedule=case.rsplit("@", 1)[0], coll=coll, size_mb=mb,
                chunk_bytes=chunk, buffer_bytes=buf, input_bytes=ib, sim_ns="", sim_us="", sim_GBps="",
                check="none")
     bad = unsupported(xml)
@@ -139,7 +149,7 @@ def run_one(case, xml, coll, mb, outdir, proto, fused):
         return row
     label = "tb_" + re.sub(r"[^A-Za-z0-9_.-]", "_", case)
     args = [PROGRAM, f"--xml={xml}", f"--coll={coll}", f"--inputBytes={ib}",
-            f"--protoChunkBytes={proto}", f"--fusedSlices={fused}", "--correctness=1", "--checkLog=minimal", "--qlenRows=0",
+            f"--protoChunkBytes={proto}", f"--fusedSlices={fused}", f"--sendOverheadNs={overhead}", "--correctness=1", "--checkLog=minimal", "--qlenRows=0",
             f"--label={label}"]
     proc = subprocess.run(["./ns3", "run", "--no-build", " ".join(args)], cwd=NS3_DIR,
                           capture_output=True, text=True)
@@ -205,6 +215,9 @@ def main():
     ap.add_argument("--proto-chunk-bytes", type=int, default=PROTO_CHUNK_BYTES, metavar="B",
                     help=f"--protoChunkBytes for every run (default {PROTO_CHUNK_BYTES}, the runtime's "
                          "gridOffset step; 0 = no pipelining)")
+    ap.add_argument("--send-overhead-ns", type=int, default=SEND_OVERHEAD_NS, metavar="NS",
+                    help=f"--sendOverheadNs for every run (default {SEND_OVERHEAD_NS}: staging latency as a "
+                         "per-message send overhead, derived from the .topo; 0 = the earlier link-delay model)")
     ap.add_argument("--fused-slices", type=int, default=FUSED_SLICES, metavar="N",
                     help=f"--fusedSlices for every run (default {FUSED_SLICES}, the kernel's recvCopySend; "
                          "1 = store-and-forward). Affects only schedules with rcs steps")
@@ -225,7 +238,8 @@ def main():
             ib = input_bytes(coll, mb)
             bad = unsupported(xml)
             print(f"{case:<38} --xml={xml} --coll={coll} --inputBytes={ib} "
-                  f"--protoChunkBytes={args.proto_chunk_bytes} --fusedSlices={args.fused_slices}"
+                  f"--protoChunkBytes={args.proto_chunk_bytes} --fusedSlices={args.fused_slices} "
+                  f"--sendOverheadNs={args.send_overhead_ns}"
                   + (f"   SKIP: {','.join(bad)} not in the simulator" if bad else ""))
         print(f"{len(todo)} cases")
         return
@@ -242,14 +256,17 @@ def main():
             # Likewise for fused_slices, where a row from before that column ran the default.
             done = {r["case"]: r for r in csv.DictReader(f) if r["status"] == "ok"
                     and r.get("proto_chunk_bytes") == str(args.proto_chunk_bytes)
-                    and (r.get("fused_slices") or str(FUSED_SLICES)) == str(args.fused_slices)}
+                    and (r.get("fused_slices") or str(FUSED_SLICES)) == str(args.fused_slices)
+                    # rows from before this column ran the link-delay model, i.e. 0
+                    and (r.get("send_overhead_ns") or "0") == str(args.send_overhead_ns)}
     pending = [c for c in todo if c[0] not in done]
     print(f"{len(todo)} cases, {len(todo) - len(pending)} already in {csv_path}, "
           f"running {len(pending)} with {args.jobs} in parallel")
 
     results = dict(done)
     with cf.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futs = {pool.submit(run_one, *c, args.outdir, args.proto_chunk_bytes, args.fused_slices): c
+        futs = {pool.submit(run_one, *c, args.outdir, args.proto_chunk_bytes, args.fused_slices,
+                            args.send_overhead_ns): c
                 for c in pending}
         for i, fut in enumerate(cf.as_completed(futs), 1):
             r = fut.result()

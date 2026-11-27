@@ -646,7 +646,30 @@ namespace ns3 {
 		m_app->GetRdmaDriver()->m_rdma->TriggerTransmit(qp);
 	}
 
+	// The per-message send overhead (SendOverhead attribute) is charged here, the one place every
+	// RDMA message passes: the message reaches its qp that long after the send was posted. The
+	// send step still completes on posting (SendRdma), so a threadblock posts its next send at
+	// once and messages posted together wait out the overhead concurrently, as the hardware's
+	// staging and proxy work does; nothing but data messages pays it, ACKs included. Messages
+	// posted in order reach a qp in order: same delay, and same-time events run FIFO.
 	void MscclChannel::PushLaneMessage(Ptr<RdmaQueuePair> qp, uint32_t bytes, uint8_t* srcDataPtr, uint32_t mscclFlowId, DataRate paceRate, int16_t bid, int16_t sid, uint32_t iter, int16_t sendpeer, uint32_t nElems, bool deferWake){
+		const Time overhead = m_app->GetSendOverhead();
+		if (overhead.IsStrictlyPositive()){
+			// A later event, so the wake-up no longer runs inside RdmaHw's receive callback and
+			// needs no deferral of its own.
+			Simulator::Schedule(overhead, &MscclChannel::PushDeferredLaneMessage, this,
+				DeferredLanePush{qp, bytes, srcDataPtr, mscclFlowId, paceRate, bid, sid, iter, sendpeer, nElems});
+			return;
+		}
+		PushLaneMessageNow(qp, bytes, srcDataPtr, mscclFlowId, paceRate, bid, sid, iter, sendpeer, nElems, deferWake);
+	}
+
+	void MscclChannel::PushDeferredLaneMessage(DeferredLanePush m){
+		PushLaneMessageNow(m.qp, m.bytes, m.srcDataPtr, m.mscclFlowId, m.paceRate, m.bid, m.sid, m.iter,
+			m.sendpeer, m.nElems, /* deferWake */ false);
+	}
+
+	void MscclChannel::PushLaneMessageNow(Ptr<RdmaQueuePair> qp, uint32_t bytes, uint8_t* srcDataPtr, uint32_t mscclFlowId, DataRate paceRate, int16_t bid, int16_t sid, uint32_t iter, int16_t sendpeer, uint32_t nElems, bool deferWake){
 		// ns-3's Callback<void> can't wrap a capturing lambda here (FunctorCallbackImpl
 		// requires operator!= on the functor, which closures don't have), so bind the
 		// context onto a member-function Callback one argument at a time instead.
@@ -1014,6 +1037,17 @@ namespace ns3 {
 					BooleanValue(false),
 					MakeBooleanAccessor(&CollectivesApplication::m_syncBlocks),
 					MakeBooleanChecker())
+				.AddAttribute(
+					"SendOverhead",
+					"Per-message send overhead: how long after a send is posted its message reaches "
+					"the NIC's queue pair, for every RDMA message (each lane of each sub-transfer, and "
+					"each rcs forward). A latency, not an occupancy: messages posted together wait it "
+					"concurrently, the send step still completes on posting, and ACKs never pay it. "
+					"Use it for a host-staged fabric (GPUDirect off) instead of a GPU-host link delay, "
+					"which every packet and every ACK would pay. 0 (the default) changes nothing.",
+					TimeValue(Seconds(0)),
+					MakeTimeAccessor(&CollectivesApplication::m_sendOverhead),
+					MakeTimeChecker(Seconds(0)))
 				.AddAttribute(
 					"FusedSendSlices",
 					"How many slices a fused receive-and-send op (XML type rcs) forwards one "
