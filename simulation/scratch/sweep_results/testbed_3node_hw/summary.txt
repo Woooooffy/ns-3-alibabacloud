@@ -62,34 +62,34 @@ teccl-two-alltoall-16MB@16MB             50331648     4227.1    11.91          -
 teccl-two-alltoall-1MB@1MB                3145728      288.2    10.91          -        - ok
 teccl-two-alltoall-4MB@4MB               12582912     1076.0    11.69          -        - ok
 teccl-two-alltoall-64MB@64MB            201326592    16831.5    11.96          -        - ok
-forestcoll-allgather-k1@0.016MB             49152          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@0.064MB            196608          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@0.256MB            786432          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@1MB               3145728          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@4MB              12582912          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@16MB             50331648          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k1@64MB            201326592          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@0.016MB             49152          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@0.064MB            196608          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@0.256MB            786432          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@1MB               3145728          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@4MB              12582912          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@16MB             50331648          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k2@64MB            201326592          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@0.016MB             49152          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@0.064MB            196608          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@0.256MB            786432          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@1MB               3145728          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@4MB              12582912          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@16MB             50331648          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather-k4@64MB            201326592          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@0.016MB                49152          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@0.064MB               196608          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@0.256MB               786432          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@1MB                  3145728          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@4MB                 12582912          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@16MB                50331648          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
-forestcoll-allgather@64MB               201326592          -        -          -        - skipped: no rcs (RecvCpSend) step in the simulator
+forestcoll-allgather-k1@0.016MB             49152       55.5     0.89          -        - ok
+forestcoll-allgather-k1@0.064MB            196608       63.7     3.09          -        - ok
+forestcoll-allgather-k1@0.256MB            786432      100.6     7.82          -        - ok
+forestcoll-allgather-k1@1MB               3145728      288.2    10.91          -        - ok
+forestcoll-allgather-k1@4MB              12582912     1076.0    11.69          -        - ok
+forestcoll-allgather-k1@16MB             50331648     4227.1    11.91          -        - ok
+forestcoll-allgather-k1@64MB            201326592    16831.5    11.96          -        - ok
+forestcoll-allgather-k2@0.016MB             49152       55.5     0.89          -        - ok
+forestcoll-allgather-k2@0.064MB            196608       63.7     3.09          -        - ok
+forestcoll-allgather-k2@0.256MB            786432      100.6     7.82          -        - ok
+forestcoll-allgather-k2@1MB               3145728      288.2    10.91          -        - ok
+forestcoll-allgather-k2@4MB              12582912     1076.0    11.69          -        - ok
+forestcoll-allgather-k2@16MB             50331648     4227.1    11.91          -        - ok
+forestcoll-allgather-k2@64MB            201326592    16831.5    11.96          -        - ok
+forestcoll-allgather-k4@0.016MB             49152       55.5     0.89          -        - ok
+forestcoll-allgather-k4@0.064MB            196608       63.7     3.09          -        - ok
+forestcoll-allgather-k4@0.256MB            786432      100.6     7.82          -        - ok
+forestcoll-allgather-k4@1MB               3145728      288.2    10.91          -        - ok
+forestcoll-allgather-k4@4MB              12582912     1076.0    11.69          -        - ok
+forestcoll-allgather-k4@16MB             50331648     4227.1    11.91          -        - ok
+forestcoll-allgather-k4@64MB            201326592    16831.5    11.96          -        - ok
+forestcoll-allgather@0.016MB                49152       55.5     0.89          -        - ok
+forestcoll-allgather@0.064MB               196608       63.7     3.09          -        - ok
+forestcoll-allgather@0.256MB               786432      100.6     7.82          -        - ok
+forestcoll-allgather@1MB                  3145728      288.2    10.91          -        - ok
+forestcoll-allgather@4MB                 12582912     1076.0    11.69          -        - ok
+forestcoll-allgather@16MB                50331648     4227.1    11.91          -        - ok
+forestcoll-allgather@64MB               201326592    16831.5    11.96          -        - ok
 optccl-allgather-K1@0.016MB                 49152       57.1     0.86          -        - ok
 optccl-allgather-K1@0.064MB                196608       75.5     2.60          -        - ok
 optccl-allgather-K1@0.256MB                786432      149.2     5.27          -        - ok
